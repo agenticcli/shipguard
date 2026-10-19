@@ -1,0 +1,32 @@
+version: 1
+project:
+  name: my-app
+  framework: auto
+  risk_profile: standard
+scan:
+  changed_files_only: true
+  generate_report: true
+block:
+  - exposed_env
+  - hardcoded_secret
+  - public_admin_route
+  - auth_route_without_guard
+  - payment_webhook_without_signature_check
+  - destructive_migration
+  - unsafe_deployment_config
+warn:
+  - missing_tests_for_changed_code
+  - missing_error_handling
+  - risky_dependency_change
+  - missing_rate_limit
+  - missing_input_validation
+ignore:
+  paths:
+    - node_modules/**
+    - dist/**
+    - build/**
+    - .next/**
+    - coverage/**
+report:
+  output: .shipguard/reports/latest.md
+  format: markdown

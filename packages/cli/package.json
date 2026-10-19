@@ -1,0 +1,82 @@
+{
+  "name": "@agenticcli/shipguard",
+  "version": "0.8.0",
+  "description": "CLI-first release gate for AI-built apps",
+  "type": "module",
+  "main": "./dist/cli.js",
+  "bin": {
+    "shipguard": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "rules",
+    "templates",
+    "docs",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:publish": "SHIPGUARD_PUBLISHED_BUILD=1 tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "pnpm run build:publish && bash \"$(git rev-parse --show-toplevel)/scripts/release-gate.sh\"",
+    "test": "vitest run",
+    "test:slow": "VITEST_SLOW=1 vitest run tests/slow",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.2.0",
+    "chalk": "^5.4.0",
+    "commander": "^13.1.0",
+    "fast-glob": "^3.3.0",
+    "jose": "^6.2.3",
+    "minimatch": "^10.2.5",
+    "re2js": "2.8.3",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@agenticcli/matcher-contract": "workspace:*",
+    "@agenticcli/shared": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^7",
+    "@typescript-eslint/parser": "^7",
+    "eslint": "^8",
+    "tsup": "^8.5.1",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.11"
+  },
+  "keywords": [
+    "shipguard",
+    "agenticcli",
+    "release-gate",
+    "ai-code",
+    "security",
+    "cli",
+    "ai-agents",
+    "claude-code",
+    "cursor",
+    "codex",
+    "agentic",
+    "pre-deploy-check",
+    "secrets-scanner",
+    "llm-generated-code"
+  ],
+  "license": "Elastic-2.0",
+  "author": "agenticcli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agenticcli/shipguard.git"
+  },
+  "homepage": "https://agenticcli.dev/shipguard",
+  "bugs": {
+    "url": "https://github.com/agenticcli/shipguard/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

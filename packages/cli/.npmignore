@@ -1,0 +1,4 @@
+# Exclude scan output artifacts created when CLI is run on its own dist/
+dist/.shipguard/
+dist/.shipguard/**
+.shipguard/

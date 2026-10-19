@@ -1,0 +1,47 @@
+{
+  "name": "@agenticcli/matcher-contract",
+  "version": "0.5.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./canonical": {
+      "import": "./dist/canonical.js",
+      "types": "./dist/canonical.d.ts"
+    },
+    "./selector": {
+      "import": "./dist/selector.js",
+      "types": "./dist/selector.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.11"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agenticcli/shipguard.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "Elastic-2.0",
+  "dependencies": {
+    "re2js": "2.8.3"
+  }
+}

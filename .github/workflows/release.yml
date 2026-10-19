@@ -1,0 +1,105 @@
+name: Release
+
+# Publishes @agenticcli/shipguard to npm with provenance, from a version tag (vX.Y.Z).
+# Auth is npm trusted publishing (OIDC): there is NO npm token anywhere in this workflow.
+# One-time npm setup: package Settings > Trusted publisher > GitHub Actions >
+#   owner agenticcli, repository shipguard, workflow release.yml, environment npm-publish.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, gate, publish with provenance
+    runs-on: ubuntu-latest   # GitHub-hosted runner: required by npm trusted publishing + provenance
+    timeout-minutes: 30
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write        # OIDC token for npm trusted publishing + provenance signing
+    steps:
+      - name: Checkout (full history, to prove the tag is on main)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Tag commit must be on main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::tag $GITHUB_REF_NAME is not on main"; exit 1; }
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2  # v4.0.0
+        with:
+          version: '9.15.0'
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af  # v4.1.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      - name: npm must be >= 11.5.1 (trusted publishing floor)
+        run: |
+          v="$(npm --version)"; echo "node $(node --version) npm $v"
+          node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit((a>11||(a===11&&(b>5||(b===5&&c>=1))))?0:1)" "$v" \
+            || { echo "::error::npm $v is older than 11.5.1"; exit 1; }
+
+      - name: Tag must equal the package version
+        run: |
+          ver="$(node -p "require('./packages/cli/package.json').version")"
+          test "v$ver" = "$GITHUB_REF_NAME" \
+            || { echo "::error::tag $GITHUB_REF_NAME != package.json version v$ver"; exit 1; }
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, lint, test
+        run: |
+          pnpm run build
+          pnpm run lint
+          pnpm test
+
+      - name: Publish build + release gate
+        run: |
+          pnpm --filter @agenticcli/shipguard run build:publish
+          bash scripts/release-gate.sh
+
+      - name: Pack with pnpm and check the tarball
+        working-directory: packages/cli
+        run: |
+          pnpm pack --pack-destination "$RUNNER_TEMP"
+          tgz="$(ls "$RUNNER_TEMP"/agenticcli-shipguard-*.tgz)"
+          test "$(echo "$tgz" | wc -l)" = 1
+          echo "$tgz" > "$RUNNER_TEMP/tgz-path"
+          tar -tzf "$tgz"
+          tar -xzOf "$tgz" package/package.json | node -e "
+            let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{
+              const p=JSON.parse(d);
+              if(!p.bin||!p.bin.shipguard){console.error('tarball lost bin.shipguard');process.exit(1)}
+              if(p.repository.url!=='git+https://github.com/agenticcli/shipguard.git'){console.error('repository.url mismatch');process.exit(1)}
+              if(JSON.stringify(p).includes('workspace:')){console.error('workspace: protocol left in tarball');process.exit(1)}
+            })"
+
+      # NO NODE_AUTH_TOKEN / NPM_TOKEN here: a token would override the OIDC trusted-publisher login.
+      - name: Publish to npm with provenance
+        working-directory: packages/cli
+        run: |
+          tgz="$(cat "$RUNNER_TEMP/tgz-path")"
+          case "$GITHUB_REF_NAME" in
+            *-*) tag=next ;;     # a prerelease can never take the latest tag
+            *)   tag=latest ;;
+          esac
+          npm publish "$tgz" --provenance --access public --tag "$tag"

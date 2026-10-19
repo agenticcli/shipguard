@@ -1,0 +1,1110 @@
+summary:
+  generated: "2026-06-25"
+  scope: "packages/cli/src/** + packages/matcher-contract/src/adapters/** + packages/matcher-contract/src/normalize.ts"
+  total_sites: 131
+  reconcile_note: >
+    Prior estimates conflicted (≥136 / 72 / ~99). This mechanical enumeration
+    finds 131 distinct regex sites. "Sites" = individual regex primitives, not source
+    lines; 6 source lines contain 2 chained regex usages each (deployment.ts:78,
+    deployment.ts:393, payments.ts:91, crypto.ts:213, crypto.ts:247, crypto.ts:371).
+    The "≥136" figure was close to correct if it counted matcher-contract + CLI src.
+    The "72" likely covered only checks/** skipping core/**. The "~99" likely counted
+    distinct source lines rather than distinct regex primitives.
+    Free-tier detector regexes that previously used native JS RegExp = 72 sites
+    (the D.4 migration targets) — ALL NOW MIGRATED to re2js via compileDetectorRegex().
+    Pro-rule patterns are already on the re2js-v1 contract path (1 migrated call-site).
+    Infrastructure/non-content regex = 58 sites. Zero removed.
+    The re2js-v1 anti-pattern path uses re2js by design (FIX 3 in re2js-v1.ts §9)
+    and is correctly classified as non-content for the detector-migration scope.
+    D.4 migration is COMPLETE (2026-06-25): 73 migrated, 58 non-content, 0 pending.
+  counts:
+    migrated: 73
+    non-content: 58
+    removed: 0
+    pending: 0
+  pending_by_detector:
+    secrets:
+      count: 0
+      lines: []
+      note: "All 18 previously-pending secrets detector sites (48-170, 179, 185, 189, 282, 284) migrated to compileDetectorRegex() (D.4 complete 2026-06-25)"
+    auth:
+      count: 0
+      lines: []
+      note: "All 6 auth content-scanning sites (23, 40, 45, 50, 55, 390) migrated to compileDetectorRegex() (D.4 complete)"
+    database:
+      count: 0
+      lines: []
+      note: "All 13 database content-scanning sites migrated to compileDetectorRegex() (D.4 complete)"
+    deployment:
+      count: 0
+      lines: []
+      note: "All 23 deployment content-scanning sites migrated to compileDetectorRegex() (D.4 complete)"
+    payments:
+      count: 0
+      lines: []
+      note: "All 12 payments content-scanning sites migrated to compileDetectorRegex() (D.4 complete)"
+
+entries:
+  # ─── checks/secrets.ts ─────────────────────────────────────────────────────
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 20
+    primitive: regex-literal
+    detector: non-content:secrets-filename-classifier
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 26
+    primitive: regex-literal
+    detector: non-content:secrets-frontend-path-classifier
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 48
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 58
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 68
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 78
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 88
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 98
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 108
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 118
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 128
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 138
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 148
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 159
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 170
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 179
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 185
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 189
+    primitive: regex-literal
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 282
+    primitive: string-method-regex
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+    note: "inline /=\\s*['\"]/ test on content lines to skip env-reference-only lines"
+
+  - file: packages/cli/src/checks/secrets.ts
+    line: 284
+    primitive: string-method-regex
+    detector: secrets
+    scansContent: true
+    disposition: migrated
+    note: "inline /^\\s*(\\/\\/|#)/ test on content lines to skip comment lines"
+
+  # ─── checks/auth.ts ────────────────────────────────────────────────────────
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 15
+    primitive: regex-literal
+    detector: non-content:auth-nextjs-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 19
+    primitive: regex-literal
+    detector: non-content:auth-api-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 23
+    primitive: regex-literal
+    detector: auth
+    scansContent: true
+    disposition: migrated
+    note: "EXPRESS_ROUTE_DEFINITION /gi matchAll on file content"
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 26
+    primitive: regex-literal
+    detector: non-content:auth-express-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 29
+    primitive: regex-literal
+    detector: non-content:auth-webhook-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 40
+    primitive: regex-literal
+    detector: auth
+    scansContent: true
+    disposition: migrated
+    note: "AUTH_CALL_PATTERN — applied to extractExecutableText(content) output"
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 45
+    primitive: regex-literal
+    detector: auth
+    scansContent: true
+    disposition: migrated
+    note: "COMMENTED_AUTH_PATTERN — applied directly to file content"
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 50
+    primitive: regex-literal
+    detector: auth
+    scansContent: true
+    disposition: migrated
+    note: "EXPRESS_AUTH_MIDDLEWARE_PATTERN — applied to file content"
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 53
+    primitive: regex-literal
+    detector: non-content:auth-middleware-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 55
+    primitive: regex-literal
+    detector: auth
+    scansContent: true
+    disposition: migrated
+    note: "MIDDLEWARE_ADMIN_COVERAGE — applied to middlewareFile.content"
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 60
+    primitive: regex-literal
+    detector: non-content:auth-nextjs-detect-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 61
+    primitive: regex-literal
+    detector: non-content:auth-nextjs-detect-config
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 228
+    primitive: string-method-regex
+    detector: non-content:auth-lexer-flags
+    scansContent: false
+    disposition: non-content
+    note: "/[a-z]/i used in lexer to consume regex literal flag characters — internal lexer state, not pattern matching against user code"
+
+  - file: packages/cli/src/checks/auth.ts
+    line: 390
+    primitive: string-method-regex
+    detector: auth
+    scansContent: true
+    disposition: migrated
+    note: "Inline /requireAuth|verifyToken|isAuth|isLogged|passport\\.authenticate/i against 300-char route call slice"
+
+  # ─── checks/database.ts ────────────────────────────────────────────────────
+
+  - file: packages/cli/src/checks/database.ts
+    line: 6
+    primitive: regex-literal
+    detector: non-content:database-migration-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/database.ts
+    line: 7
+    primitive: regex-literal
+    detector: non-content:database-migration-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/database.ts
+    line: 8
+    primitive: regex-literal
+    detector: non-content:database-migration-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/database.ts
+    line: 9
+    primitive: regex-literal
+    detector: non-content:database-migration-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/database.ts
+    line: 10
+    primitive: regex-literal
+    detector: non-content:database-migration-path
+    scansContent: false
+    disposition: non-content
+
+  - file: packages/cli/src/checks/database.ts
+    line: 22
+    primitive: string-method-regex
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "stripSqlComments: /\\/\\*[\\s\\S]*?\\*\\//g on SQL file content"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 23
+    primitive: string-method-regex
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "stripSqlComments: /--[^\\n]*/g on SQL file content"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 38
+    primitive: string-method-regex
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "splitStatements: part.match(/\\n/g) to count newlines in SQL parts"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 47
+    primitive: string-method-regex
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "findLineNumber: before.match(/\\n/g) to count preceding newlines"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 80
+    primitive: regex-literal
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "SQL_PATTERNS[0]: /\\bDROP\\s+TABLE\\b/i"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 91
+    primitive: regex-literal
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "SQL_PATTERNS[1]: /\\bDROP\\s+COLUMN\\b/i"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 102
+    primitive: regex-literal
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "SQL_PATTERNS[2]: /\\bTRUNCATE\\b/i"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 113
+    primitive: regex-literal
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "SQL_PATTERNS[3]: /\\bDELETE\\s+FROM\\b/i"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 126
+    primitive: regex-literal
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "SQL_PATTERNS[4]: /\\bALTER\\s+TABLE\\b[^;]*\\bDROP\\b/i"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 133
+    primitive: regex-literal
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "PUSH_PATTERNS[0]: /prisma\\s+db\\s+push/i against package.json scripts"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 134
+    primitive: regex-literal
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "PUSH_PATTERNS[1]: /drizzle-kit\\s+push/i against package.json scripts"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 151
+    primitive: string-method-regex
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "/\\bWHERE\\b/i.test(stmt.text) — inline WHERE guard on SQL statement"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 217
+    primitive: string-method-regex
+    detector: database
+    scansContent: true
+    disposition: migrated
+    note: "/prisma/i.test(scriptValue) — tool identification inside package.json script value"
+
+  - file: packages/cli/src/checks/database.ts
+    line: 249
+    primitive: string-method-regex
+    detector: database
+    scansContent: false
+    disposition: non-content
+    note: "/^prisma\\/migrations\\/.+\\.sql$/i.test(f.relativePath) — path check, not content"
+
+  # ─── checks/deployment.ts ──────────────────────────────────────────────────
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 31
+    primitive: regex-literal
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "corsPatterns[0]: CORS wildcard in next.config content"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 32
+    primitive: regex-literal
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "corsPatterns[1]: CORS wildcard alternate form in next.config content"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 56
+    primitive: regex-literal
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "sourceMapsPattern: /productionBrowserSourceMaps\\s*:\\s*true/ in next.config content"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 78
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/headers\\s*\\(\\s*\\)/ in next.config content"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 78
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/async\\s+headers/ in next.config content (same source line, second test)"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 79
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/X-Frame-Options/i.test(content) in next.config"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 80
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/X-Content-Type-Options/i.test(content) in next.config"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 123
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/^\\s*USER\\s+/i.test(line) — Dockerfile line filter for USER directives"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 128
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/^USER\\s+(root|0)\\s*$/i.test(line) — Dockerfile root user check"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 149
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/^\\s*FROM\\s+/i.test(line) — Dockerfile FROM line filter"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 152
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "line.replace(/\\s+AS\\s+\\w+/i, '') — strip Dockerfile stage alias"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 153
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "stripped.match(/^FROM\\s+(?:--platform=\\S+\\s+)?(\\S+)/i) — parse FROM image name"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 161
+    primitive: new-RegExp
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "new RegExp(line.trim().replace(...)) — escaped-literal line search in Dockerfile content for findLine()"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 188
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/^\\s+image:\\s+\\S+/.test(line) — docker-compose image line filter"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 190
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "line.match(/image:\\s+(\\S+)/) — parse docker-compose image name"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 221
+    primitive: regex-literal
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "broadRewritePattern: vercel.json wildcard rewrite source check"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 241
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/\"headers\"\\s*:/.test(content) — vercel.json headers presence"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 266
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/\\[headers\\]/.test(content) — netlify.toml headers presence"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 375
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/NODE_ENV=development/i.test(value) — package.json script value check"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 393
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/DEBUG\\s*=\\s*true/i.test(value) — package.json script debug check"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 393
+    primitive: string-method-regex
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "/DEBUG\\s*=\\s*\\*/i.test(value) — package.json script debug wildcard (same line, second test)"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 418
+    primitive: regex-literal
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "corsOriginWildcard: generic config CORS origin check"
+
+  - file: packages/cli/src/checks/deployment.ts
+    line: 439
+    primitive: regex-literal
+    detector: deployment
+    scansContent: true
+    disposition: migrated
+    note: "debugModePattern: generic config debug mode check"
+
+  # ─── checks/payments.ts ────────────────────────────────────────────────────
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 43
+    primitive: string-method-regex
+    detector: non-content:payments-path-normalizer
+    scansContent: false
+    disposition: non-content
+    note: "relativePath.toLowerCase().replace(/\\\\/g, '/') — path separator normalization, not content scanning"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 59
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/stripe\\.webhooks\\.constructEvent/i.test(content)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 60
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/Stripe\\.webhooks\\.constructEvent/i.test(content)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 65
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/stripe-signature/i.test(content)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 70
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/validateWebhookSignature/i.test(content)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 80
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/idempoten(cy|t)/i.test(content)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 81
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/event\\.id/i.test(content)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 82
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/processedEvents/i.test(content)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 83
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/alreadyProcessed/i.test(content)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 91
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/\\btry\\b/.test(content) + /\\bcatch\\b/.test(content)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 91
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/\\bcatch\\b/.test(content) (second test on same line 91)"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 199
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/STRIPE_SECRET_KEY/i.test(content) — client-side secret exposure check"
+
+  - file: packages/cli/src/checks/payments.ts
+    line: 200
+    primitive: string-method-regex
+    detector: payments
+    scansContent: true
+    disposition: migrated
+    note: "/RAZORPAY_KEY_SECRET/i.test(content) — client-side secret exposure check"
+
+  # ─── core/suppression.ts ───────────────────────────────────────────────────
+
+  - file: packages/cli/src/core/suppression.ts
+    line: 26
+    primitive: regex-literal
+    detector: non-content:suppression-comment-parser
+    scansContent: false
+    disposition: non-content
+    note: "SUPPRESS_RE matches the shipguard-ignore comment syntax on individual lines; this is comment-directive parsing, not pattern matching against user code semantics"
+
+  # ─── core/pro-scanner.ts ───────────────────────────────────────────────────
+
+  - file: packages/cli/src/core/pro-scanner.ts
+    line: 211
+    primitive: new-RegExp
+    detector: non-content:pro-bundle-compile-validator
+    scansContent: false
+    disposition: non-content
+    note: "validateBundleCompile: new RegExp(p, internalFlags) for compile-time validation of rule patterns — throws if invalid; no file content is passed"
+
+  - file: packages/cli/src/core/pro-scanner.ts
+    line: 227
+    primitive: new-RegExp
+    detector: non-content:pro-bundle-compile-validator
+    scansContent: false
+    disposition: non-content
+    note: "validateBundleCompile: new RegExp(ap, antiFlags) for compile-time anti-pattern validation — throws if invalid; no file content is passed"
+
+  # Pro rule execution (contract-matcher path) — migrated
+
+  - file: packages/cli/src/core/pro-scanner.ts
+    line: 401
+    primitive: contract-matcher
+    detector: pro-rules
+    scansContent: true
+    disposition: migrated
+    note: "activeExecutor.evaluate() — re2jsV1Executor running pro-rule patterns against file.content; the actual pattern execution goes through the re2js linear-time engine (Phase D.1)"
+
+  # ─── core/render.ts ────────────────────────────────────────────────────────
+
+  - file: packages/cli/src/core/render.ts
+    line: 617
+    primitive: string-method-regex
+    detector: non-content:render-output-format
+    scansContent: false
+    disposition: non-content
+    note: "recommendation.replace(/_/g, ' ') — output formatting, not content scanning"
+
+  - file: packages/cli/src/core/render.ts
+    line: 655
+    primitive: string-method-regex
+    detector: non-content:render-display-width
+    scansContent: false
+    disposition: non-content
+    note: "str.replace(/\\x1b\\[[0-9;]*m/g, '') — ANSI escape strip for terminal display width calculation"
+
+  # ─── core/crypto.ts ────────────────────────────────────────────────────────
+
+  - file: packages/cli/src/core/crypto.ts
+    line: 156
+    primitive: string-method-regex
+    detector: non-content:crypto-pem-parse
+    scansContent: false
+    disposition: non-content
+    note: "PEM header strip for key parsing — internal crypto, not user content"
+
+  - file: packages/cli/src/core/crypto.ts
+    line: 157
+    primitive: string-method-regex
+    detector: non-content:crypto-pem-parse
+    scansContent: false
+    disposition: non-content
+    note: "PEM footer strip for key parsing"
+
+  - file: packages/cli/src/core/crypto.ts
+    line: 158
+    primitive: string-method-regex
+    detector: non-content:crypto-pem-parse
+    scansContent: false
+    disposition: non-content
+    note: "Whitespace strip from PEM base64 for key parsing"
+
+  - file: packages/cli/src/core/crypto.ts
+    line: 213
+    primitive: string-method-regex
+    detector: non-content:crypto-b64url-decode
+    scansContent: false
+    disposition: non-content
+    note: "signatureB64url.replace(/-/g, '+').replace(/_/g, '/') — URL-safe base64 to standard base64 conversion for signature"
+
+  - file: packages/cli/src/core/crypto.ts
+    line: 213
+    primitive: string-method-regex
+    detector: non-content:crypto-b64url-decode
+    scansContent: false
+    disposition: non-content
+    note: "second .replace(/_/g, '/') on same line (chained)"
+
+  - file: packages/cli/src/core/crypto.ts
+    line: 247
+    primitive: string-method-regex
+    detector: non-content:crypto-b64url-decode
+    scansContent: false
+    disposition: non-content
+    note: "signatureB64url.replace(/-/g, '+') (second occurrence, same pattern)"
+
+  - file: packages/cli/src/core/crypto.ts
+    line: 247
+    primitive: string-method-regex
+    detector: non-content:crypto-b64url-decode
+    scansContent: false
+    disposition: non-content
+    note: ".replace(/_/g, '/') chained (second occurrence)"
+
+  - file: packages/cli/src/core/crypto.ts
+    line: 371
+    primitive: string-method-regex
+    detector: non-content:crypto-b64url-decode
+    scansContent: false
+    disposition: non-content
+    note: "signatureB64url.replace(/-/g, '+').replace(/_/g, '/') (third occurrence)"
+
+  - file: packages/cli/src/core/crypto.ts
+    line: 371
+    primitive: string-method-regex
+    detector: non-content:crypto-b64url-decode
+    scansContent: false
+    disposition: non-content
+    note: ".replace(/_/g, '/') chained (third occurrence)"
+
+  # ─── core/telemetry.ts ─────────────────────────────────────────────────────
+
+  - file: packages/cli/src/core/telemetry.ts
+    line: 87
+    primitive: string-method-regex
+    detector: non-content:telemetry-privacy-guard
+    scansContent: false
+    disposition: non-content
+    note: "/\\/home\\/|\\/Users\\/|\\/tmp\\/|\\/var\\/|\\/proc\\//.test(serialized) — checks serialized telemetry payload (a JSON blob of 5 fixed numeric/boolean/string keys) for path-like strings; this is not scanning user file content"
+
+  # ─── core/jwks.ts ──────────────────────────────────────────────────────────
+
+  - file: packages/cli/src/core/jwks.ts
+    line: 95
+    primitive: string-method-regex
+    detector: non-content:jwks-pem-format
+    scansContent: false
+    disposition: non-content
+    note: "b64.match(/.{1,64}/g) — splits base64 into 64-char lines for PEM formatting; not user content"
+
+  # ─── utils/logger.ts ───────────────────────────────────────────────────────
+
+  - file: packages/cli/src/utils/logger.ts
+    line: 47
+    primitive: string-method-regex
+    detector: non-content:logger-output-format
+    scansContent: false
+    disposition: non-content
+    note: "recommendation.replace(/_/g, ' ') — output formatting only"
+
+  # ─── core/framework.ts ─────────────────────────────────────────────────────
+
+  - file: packages/cli/src/core/framework.ts
+    line: 18
+    primitive: string-method-regex
+    detector: non-content:framework-detect-version
+    scansContent: false
+    disposition: non-content
+    note: "deps['next'].replace(/[\\^~]/, '') — strip semver range prefix from package.json dependency version string"
+
+  - file: packages/cli/src/core/framework.ts
+    line: 19
+    primitive: string-method-regex
+    detector: non-content:framework-detect-version
+    scansContent: false
+    disposition: non-content
+    note: "deps['express'].replace(/[\\^~]/, '')"
+
+  - file: packages/cli/src/core/framework.ts
+    line: 20
+    primitive: string-method-regex
+    detector: non-content:framework-detect-version
+    scansContent: false
+    disposition: non-content
+    note: "deps['fastify'].replace(/[\\^~]/, '')"
+
+  - file: packages/cli/src/core/framework.ts
+    line: 21
+    primitive: string-method-regex
+    detector: non-content:framework-detect-version
+    scansContent: false
+    disposition: non-content
+    note: "(deps['prisma'] ?? deps['@prisma/client']).replace(/[\\^~]/, '')"
+
+  - file: packages/cli/src/core/framework.ts
+    line: 22
+    primitive: string-method-regex
+    detector: non-content:framework-detect-version
+    scansContent: false
+    disposition: non-content
+    note: "deps['drizzle-orm'].replace(/[\\^~]/, '')"
+
+  - file: packages/cli/src/core/framework.ts
+    line: 23
+    primitive: string-method-regex
+    detector: non-content:framework-detect-version
+    scansContent: false
+    disposition: non-content
+    note: "deps['@supabase/supabase-js'].replace(/[\\^~]/, '')"
+
+  # ─── matcher-contract/src/adapters/native-v1.ts ────────────────────────────
+  # These are in packages/matcher-contract (separate package) but imported by the
+  # CLI and execute against user file content when native-v1 path is taken.
+  # native-v1 is NOT the active executor (activeExecutor = re2jsV1Executor in Phase D.1)
+  # but it is retained as a fallback export. Classified non-content since it is
+  # not called in the current active code path, but noted here for completeness.
+
+  - file: packages/matcher-contract/src/adapters/native-v1.ts
+    line: 155
+    primitive: string-method-regex
+    detector: non-content:native-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "resolveAntiPatternWindow: matchLineText.match(/\\(/g) for paren balance — internal scope heuristic, native-v1 is not the active executor (D.1 switched to re2jsV1Executor)"
+
+  - file: packages/matcher-contract/src/adapters/native-v1.ts
+    line: 156
+    primitive: string-method-regex
+    detector: non-content:native-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "matchLineText.match(/\\)/g) for paren balance"
+
+  - file: packages/matcher-contract/src/adapters/native-v1.ts
+    line: 166
+    primitive: string-method-regex
+    detector: non-content:native-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "matchLineText.match(/[{(]/g) for combined balance"
+
+  - file: packages/matcher-contract/src/adapters/native-v1.ts
+    line: 167
+    primitive: string-method-regex
+    detector: non-content:native-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "matchLineText.match(/[})]/g)"
+
+  - file: packages/matcher-contract/src/adapters/native-v1.ts
+    line: 219
+    primitive: regex-literal
+    detector: non-content:native-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "FUNC_RE = /\\bfunction\\b|=>|\\bdef\\b/ for function scope detection"
+
+  - file: packages/matcher-contract/src/adapters/native-v1.ts
+    line: 333
+    primitive: string-method-regex
+    detector: non-content:native-v1-glob
+    scansContent: false
+    disposition: non-content
+    note: "/[+?^${}()|[\\]\\\\]/.test(ch) — glob-to-regex conversion, against rule glob strings not user content"
+
+  - file: packages/matcher-contract/src/adapters/native-v1.ts
+    line: 342
+    primitive: new-RegExp
+    detector: non-content:native-v1-glob
+    scansContent: false
+    disposition: non-content
+    note: "new RegExp(regexStr) — glob pattern compiled for file path matching (file paths, not file content)"
+
+  - file: packages/matcher-contract/src/adapters/native-v1.ts
+    line: 374
+    primitive: new-RegExp
+    detector: non-content:native-v1-pattern-compile
+    scansContent: false
+    disposition: non-content
+    note: "new RegExp(patternStr, internalFlagsStr) — primary pattern compilation in native-v1; native-v1 is NOT the active executor (activeExecutor = re2jsV1Executor), so this path is not reached in production"
+
+  - file: packages/matcher-contract/src/adapters/native-v1.ts
+    line: 423
+    primitive: new-RegExp
+    detector: non-content:native-v1-anti-compile
+    scansContent: false
+    disposition: non-content
+    note: "new RegExp(antiStr, ...) — anti-pattern compilation in native-v1 (inactive executor)"
+
+  # ─── matcher-contract/src/adapters/re2js-v1.ts ────────────────────────────
+  # The ACTIVE executor. Primary patterns run through RE2JS (linear-time).
+  # Anti-pattern testing uses native RegExp — documented in file header §9.
+  # These are classified as migrated since the primary scan path goes through re2js.
+
+  - file: packages/matcher-contract/src/adapters/re2js-v1.ts
+    line: 140
+    primitive: string-method-regex
+    detector: non-content:re2js-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "resolveAntiPatternWindow: matchLineText.match(/\\(/g) — scope heuristic only"
+
+  - file: packages/matcher-contract/src/adapters/re2js-v1.ts
+    line: 141
+    primitive: string-method-regex
+    detector: non-content:re2js-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "matchLineText.match(/\\)/g)"
+
+  - file: packages/matcher-contract/src/adapters/re2js-v1.ts
+    line: 148
+    primitive: string-method-regex
+    detector: non-content:re2js-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "matchLineText.match(/[{(]/g)"
+
+  - file: packages/matcher-contract/src/adapters/re2js-v1.ts
+    line: 149
+    primitive: string-method-regex
+    detector: non-content:re2js-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "matchLineText.match(/[})]/g)"
+
+  - file: packages/matcher-contract/src/adapters/re2js-v1.ts
+    line: 195
+    primitive: regex-literal
+    detector: non-content:re2js-v1-antipattern-scope
+    scansContent: false
+    disposition: non-content
+    note: "FUNC_RE = /\\bfunction\\b|=>|\\bdef\\b/ for function scope detection"
+
+  - file: packages/matcher-contract/src/adapters/re2js-v1.ts
+    line: 291
+    primitive: string-method-regex
+    detector: non-content:re2js-v1-glob
+    scansContent: false
+    disposition: non-content
+    note: "/[+?^${}()|[\\]\\\\]/.test(ch) — glob-to-regex metachar escaping"
+
+  - file: packages/matcher-contract/src/adapters/re2js-v1.ts
+    line: 300
+    primitive: new-RegExp
+    detector: non-content:re2js-v1-glob
+    scansContent: false
+    disposition: non-content
+    note: "new RegExp(regexStr) — compiled glob for file path matching (paths, not content)"
+
+  - file: packages/matcher-contract/src/adapters/re2js-v1.ts
+    line: 388
+    primitive: new-RegExp
+    detector: non-content:re2js-v1-anti-compile
+    scansContent: false
+    disposition: non-content
+    note: >
+      new RegExp(antiStr, ...) — anti-pattern uses native RegExp for suppression check.
+      Per file header §9: anti-patterns are trusted corpus content (not user input)
+      and are validated at Gate B. The ReDoS threat model applies to primary patterns
+      (now re2js), not to anti-patterns. This is an acknowledged design choice.
+
+  # ─── normalize.ts (matcher-contract) ───────────────────────────────────────
+
+  - file: packages/matcher-contract/src/normalize.ts
+    line: 186
+    primitive: string-method-regex
+    detector: non-content:normalize-newlines
+    scansContent: false
+    disposition: non-content
+    note: "s.replace(/\\r/g, '') — CRLF normalization applied to file content BEFORE any regex matching; this is pre-processing, not a detector"

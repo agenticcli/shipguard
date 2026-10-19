@@ -1,0 +1,80 @@
+[
+  {
+    "file": "shipped-dist/chunk-*.js",
+    "ruleId": "deployment_config_cors_wildcard_origin",
+    "lineHash": "c43f80edf388bfad378f7a62792d6a10484cf63cf0331137ff584e47cb1268cf",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/chunk-*.js",
+    "ruleId": "generic.config.debug-mode-enabled",
+    "lineHash": "576a0e837de74669c9cb48f3cba19bdc842242a4f8fbc54276fbaf3008c3d732",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/chunk-*.js",
+    "ruleId": "hardcoded_secret",
+    "lineHash": "1cd1423b3801bc5bd782e17f5f2ea11db275a22c6aaf035b4d27aa0438563a56",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "deployment_config_cors_wildcard_origin",
+    "lineHash": "d5bed5e694fac8289bcbef3d2b7bd65cd59579fa4ccec0cded062c236768a796",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "generic.config.debug-mode-enabled",
+    "lineHash": "a030907b500dcbb9c03bc253ca277963676818e54ec37e7cc316eea02d4a7ff9",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "generic.crypto.aes-ecb-mode",
+    "lineHash": "4d322b1f9cbbedf103c6b809372c08db777a56e9d87037e8d4b7fac33239b2c0",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "generic.secrets.gcp-service-account-key",
+    "lineHash": "169aaf1166a975385e1258f841ae048f7445d58041e650b1b3c04efef2fc57dd",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "generic.tls.reject-unauthorized-disabled",
+    "lineHash": "394566278b4b8766432aa4093067199b5092403ba3f77b8ab7da21f34b6617c0",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "generic.tls.reject-unauthorized-disabled",
+    "lineHash": "66beb4fa0d3ddbbdfe77130a666b078e199833834a8567e0abf38690cb2fa4fb",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "generic.tls.reject-unauthorized-disabled",
+    "lineHash": "708cdb185dd458d20de4dce1372d6fb9c572de4e3070fc52f0dc284bfbd76cd6",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "generic.tls.reject-unauthorized-disabled",
+    "lineHash": "762068799e57fb5fffd1dc3e9b06e2995ae57a8c1a9caddc002c8fa697a49b42",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "generic.tls.reject-unauthorized-disabled",
+    "lineHash": "9a4464d4452558839031efc3a7534fa735beea8168ec95cd11a02f16902f7272",
+    "count": 1
+  },
+  {
+    "file": "shipped-dist/cli.js",
+    "ruleId": "generic.tls.reject-unauthorized-disabled",
+    "lineHash": "b641e7d992f1baf9cd14c9b221780e8c68cd9a3420ebfe47c7038babd3d81810",
+    "count": 1
+  }
+]

@@ -1,0 +1,33 @@
+# ShipGuard CLI
+> CLI-first release gate for AI-built apps
+
+ShipGuard checks the high-risk mistakes that AI coding agents commonly introduce before code is deployed.
+
+## Install
+npm install -g @agenticcli/shipguard
+
+## Commands
+shipguard init — initialize policy file
+shipguard scan — scan project for risks
+shipguard scan --changed — scan only changed files
+shipguard scan --strict — exit code 1 on high-risk findings
+shipguard scan --report — generate Markdown report
+shipguard scan --json — machine-readable output
+shipguard scan --check-regressions — exit code 1 if a previously-passing rule now fails
+shipguard history — show recent local scan history for this repo (read-only)
+
+## Risk Categories
+- Secrets: hardcoded API keys, committed .env files, frontend exposure
+- Auth: unprotected admin routes, missing auth middleware
+- Payments: Stripe/Razorpay webhook signature verification
+- Database: destructive SQL migrations, schema risks
+- Deployment: CORS misconfiguration, debug mode, missing headers
+
+## Target Users
+Solo SaaS builders, indie hackers, small dev teams using Claude Code, Codex, Cursor, or Lovable
+
+## GitHub
+https://github.com/agenticcli/shipguard
+
+## npm
+https://www.npmjs.com/package/@agenticcli/shipguard

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.turbo/
+.next/
+*.tgz
+.env
+.env.local
+.env*.local
+.shipguard/
+reports/
+# Conformance test artifact — written to repo root by hash-equality-proof.ts (FIX 11)
+computed-hashes.json
