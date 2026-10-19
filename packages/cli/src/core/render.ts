@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs'
 import { ensureSecureDir, writeSecureFileSync } from '../utils/secure-fs.js'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
+import { goLink } from './links.js'
 import type { Finding, ScanResult, Confidence } from '@agenticcli/shared'
 import { effectiveRecommendation } from './verdict.js'
 import { bundledRulesMeta } from './bundled-rules.js'
@@ -21,9 +22,9 @@ import { bundledRulesMeta } from './bundled-rules.js'
 // Constants
 // ---------------------------------------------------------------------------
 
-export const DOCS_URL = 'https://agenticcli.dev/docs'
-export const SITE_URL = 'https://agenticcli.dev'
-export const PRICING_URL = 'https://agenticcli.dev/pricing'
+export const DOCS_URL = goLink('docs')
+export const SITE_URL = goLink('site')
+export const PRICING_URL = goLink('pricing')
 const ISSUES_URL = 'https://github.com/agenticcli/shipguard/issues'
 
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const
@@ -686,7 +687,7 @@ export function welcomeBanner(configDir?: string): string {
     bannerLine(`Docs: ${chalk.underline(DOCS_URL)}`),
     empty,
     bannerLine(chalk.dim('Pseudonymous usage ping — opt out: shipguard telemetry disable')),
-    bannerLine(chalk.dim(`or SHIPGUARD_TELEMETRY=0 · Details: ${chalk.underline('agenticcli.dev/docs#telemetry')}`)),
+    bannerLine(chalk.dim(`or SHIPGUARD_TELEMETRY=0 · Details: ${chalk.underline(goLink('telemetry'))}`)),
     bottom,
     '',
   ].join('\n')

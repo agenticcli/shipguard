@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from 'commander'
+import { goLink } from './core/links.js'
 import { initCommand } from './commands/init.js'
 import { scanCommand } from './commands/scan.js'
 import { loginCommand } from './commands/login.js'
@@ -67,9 +68,9 @@ program
   .helpCommand(false)  // suppress built-in help subcommand; we add our own
   .addHelpText('after', `
 Learn more:
-  Docs     https://agenticcli.dev/docs
-  Site     https://agenticcli.dev
-  Pricing  https://agenticcli.dev/pricing
+  Docs     ${goLink('docs')}
+  Site     ${goLink('site')}
+  Pricing  ${goLink('pricing')}
   Issues   ${ISSUES_URL}`)
 
 // Use exitOverride so that Commander errors throw instead of calling process.exit.

@@ -183,7 +183,7 @@ describe('quickstartHelp', () => {
 
   it('TTY: contains docs and site links', () => {
     const help = stripAnsi(quickstartHelp(true))
-    expect(help).toContain('agenticcli.dev/docs')
+    expect(help).toContain('agenticcli.dev/go/docs')
     expect(help).toContain('agenticcli.dev')
   })
 
@@ -192,7 +192,7 @@ describe('quickstartHelp', () => {
     expect(help).not.toMatch(/\x1b\[/)
     expect(help).toContain('ShipGuard')
     expect(help).toContain('scan')
-    expect(help).toContain('agenticcli.dev/docs')
+    expect(help).toContain('agenticcli.dev/go/docs')
   })
 
   it('non-TTY: exit codes listed in compact form (A1: 0=completed/verdict-in-JSON, 1=blocked --strict-only)', () => {

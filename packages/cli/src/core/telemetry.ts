@@ -78,6 +78,7 @@ export function resolveEndpoint(
 
 import { randomUUID } from 'node:crypto'
 import { logger } from '../utils/logger.js'
+import { goLink } from './links.js'
 import {
   UUID_V4,
   getConfigDir,
@@ -256,7 +257,7 @@ export function decideTelemetry(
 /** The one-line stderr notice printed before the first ping on an install. */
 export const NOTICE_TEXT =
   'shipguard: sends a pseudonymous usage ping after each scan (version, verdict, duration bucket, a random install id outside CI; never code, paths or your account). ' +
-  'Turn it off: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, or `shipguard telemetry disable`. https://agenticcli.dev/docs#telemetry'
+  'Turn it off: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, or `shipguard telemetry disable`. ' + goLink('telemetry')
 
 /** Hard ceiling on how long a caller waits for the ping (abort fires at 1 s; this covers slow teardown). */
 export const PING_WAIT_MS = 1500

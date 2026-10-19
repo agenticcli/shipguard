@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 
 import { getAuthToken } from './auth.js'
+import { goLink } from './links.js'
 // The verifyAndDecryptBundle and verifyRuleBundle imports were removed (retired paths).
 // Both functions are permanently disabled tombstones. Any call to them throws
 // 'legacy-bundle-rejected: attestation required'. The import is removed so any
@@ -217,7 +218,7 @@ export async function fetchProRules(
     }
 
     if (res.status === 401) throw new ProFetchError('AUTH_FAILED', 'Auth expired. Run `shipguard login` again.')
-    if (res.status === 402) throw new ProFetchError('INSUFFICIENT_CREDITS', 'No credits. Buy at https://agenticcli.dev/dashboard/billing')
+    if (res.status === 402) throw new ProFetchError('INSUFFICIENT_CREDITS', `No credits. Buy at ${goLink('billing')}`)
     if (res.status === 429) {
       throw new ProFetchError(
         'RATE_LIMITED',

@@ -68,7 +68,7 @@
     "type": "git",
     "url": "git+https://github.com/agenticcli/shipguard.git"
   },
-  "homepage": "https://agenticcli.dev/shipguard",
+  "homepage": "https://agenticcli.dev/shipguard?utm_source=npm_homepage&utm_medium=package&utm_campaign=shipguard_evergreen",
   "bugs": {
     "url": "https://github.com/agenticcli/shipguard/issues"
   },
