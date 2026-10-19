@@ -249,7 +249,7 @@ describe('verdictPanel', () => {
     expect(stripped).toContain('99')
     // Elapsed: 3000ms → "3.0s"
     expect(stripped).toMatch(/3\.0s|3000ms/)
-    expect(stripped).toContain('https://agenticcli.dev/docs')
+    expect(stripped).toContain('https://agenticcli.dev/go/docs')
   })
 
   it('panel contains "How ShipGuard helped" line', () => {

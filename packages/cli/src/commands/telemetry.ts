@@ -1,6 +1,7 @@
 import { Command } from 'commander'
 import { EXIT_CODES } from '@agenticcli/shared'
 import { logger } from '../utils/logger.js'
+import { goLink } from '../core/links.js'
 import {
   decideTelemetry,
   detectCi,
@@ -10,7 +11,7 @@ import {
 } from '../core/telemetry.js'
 import { configFilePath, getConfigDir, noticeShown, readInstallId, resetInstallId, writeUserEnabled } from '../core/telemetry-config.js'
 
-const DOCS = 'https://agenticcli.dev/docs#telemetry'
+const DOCS = goLink('telemetry')
 
 const SOURCE_TEXT: Record<TelemetryDecision['source'], string> = {
   'env:SHIPGUARD_TELEMETRY': 'SHIPGUARD_TELEMETRY=0 is set in the environment',

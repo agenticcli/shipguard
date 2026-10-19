@@ -82,11 +82,11 @@ Before the first ping on a machine, ShipGuard prints a one-line notice to stderr
 
 To see exactly what would be sent without sending it: `SHIPGUARD_TELEMETRY_DEBUG=1 shipguard scan`.
 
-Details: [agenticcli.dev/docs#telemetry](https://agenticcli.dev/docs#telemetry)
+Details: [agenticcli.dev/docs#telemetry](https://agenticcli.dev/docs?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen&utm_content=telemetry#telemetry)
 
 ## Documentation
 
-See [full docs](https://agenticcli.dev/docs) for policy configuration, CI setup, and agent integration.
+See [full docs](https://agenticcli.dev/docs?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen&utm_content=docs) for policy configuration, CI setup, and agent integration.
 
 ## License
 

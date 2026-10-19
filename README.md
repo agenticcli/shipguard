@@ -68,13 +68,13 @@ Want to just read the verdict? Use `shipguard scan --json` and check `recommenda
 
 ## License
 
-[Elastic License 2.0](LICENSE) — free to use commercially; you may not offer ShipGuard as a hosted/managed service or resell it. See [agenticcli.dev/pricing](https://agenticcli.dev/pricing) for Pro.
+[Elastic License 2.0](LICENSE) — free to use commercially; you may not offer ShipGuard as a hosted/managed service or resell it. See [agenticcli.dev/pricing](https://agenticcli.dev/pricing?utm_source=github_readme&utm_medium=repo&utm_campaign=shipguard_evergreen&utm_content=license) for Pro.
 
 ---
 
 ## Links
 
-- Site: [agenticcli.dev](https://agenticcli.dev)
-- Docs: [agenticcli.dev/docs](https://agenticcli.dev/docs)
-- Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing)
+- Site: [agenticcli.dev](https://agenticcli.dev/?utm_source=github_readme&utm_medium=repo&utm_campaign=shipguard_evergreen&utm_content=site)
+- Docs: [agenticcli.dev/docs](https://agenticcli.dev/docs?utm_source=github_readme&utm_medium=repo&utm_campaign=shipguard_evergreen&utm_content=docs)
+- Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing?utm_source=github_readme&utm_medium=repo&utm_campaign=shipguard_evergreen&utm_content=pricing)
 - Issues: [github.com/agenticcli/shipguard/issues](https://github.com/agenticcli/shipguard/issues)

@@ -10,9 +10,10 @@
  */
 
 import { EXIT_CODES } from '@agenticcli/shared'
+import { goLink } from './core/links.js'
 
 const ISSUES_URL = 'https://github.com/agenticcli/shipguard/issues'
-const DOCS_URL = 'https://agenticcli.dev/docs'
+const DOCS_URL = goLink('docs')
 const REPORT_LINE = `Report this: ${ISSUES_URL} · Docs: ${DOCS_URL}`
 
 /** Handle an uncaught exception. Exported for unit testing. */

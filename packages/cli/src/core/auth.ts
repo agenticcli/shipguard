@@ -9,6 +9,7 @@ import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import type { AuthCredentials } from '@agenticcli/shared';
 import { assertTrustedApiUrl } from '../utils/trust.js';
+import { goLink } from './links.js';
 import { ensureSecureDir, writeSecureFileSync } from '../utils/secure-fs.js';
 import { PlatformUnavailableError, isPlatformUnavailable, parseRetryAfterSeconds, PLATFORM_UNAVAILABLE_DEFAULT_MESSAGE } from './platform-status.js';
 
@@ -156,14 +157,14 @@ async function exchangeApiKeyForToken(apiKey: string, apiUrl: string): Promise<s
     console.error('[shipguard] SHIPGUARD_API_KEY exchange rejected — invalid or revoked key');
     throw new Error(
       'SHIPGUARD_API_KEY is invalid or has been revoked. Check the key value or generate ' +
-      'a new one at https://agenticcli.dev/dashboard.',
+      `a new one at ${goLink('dashboard')}.`,
     );
   }
   if (res.status === 402) {
     console.error('[shipguard] SHIPGUARD_API_KEY exchange rejected — monthly budget exhausted');
     throw new Error(
       'SHIPGUARD_API_KEY has exhausted its monthly credit budget. ' +
-      'Buy more at https://agenticcli.dev/dashboard/billing',
+      `Buy more at ${goLink('billing')}`,
     );
   }
   if (!res.ok) {

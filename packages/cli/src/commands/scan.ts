@@ -7,6 +7,7 @@ import { toSarif } from '../core/sarif.js'
 import { loadPolicy } from '../core/policy.js'
 import { isGitRepo } from '../core/git.js'
 import { logger } from '../utils/logger.js'
+import { goLink } from '../core/links.js'
 import {
   verdictPanel,
   renderFindingsSummary,
@@ -30,7 +31,7 @@ import type { TelemetryVerdict } from '../core/telemetry.js'
 // keep non-pro scans fast; a value import here would force it to load eagerly on every scan.
 import type { ProFetchErrorCode } from '../core/pro-scanner.js'
 
-const LEARN_MORE = 'Docs https://agenticcli.dev/docs · Site https://agenticcli.dev · Pricing https://agenticcli.dev/pricing · Issues https://github.com/agenticcli/shipguard/issues'
+const LEARN_MORE = `Docs ${goLink('docs')} · Site ${goLink('site')} · Pricing ${goLink('pricing')} · Issues https://github.com/agenticcli/shipguard/issues`
 
 // __SHIPGUARD_VERSION__ is injected by tsup `define` from package.json at build
 // time — the SAME single source cli.ts uses for program.version(). At runtime in
@@ -164,7 +165,7 @@ export function proFetchActionHint(code: ProFetchErrorCode, retryAfterSeconds?: 
     case 'AUTH_FAILED':
       return 'Run `shipguard login` to re-authenticate, or pass --allow-degraded to run local rules only.'
     case 'INSUFFICIENT_CREDITS':
-      return 'Buy more credits at https://agenticcli.dev/dashboard/billing, or pass --allow-degraded to run local rules only.'
+      return `Buy more credits at ${goLink('billing')}, or pass --allow-degraded to run local rules only.`
     case 'RATE_LIMITED':
       return retryAfterSeconds !== undefined
         ? `Rate limited — retry after ${retryAfterSeconds}s, or pass --allow-degraded to run local rules only.`
@@ -176,7 +177,7 @@ export function proFetchActionHint(code: ProFetchErrorCode, retryAfterSeconds?: 
     case 'BUNDLE_INVALID':
       return 'The pro rule bundle failed validation (server-side issue) — retry, or pass --allow-degraded to run local rules only. If this persists, contact support.'
     case 'NO_ACTIVE_RELEASE':
-      return 'The Pro rule server has no active rule release yet — this is a server-side configuration gap, not something a retry or re-login will fix. Check https://agenticcli.dev/docs or contact support, or pass --allow-degraded to run local rules only in the meantime.'
+      return 'The Pro rule server has no active rule release yet — this is a server-side configuration gap, not something a retry or re-login will fix. Check ' + goLink('docs') + ' or contact support, or pass --allow-degraded to run local rules only in the meantime.'
     default:
       return 'Retry the scan, or pass --allow-degraded to run local rules only.'
   }
@@ -868,7 +869,7 @@ async function runScan(ctx: {
         `Scan was truncated: file count or total size limit was reached. ` +
         `Results are INCOMPLETE — add a \`.shipguardignore\` or edit \`shipguard.policy.yml\` limits.`
       )
-      logger.warn(`Docs: https://agenticcli.dev/docs`)
+      logger.warn(`Docs: ${goLink('docs')}`)
     }
 
     // Coverage line — honest statement of what was checked
