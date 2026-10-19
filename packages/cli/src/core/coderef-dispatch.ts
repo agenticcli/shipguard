@@ -4,8 +4,6 @@
  * Rules with `implType:"coderef"` carry a `codeRef{ moduleId, exportName,
  * minCliVersion, checksum }` pointer. This module resolves those pointers to
  * the real CheckModule.run implementations that are bundled in the CLI binary.
- *
- * Governance: /rules.md + docs/superpowers/specs/2026-06-08-rule-registry-lifecycle-design.md §3
  */
 import type { CheckModule, QualityGateRule, FileInfo, Policy, Finding } from '@agenticcli/shared'
 
@@ -144,8 +142,8 @@ export function runCoderefRules(
 
     // 2. Checksum guard: if manifest present, verify moduleId checksum.
     //    FAIL CLOSED on mismatch or absent-from-manifest — a tampered or
-    //    unrecognized module must NOT run silently (GC.12 / C.10 fix).
-    //    Cryptographic signing of the manifest is deferred (Codex E1 scope);
+    //    unrecognized module must NOT run silently (checksum fail-closed fix).
+    //    Cryptographic signing of the manifest is deferred (not yet implemented);
     //    this is integrity/fail-closed only.
     if (manifest) {
       const expected = manifest[ref.moduleId]

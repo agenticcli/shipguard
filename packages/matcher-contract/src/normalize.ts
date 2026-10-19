@@ -49,7 +49,7 @@
 //    enough to never affect normal source code.
 //
 // PURE FUNCTIONS — no I/O, no side-effects.
-// The CLI wires these into fs.ts / scanner.ts in Task A-CLI-INT.1.
+// The CLI wires these into fs.ts / scanner.ts later.
 
 // ---------------------------------------------------------------------------
 // Unicode normalization policy (exported constant)
@@ -66,7 +66,7 @@
  * false-negative risk. Rule authors needing NFC-aware matching must express
  * it in the pattern itself.
  *
- * This is a deliberate, documented policy decision (Task A.5). Do NOT change
+ * This is a deliberate, documented policy decision. Do NOT change
  * without updating this constant, the tests, and the pattern-authoring guide.
  */
 export const UNICODE_NORMALIZATION_POLICY: string = 'none'
@@ -106,7 +106,7 @@ export const hugeSingleLineCap: number = 10 * 1024 * 1024 // 10 MiB in code unit
  * NEVER produces U+FFFD replacement characters (＂＂) on invalid input.
  * Replacement characters would silently destroy secrets straddling an
  * invalid-UTF-8 boundary, causing a false-negative scan — this is the live
- * bug documented in GROUND-TRUTH §1.
+ * bug seen on real projects.
  *
  * @param buf - Raw file bytes (Uint8Array from fs.readFile or equivalent).
  * @returns `{ok: true, text}` on success, or `{ok: false, reason}` on failure.

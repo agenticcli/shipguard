@@ -185,7 +185,7 @@ describe('config-shaped wildcards v4 already matched keep matching', () => {
     ['Apache', 'httpd.conf', 'Header set Access-Control-Allow-Origin "*"\n'],
     ['yaml with trailing comment', 'headers.yaml', 'headers:\n  Access-Control-Allow-Origin: *   # public\n'],
     ['code string with escaped CRLF', 'server.js', "res.write('Access-Control-Allow-Origin: *\\r\\n')\n"],
-    // The seven forms a first v5 draft lost (review finding): nginx/HAProxy/Apache with more after the star.
+    // The seven forms a first v5 draft lost: nginx/HAProxy/Apache with more after the star.
     ['nginx space before semicolon', 'nginx.conf', 'server {\n  add_header Access-Control-Allow-Origin * ;\n}\n'],
     ['nginx one-line server block', 'nginx.conf', 'server { add_header Access-Control-Allow-Origin * ; }\n'],
     ['nginx tab separated', 'nginx.conf', 'server {\n\tadd_header Access-Control-Allow-Origin\t*\t;\n}\n'],

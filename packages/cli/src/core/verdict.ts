@@ -8,7 +8,7 @@ import type { Recommendation, RiskScore, ScanResult } from '@agenticcli/shared'
  *   "`degraded: true` forces `recommendation: DO_NOT_SHIP` — verdict computed
  *    fail-closed, in one place, enum stays 2 values"
  *
- * WHY (the H4 false-safe, CAT1 §2c): a scan that could not read every file it was
+ * WHY (the false-safe verdict): a scan that could not read every file it was
  * asked to read has not checked the thing it is being asked about. Printing
  * "SAFE_TO_SHIP" beside its own `degraded: true` flag is the single worst output a
  * release gate can produce — it is a truthful field and a false headline in the same

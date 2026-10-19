@@ -1,4 +1,4 @@
-// Task A.4 — canonical.ts tests (canonicalJson + parseStrictNoDup).
+// canonical.ts tests (canonicalJson + parseStrictNoDup).
 // TDD: written BEFORE implementation.
 
 import { describe, it, expect } from 'vitest'

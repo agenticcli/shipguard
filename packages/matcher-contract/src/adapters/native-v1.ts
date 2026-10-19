@@ -603,7 +603,7 @@ function evaluateFileRelationship(
  *   severity → 'medium'
  *   blocking → false
  *
- * The CLI integration layer (Task A-CLI-INT.2) will wrap this executor with
+ * The CLI integration layer will wrap this executor with
  * a rule-aware shim that injects the real id/severity/blocking before delegating
  * to evaluate().
  */

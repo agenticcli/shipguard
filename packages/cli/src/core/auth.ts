@@ -176,7 +176,7 @@ async function exchangeApiKeyForToken(apiKey: string, apiUrl: string): Promise<s
     } catch {
       // Body wasn't parseable JSON — fall back to statusText; still throws below.
     }
-    // The platform-unavailable 503 is the service being down, not a key problem (review finding 1).
+    // The platform-unavailable 503 is the service being down, not a key problem.
     if (isPlatformUnavailable(res, body)) {
       throw new PlatformUnavailableError(
         typeof body?.error === 'string' ? body.error : PLATFORM_UNAVAILABLE_DEFAULT_MESSAGE,
@@ -258,7 +258,7 @@ export async function getAuthToken(apiUrl?: string): Promise<string | null> {
         return access_token;
       }
       // The platform-unavailable 503 is NOT a refused refresh: the service is down on its own side
-      // (platform-unavailable-20261018, review finding 1). Surface it as its own class instead of
+      // . Surface it as its own class instead of
       // returning null, which would read as "log in again".
       let refusedBody: { code?: unknown; error?: unknown } | null = null;
       try {

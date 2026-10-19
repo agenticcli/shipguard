@@ -536,7 +536,7 @@ async function runScan(ctx: {
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err)
-      // P0-5 — a NO_RULES_APPLIED (server fail-closed on an empty bundle) is an UNCHECKABLE scan,
+      // a NO_RULES_APPLIED (server fail-closed on an empty bundle) is an UNCHECKABLE scan,
       // NOT a transient outage. We must NOT degrade to a free scan and report green (§11.1). Exit
       // 3 (RUNTIME_ERROR) loudly and suppress the free-rule fallback — a scan that checked nothing
       // can never be SAFE_TO_SHIP.

@@ -133,8 +133,7 @@ describe('scan()', () => {
   })
 
   // -------------------------------------------------------------------------
-  // P1 regression (review/fable/2026-07-06-prelaunch-code-review/raw-fable/
-  // 06-cli-repo.md, git.ts:45-47 + scanner.ts:85-196): a git FAILURE during
+  // Regression: a git FAILURE during
   // --changed collection must propagate loudly (scan() throws → scan.ts's
   // existing catch maps it to exit 3, RUNTIME_ERROR), never be silently
   // treated as "0 changed files, SAFE." This is the scanner-level half of the

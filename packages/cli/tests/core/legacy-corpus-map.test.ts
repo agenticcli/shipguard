@@ -1,7 +1,7 @@
 /**
  * legacy-corpus-map.test.ts — reconciling the hand-written checks with the governed corpus.
  *
- * The rule (platform rules.md §10): every legacy check is RETAINED; where a legacy check
+ * The rule: every legacy check is RETAINED; where a legacy check
  * and a corpus rule fire on the SAME line, the corpus finding wins. The two properties that
  * make this safe are the ones worth testing, because both are ways this could quietly break:
  *

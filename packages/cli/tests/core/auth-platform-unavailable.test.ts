@@ -1,5 +1,5 @@
 /**
- * platform-unavailable-20261018, review finding 1 — the platform-unavailable 503 can land on the
+ * the platform-unavailable 503 can land on the
  * AUTH calls too: the token refresh (most human scans, once the 15-minute access token expired)
  * and the SHIPGUARD_API_KEY exchange (CI). Before: the refresh returned null and the exchange threw a
  * generic error, so the user saw "Run `shipguard login` first" / "exchange failed (503)" for an

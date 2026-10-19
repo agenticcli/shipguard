@@ -1,4 +1,4 @@
-// Task A.2 — Discriminated matcher-type union + executor interface tests.
+// Discriminated matcher-type union + executor interface tests.
 
 import { describe, it, expect } from 'vitest'
 import type {

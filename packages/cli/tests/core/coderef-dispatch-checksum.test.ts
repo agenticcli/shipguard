@@ -1,10 +1,10 @@
 /**
- * GC.12 — coderef checksum fail-closed tests (C.10 fix)
+ * coderef checksum fail-closed tests
  *
  * Verifies that a tampered (checksum-mismatched) or manifest-absent coderef
  * module sets degraded=true and produces zero findings — NOT a silent skip.
  *
- * Cryptographic signing of the manifest is deferred (Codex E1 scope).
+ * Cryptographic signing of the manifest is deferred (not yet implemented).
  * This covers integrity/fail-closed only.
  */
 import { describe, it, expect, vi } from 'vitest'
@@ -39,7 +39,7 @@ function makeCoderefRule(
       patterns: ['console\\.log'],
       antiPatterns: [],
     },
-    explanation: 'GC.12 test rule.',
+    explanation: 'test rule.',
     recommendation: 'Fix it.',
     ...overrides,
   }
@@ -53,7 +53,7 @@ function makeCoderefRule(
 /** A stub CheckModule that returns one finding when run. */
 const STUB_FINDING: Finding = {
   id: 'gc12-stub-finding',
-  title: 'GC.12 stub finding',
+  title: 'stub finding',
   severity: 'high',
   category: 'secrets',
   file: 'stub.ts',
@@ -67,10 +67,10 @@ const STUB_MODULE: CheckModule = { id: 'gc12-stub', name: 'GC12Stub', run: stubR
 const STUB_TABLE = { 'gc12mod:gc12Check': STUB_MODULE }
 
 // ---------------------------------------------------------------------------
-// GC.12-A: checksum mismatch → degraded=true + no findings (fail closed)
+// checksum mismatch → degraded=true + no findings (fail closed)
 // ---------------------------------------------------------------------------
 
-describe('GC.12-A — checksum mismatch → fail closed (degraded=true, non-safe)', () => {
+describe('checksum mismatch → fail closed (degraded=true, non-safe)', () => {
   it('sets degraded=true when module checksum does NOT match the manifest entry', () => {
     const rule = makeCoderefRule('gc12-mismatch', {
       moduleId: 'gc12mod',
@@ -122,10 +122,10 @@ describe('GC.12-A — checksum mismatch → fail closed (degraded=true, non-safe
 })
 
 // ---------------------------------------------------------------------------
-// GC.12-B: module ABSENT from manifest → degraded=true + no findings (fail closed)
+// module ABSENT from manifest → degraded=true + no findings (fail closed)
 // ---------------------------------------------------------------------------
 
-describe('GC.12-B — module absent from manifest → fail closed (degraded=true, non-safe)', () => {
+describe('module absent from manifest → fail closed (degraded=true, non-safe)', () => {
   it('sets degraded=true when moduleId is NOT present in the manifest at all', () => {
     const rule = makeCoderefRule('gc12-absent', {
       moduleId: 'gc12mod',
@@ -177,10 +177,10 @@ describe('GC.12-B — module absent from manifest → fail closed (degraded=true
 })
 
 // ---------------------------------------------------------------------------
-// GC.12-C: matching checksum → NOT degraded, module runs normally
+// matching checksum → NOT degraded, module runs normally
 // ---------------------------------------------------------------------------
 
-describe('GC.12-C — matching checksum → runs normally (not degraded)', () => {
+describe('matching checksum → runs normally (not degraded)', () => {
   it('does NOT degrade when checksum matches manifest', () => {
     const rule = makeCoderefRule('gc12-match', {
       moduleId: 'gc12mod',
@@ -218,10 +218,10 @@ describe('GC.12-C — matching checksum → runs normally (not degraded)', () =>
 })
 
 // ---------------------------------------------------------------------------
-// GC.12-D: no manifest → checksum check skipped gracefully (pre-build artifact)
+// no manifest → checksum check skipped gracefully (pre-build artifact)
 // ---------------------------------------------------------------------------
 
-describe('GC.12-D — no manifest → checksum check gracefully skipped', () => {
+describe('no manifest → checksum check gracefully skipped', () => {
   it('does not degrade when no manifest is provided', () => {
     const rule = makeCoderefRule('gc12-no-manifest', {
       moduleId: 'gc12mod',
@@ -240,10 +240,10 @@ describe('GC.12-D — no manifest → checksum check gracefully skipped', () => 
 })
 
 // ---------------------------------------------------------------------------
-// GC.12-E: multiple rules, partial mismatch → only mismatched rule degraded
+// multiple rules, partial mismatch → only mismatched rule degraded
 // ---------------------------------------------------------------------------
 
-describe('GC.12-E — partial mismatch in a multi-rule set', () => {
+describe('partial mismatch in a multi-rule set', () => {
   it('degrades when ONE of two rules has a checksum mismatch; the other rule still runs', () => {
     const goodRule = makeCoderefRule('gc12-good', {
       moduleId: 'gc12mod',

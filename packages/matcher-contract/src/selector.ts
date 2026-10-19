@@ -1,4 +1,4 @@
-// Task A.11 — Selector + Exact-Set Completeness Algorithm
+// Selector + Exact-Set Completeness Algorithm
 //
 // Implements matcher spec §4 (normative).
 //

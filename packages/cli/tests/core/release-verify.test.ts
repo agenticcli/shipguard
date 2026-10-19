@@ -6,21 +6,21 @@
  * injected via _testInjectKeyringEntry.
  *
  * GC attacks covered:
- *   GC.1   — tampered manifest byte
- *   GC.2   — missing rule in selectedRules (completeness)
- *   GC.3a  — extra rule in selectedRules
- *   GC.3b  — duplicate rule id in selectedRules
- *   GC.4   — sequence below floor (replay)
- *   GC.4a  — idempotent re-fetch (same tuple accepted)
- *   GC.4e  — gap-tolerant sequence (floor+3 accepted)
- *   GC.4b  — expired freshness token
- *   GC.4c  — freshness signed by bundle key (wrong role)
- *   GC.4d  — freshnessTok.manifestDigest mismatch
- *   GC.7   — valid bundle replayed with different scanId
- *   GC.8   — bundle-key signature used for attestation
- *   GC.9b  — duplicate JSON field
- *   GC.10  — forged attestation signed with bundle key
- *   GC.16c — floor write fails
+ *   tampered manifest byte
+ *   missing rule in selectedRules (completeness)
+ *   extra rule in selectedRules
+ *   duplicate rule id in selectedRules
+ *   sequence below floor (replay)
+ *   idempotent re-fetch (same tuple accepted)
+ *   gap-tolerant sequence (floor+3 accepted)
+ *   expired freshness token
+ *   freshness signed by bundle key (wrong role)
+ *   freshnessTok.manifestDigest mismatch
+ *   valid bundle replayed with different scanId
+ *   bundle-key signature used for attestation
+ *   duplicate JSON field
+ *   forged attestation signed with bundle key
+ *   floor write fails
  *   runtimeId-mismatch — manifest.matcherRuntimeId wrong
  *   valid-full-flow — complete valid bundle
  */
@@ -509,8 +509,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.1: tampered manifest ────────────────────────────────────────────────
-  it('GC.1: tampered manifest byte causes attestation verification to reject', async () => {
+  // ── tampered manifest ────────────────────────────────────────────────
+  it('tampered manifest byte causes attestation verification to reject', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -543,8 +543,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.2: missing rule ─────────────────────────────────────────────────────
-  it('GC.2: missing highest-severity rule causes completeness to reject', async () => {
+  // ── missing rule ─────────────────────────────────────────────────────
+  it('missing highest-severity rule causes completeness to reject', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -575,8 +575,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.3a: extra rule ─────────────────────────────────────────────────────
-  it('GC.3a: extra rule in selectedRules causes completeness to reject', async () => {
+  // ── extra rule ─────────────────────────────────────────────────────
+  it('extra rule in selectedRules causes completeness to reject', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -615,8 +615,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.3b: duplicate rule id ───────────────────────────────────────────────
-  it('GC.3b: duplicate rule id in selectedRules causes completeness to reject', async () => {
+  // ── duplicate rule id ───────────────────────────────────────────────
+  it('duplicate rule id in selectedRules causes completeness to reject', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -641,8 +641,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.4: sequence below floor (replay) ────────────────────────────────────
-  it('GC.4: sequence below floor is rejected (anti-downgrade)', async () => {
+  // ── sequence below floor (replay) ────────────────────────────────────
+  it('sequence below floor is rejected (anti-downgrade)', async () => {
     // First, accept a high-sequence bundle to set the floor
     const f1 = await buildValidFixtures({ sequence: 200 })
     cleanupFns.push(f1.cleanupAll)
@@ -686,8 +686,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.4a: idempotent re-fetch ─────────────────────────────────────────────
-  it('GC.4a: idempotent re-fetch of same release is accepted', async () => {
+  // ── idempotent re-fetch ─────────────────────────────────────────────
+  it('idempotent re-fetch of same release is accepted', async () => {
     const f = await buildValidFixtures({ sequence: 150 })
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -727,8 +727,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.4e: gap-tolerant sequence ──────────────────────────────────────────
-  it('GC.4e: gap-tolerant: sequence floor+3 (gap from failed reservation) is accepted', async () => {
+  // ── gap-tolerant sequence ──────────────────────────────────────────
+  it('gap-tolerant: sequence floor+3 (gap from failed reservation) is accepted', async () => {
     const f1 = await buildValidFixtures({ sequence: 10 })
     cleanupFns.push(f1.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -766,8 +766,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.4b: expired freshness token ────────────────────────────────────────
-  it('GC.4b: expired freshness token is rejected', async () => {
+  // ── expired freshness token ────────────────────────────────────────
+  it('expired freshness token is rejected', async () => {
     // issuedAt = 2 hours ago, expiresAt = 1 hour ago (well past clock-skew tolerance)
     const nowSec = Math.floor(Date.now() / 1000)
     const f = await buildValidFixtures({
@@ -798,8 +798,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.4c: freshness signed by bundle key (wrong role) ────────────────────
-  it('GC.4c: freshness token signed by bundle key is rejected (wrong role)', async () => {
+  // ── freshness signed by bundle key (wrong role) ────────────────────
+  it('freshness token signed by bundle key is rejected (wrong role)', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -832,8 +832,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.4d: freshnessTok.manifestDigest mismatch ───────────────────────────
-  it('GC.4d: freshnessTok.manifestDigest bound to different manifest is rejected', async () => {
+  // ── freshnessTok.manifestDigest mismatch ───────────────────────────
+  it('freshnessTok.manifestDigest bound to different manifest is rejected', async () => {
     // Build freshness token with a fake manifestDigest (different manifest)
     const f = await buildValidFixtures({
       freshnessManifestDigest: sha256hex('some-other-manifest-content'),
@@ -863,8 +863,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.7: replay with different scanId ────────────────────────────────────
-  it('GC.7: valid bundle replayed with different scanId is rejected by requestDigest', async () => {
+  // ── replay with different scanId ────────────────────────────────────
+  it('valid bundle replayed with different scanId is rejected by requestDigest', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -896,8 +896,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.8: bundle-key signature used for attestation ──────────────────────
-  it('GC.8: bundle-key signature presented as attestation is rejected (cross-role)', async () => {
+  // ── bundle-key signature used for attestation ──────────────────────
+  it('bundle-key signature presented as attestation is rejected (cross-role)', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -930,8 +930,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.9b: duplicate JSON field ───────────────────────────────────────────
-  it('GC.9b: duplicate JSON field in attestation is rejected by duplicate-key parser', async () => {
+  // ── duplicate JSON field ───────────────────────────────────────────
+  it('duplicate JSON field in attestation is rejected by duplicate-key parser', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -963,8 +963,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.10: forged attestation with bundle key ─────────────────────────────
-  it('GC.10: forged manifest+attestation signed with bundle key is rejected (role check)', async () => {
+  // ── forged attestation with bundle key ─────────────────────────────
+  it('forged manifest+attestation signed with bundle key is rejected (role check)', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
     const floorPath = makeTempFloorPath()
@@ -997,8 +997,8 @@ describe('verifyBundleResponse', () => {
     try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
   })
 
-  // ── GC.16c: floor write fails ─────────────────────────────────────────────
-  it('GC.16c: floor write failure causes non-safe exit', async () => {
+  // ── floor write fails ─────────────────────────────────────────────
+  it('floor write failure causes non-safe exit', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
 

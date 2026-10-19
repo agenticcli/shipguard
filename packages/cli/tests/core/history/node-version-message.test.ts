@@ -1,5 +1,5 @@
 /**
- * Node < 22.5 has no node:sqlite, so scan history cannot be recorded (issue-register row 263).
+ * Node < 22.5 has no node:sqlite, so scan history cannot be recorded.
  * The scan still runs; the user must be told LOUDLY and actionably, never silently.
  */
 import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'

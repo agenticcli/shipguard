@@ -3,7 +3,7 @@
  *
  * The normal scan path (readFiles via fast-glob) uses followSymbolicLinks:false
  * which prevents out-of-root traversal. The --changed path was missing an
- * equivalent containment check (GROUND-TRUTH §1 / scanner.ts:90-133).
+ * equivalent containment check.
  *
  * These tests verify that the --changed path refuses symlinks (and any path
  * that resolves outside the project root) with the same policy as the normal

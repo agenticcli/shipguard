@@ -1,4 +1,4 @@
-// TDD: Task A.10 — computeMatcherRuntimeId algorithm
+// computeMatcherRuntimeId algorithm
 // Failing tests first, then minimal impl, then commit.
 
 import { describe, it, expect } from 'vitest'

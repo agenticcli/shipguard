@@ -1,11 +1,11 @@
-// Task A.9 — Engine metadata schema + pinned constants.
+// Engine metadata schema + pinned constants.
 //
 // DESIGN DECISIONS
 // ================
 // 1. EngineMeta is a plain interface (no class, no enum) so it serialises
 //    directly as a JSON-signable object.  It appears in the FullManifest
 //    (via matcherEngineVersion + matcherEngineOptions fields — matcher spec §3.2)
-//    and in the matcherRuntimeId preimage (Task A.10).
+//    and in the matcherRuntimeId preimage.
 //
 // 2. Engine OPTIONS are kept SEPARATE from author FLAGS.  Author flags
 //    ("i"/"m"/"s") live on individual PatternMatcher objects (src/flags.ts).
@@ -18,7 +18,7 @@
 //    Ground truth: npm registry + GitHub tags verified 2026-06-25.
 //    1.4.0 is deprecated ("Accidental publish of breaking changes").
 //    Do NOT loosen to "^2.8.3" — the runtimeId algorithm requires
-//    an exact version to produce a stable frozen hash (Task A.10 / B.1 / D.1).
+//    an exact version to produce a stable frozen hash.
 //
 // 4. SUPPORTED_NODE_VERSIONS = ["20", "22"] — explicit list of tested versions.
 //    NOT ">=20" (an open semver range is not pinnable and could mask
@@ -26,16 +26,15 @@
 //      - shipguard `engines node>=20` → 20 is the minimum tested floor
 //      - agenticcli CI Node 22 → 22 is the upper bound tested in CI
 //      - tsup `target node20` → 20 is the compile target
-//      - GROUND-TRUTH.md §Build / test / CI / signing: "Node 22" for agenticcli CI
 //    If new Node versions are tested, add them to this list and update tests.
 //
 // 5. LOOKBEHINDS default is false for v1 (confirmed by matcher spec §3.2 and
-//    IMPLEMENTATION-PLAN Task A.9 / Codex I3).  The re2js lookbehind feature
+//    ).  The re2js lookbehind feature
 //    (RE2JS.LOOKBEHINDS, captureless-only) is disabled in v1 to avoid the
-//    partially-verified semantics flagged in GROUND-TRUTH §External facts.
+//    partially-verified semantics.
 //
 // 6. This module does NOT import re2js or any Phase-D dependency.
-//    re2js is NOT added as a runtime dep until Phase D.1 (Task D.1).
+//    re2js is NOT added as a runtime dep until Phase D.1.
 //    This module only defines the METADATA SCHEMA and PINNED CONSTANTS.
 //
 // 7. Zero new runtime deps: pure TS, no imports from outside this package.
@@ -49,7 +48,7 @@
  *
  * Pinned at the specific verified-stable release (2026-06-25: npm latest).
  * 1.4.0 is deprecated; ^2.x is NOT used — exact pinning is required for
- * the stable `RE2JS_V1_RUNTIME_ID` frozen in Task D.1.
+ * the stable `RE2JS_V1_RUNTIME_ID` frozen with the adapter.
  *
  * Do NOT add re2js as a package dependency here (Phase D only).
  * This constant is metadata only.
@@ -88,15 +87,15 @@ export interface EngineOptions {
   /**
    * Whether lookbehind assertions are enabled in re2js.
    *
-   * Default: `false` for v1 (I3 confirmed in matcher spec / IMPLEMENTATION-PLAN).
+   * Default: `false` for v1 (confirmed in the matcher spec).
    *
    * re2js lookbehind (RE2JS.LOOKBEHINDS, v2.7.0+) supports variable-width
    * lookbehinds but ONLY without capture groups (captureless).  The semantics
-   * are only PARTIALLY VERIFIED for v1 corpus (GROUND-TRUTH §External facts).
+   * are only PARTIALLY VERIFIED for v1 corpus (see the engine notes).
    * Keeping this off eliminates uncertainty about v1 correctness.
    *
    * When enabled in a future version, the runtimeId must be re-frozen
-   * (the options object is part of the hash preimage — Task A.10).
+   * (the options object is part of the hash preimage).
    */
   LOOKBEHINDS: boolean
 }
@@ -112,7 +111,7 @@ export interface EngineOptions {
  * ## Where this appears
  * - `FullManifest.matcherEngineVersion` (§3.2) — the `version` field.
  * - `FullManifest.matcherEngineOptions` (§3.2) — the `options` field.
- * - `computeMatcherRuntimeId` preimage (Task A.10 / §9.1).
+ * - `computeMatcherRuntimeId` preimage.
  *
  * ## Important: engine vs. author flags
  * `options` contains ENGINE-LEVEL knobs only.  Per-rule author flags
@@ -138,7 +137,7 @@ export interface EngineMeta {
    * The exact version string of the engine.
    *
    * - For `"native"`: the Node.js version string (e.g. `"v20.11.0"`) from
-   *   `process.version` at the time the runtimeId was frozen (Task B.1).
+   *   `process.version` at the time the runtimeId was frozen.
    * - For `"re2js"`: `RE2JS_VERSION` (`"2.8.3"`) — pinned exact npm version.
    */
   version: string

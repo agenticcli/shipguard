@@ -5,7 +5,7 @@
  *   "Verdict-last human output: tips move above the panel, report path inside it,
  *    final glyph matches the verdict (✗ on DO_NOT_SHIP)"
  *
- * WHY (CAT1 §2a): the verdict sat ~70 lines into a 93-line screen, so a scrolled or
+ * WHY: the verdict sat ~70 lines into a 93-line screen, so a scrolled or
  * truncated terminal dropped the one line the tool exists to print — and the last glyph
  * on a do-not-ship run was a green ✓ from the `Report: …` success line that printed after
  * the panel. With the exit code deliberately silent by default, the

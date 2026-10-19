@@ -1,4 +1,4 @@
-// TDD: Task A.11 — selectExpected + verifyExactSet
+// selectExpected + verifyExactSet
 // Tests written BEFORE implementation per the TDD mandate.
 //
 // Spec source: matcher spec §4 (Selector + Exact-Set Completeness Algorithm)

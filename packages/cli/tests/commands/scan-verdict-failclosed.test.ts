@@ -3,7 +3,7 @@
  *
  * FAIL-BEFORE (verified on main @3b2a99b): `shipguard scan <dir-with-oversized-file> --json`
  * printed `"recommendation": "SAFE_TO_SHIP"` in the same document as `"degraded": true`.
- * That is the H4 false-safe: a truthful field and a false headline, side by side.
+ * That is the false-safe verdict: a truthful field and a false headline, side by side.
  *
  * PASS-AFTER: the same scan reports DO_NOT_SHIP in BOTH the top-level field and the
  * deprecated `riskScore.recommendation` mirror, while STILL exiting 0 — because ShipGuard

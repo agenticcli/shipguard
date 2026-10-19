@@ -1,4 +1,4 @@
-// TDD: Task A.12 — Conformance vectors + harness
+// Conformance vectors + harness
 //
 // Tests the executor-INDEPENDENT parts of the conformance suite:
 //   - Vector set integrity (all vectors parse, have required fields)

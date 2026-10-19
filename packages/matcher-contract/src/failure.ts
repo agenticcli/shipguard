@@ -1,4 +1,4 @@
-// Task A.8 — Failure policy: DegradedReason enum, ScanOutcome type, resolveExitCode.
+// Failure policy: DegradedReason enum, ScanOutcome type, resolveExitCode.
 //
 // DESIGN DECISIONS
 // ================

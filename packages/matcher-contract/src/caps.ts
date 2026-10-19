@@ -1,4 +1,4 @@
-// Task A.7 — Caps profile + CapTracker
+// Caps profile + CapTracker
 //
 // Published capability caps for @agenticcli/matcher-contract v1.
 // These values appear in the FullManifest.capProfile field (matcher spec §3.2)

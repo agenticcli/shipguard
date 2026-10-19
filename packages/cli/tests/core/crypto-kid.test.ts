@@ -10,7 +10,7 @@
  *
  * Original KID-001 through KID-010 relied on verifyAndDecryptBundle resolving bundles
  * after PINNED_KEYS injection. Those are no longer possible. The trust model for the
- * attested-release protocol is tested in release-verify.test.ts (GC.1–GC.16).
+ * attested-release protocol is tested in release-verify.test.ts.
  *
  * Tests retained in new form:
  *   KID-005  PINNED_KEYS / KEYRING static shape contract (source-code assertions)

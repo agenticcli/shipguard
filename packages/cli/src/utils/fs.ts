@@ -147,7 +147,7 @@ export interface ReadFilesResult {
    *
    * These files were SKIPPED (not scanned) because invalid UTF-8 byte sequences
    * could silently destroy secrets straddling the boundary (the replacement-char
-   * bug — GROUND-TRUTH §1). The scanner MUST mark the result degraded and
+   * bug). The scanner MUST mark the result degraded and
    * non-safe when this list is non-empty.
    *
    * Each entry carries the relative path and the decode error reason.
@@ -318,7 +318,7 @@ export async function readFiles(
       // signal) plus a non-printable-byte density heuristic (secondary signal).
       // The old code checked only the first 8192 bytes — a NUL at position 9000
       // would be missed, causing binary content to be decoded as garbage/replacement
-      // chars and pattern-matched (GROUND-TRUTH §1 binary-check bug).
+      // chars and pattern-matched.
       // detectBinary() from the matcher-contract scans the full buffer.
       if (detectBinary(new Uint8Array(buffer))) {
         skippedBinary++
@@ -333,7 +333,7 @@ export async function readFiles(
       // buffer.toString silently replaces invalid byte sequences with U+FFFD (the
       // replacement character ''), which can destroy secrets straddling an
       // invalid-UTF-8 boundary and cause a silent false-negative scan (live bug
-      // documented in GROUND-TRUTH §1 / fs.ts:205).
+      // seen on real projects).
       //
       // decodeUtf8Strict uses TextDecoder({fatal:true}) — throws on any invalid
       // byte sequence. On failure we accumulate the file in invalidUtf8Files so

@@ -1,4 +1,4 @@
-// TDD: Task A.9 — EngineMeta, RE2JS_VERSION, SUPPORTED_NODE_VERSIONS, LOOKBEHINDS default
+// EngineMeta, RE2JS_VERSION, SUPPORTED_NODE_VERSIONS, LOOKBEHINDS default
 
 import { describe, it, expect } from 'vitest'
 import {

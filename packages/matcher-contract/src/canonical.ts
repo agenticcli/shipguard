@@ -4,7 +4,7 @@
 // DESIGN DECISIONS
 // ================
 // 1. Dependency-free: this module is bundled into the CLI via tsup noExternal;
-//    no external libs allowed (Codex constraint / task A.4).
+//    no external libs allowed.
 //
 // 2. Key sorting: lexicographic by UTF-16 code unit (RFC 8785 §3.2.3).
 //    Implemented via native JS string comparison (<, >) which operates on

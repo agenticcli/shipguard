@@ -1,4 +1,4 @@
-// Task A.10 — matcherRuntimeId ALGORITHM (algorithm only — no frozen value).
+// matcherRuntimeId ALGORITHM (algorithm only — no frozen value).
 //
 // Implements the function `computeMatcherRuntimeId` that produces the
 // `matcherRuntimeId` hash from matcher spec §9.1.  The result is:
@@ -73,7 +73,7 @@ const RUNTIME_ID_DOMAIN_PREFIX = 'shipguard-runtime-v1\x00'
  * Input to `computeMatcherRuntimeId`.
  *
  * Field names match the function signature in matcher spec §9.1 and
- * IMPLEMENTATION-PLAN A.10.
+ * the matcher spec.
  *
  * The function maps these to the canonical preimage key names:
  *   contractVersion   → "contractPkgVersion" (preimage key)

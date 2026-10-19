@@ -1,7 +1,7 @@
 /**
  * pro-scanner-no-rules.test.ts
  *
- * P0-5 (CLI half) — a server fail-closed empty-bundle response (HTTP 422, code NO_RULES_APPLIED)
+ * a server fail-closed empty-bundle response (HTTP 422, code NO_RULES_APPLIED)
  * must surface as a HARD, NON-DEGRADABLE error (NoRulesAppliedError), NOT a transient failure the
  * scan command degrades past into a green free scan.
  *
@@ -38,7 +38,7 @@ function jsonResponse(status: number, body: unknown): Response {
   } as unknown as Response
 }
 
-describe('P0-5 (CLI) — fetchProRules surfaces NO_RULES_APPLIED as a hard, non-degradable error', () => {
+describe('fetchProRules surfaces NO_RULES_APPLIED as a hard, non-degradable error', () => {
   let originalFetch: typeof globalThis.fetch
   beforeEach(() => { originalFetch = globalThis.fetch })
   afterEach(() => { globalThis.fetch = originalFetch; vi.clearAllMocks() })

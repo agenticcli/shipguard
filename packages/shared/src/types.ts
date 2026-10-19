@@ -13,7 +13,7 @@ export interface Finding {
   /**
    * 1-based column of the match start on its line (UTF-16 code units from the
    * start of the line after the preceding '\n').  Populated by the pro-scanner
-   * via the matcher-contract adapter (Task A-CLI-INT.2).
+   * via the matcher-contract adapter.
    *
    * Since 2026-08-04 this is populated for the BUNDLED CORPUS rules too — they run through
    * the same adapter on every offline scan. Still absent on findings from the hand-written
@@ -46,7 +46,7 @@ export interface Finding {
   releaseId?: string
   /**
    * Discriminant of the rule's Matcher type: "pattern" | "file-presence" | "file-relationship".
-   * Populated by the pro-scanner via the matcher-contract adapter (Task A-CLI-INT.2), and
+   * Populated by the pro-scanner via the matcher-contract adapter, and
    * since 2026-08-04 by the bundled corpus rules that run on every offline scan. Absent on
    * findings from the hand-written check modules.
    */

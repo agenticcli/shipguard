@@ -1,4 +1,4 @@
-// TDD: Task A.7 — CapsProfile + CapTracker
+// CapsProfile + CapTracker
 // Failing tests first, then minimal impl, then commit.
 
 import { describe, it, expect } from 'vitest'

@@ -478,7 +478,7 @@ router.get('/admin/users', (req, res) => res.json({}))`),
   })
 })
 
-// ─── Task D.5: Lexer-based auth detection ────────────────────────────────────
+// ─── Lexer-based auth detection ────────────────────────────────────
 // These tests verify the real lexical scanner introduced to replace regex-based
 // comment stripping + the ReDoS-prone variable-width lookbehinds.
 

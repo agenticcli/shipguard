@@ -1,4 +1,4 @@
-// Task A.4 — finding.ts tests (CanonicalFinding + canonicalizeFinding).
+// finding.ts tests (CanonicalFinding + canonicalizeFinding).
 // TDD: written BEFORE implementation.
 
 import { describe, it, expect } from 'vitest'

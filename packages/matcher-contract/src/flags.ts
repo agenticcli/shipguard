@@ -2,7 +2,7 @@
 // Only "i" (case-insensitive), "m" (multiline), and "s" (dotAll) are permitted.
 // "g", "y", "u", "x" and any unknown or duplicate characters are rejected.
 // Engine-level options (e.g. RE2JS.LOOKBEHINDS) are NOT represented here —
-// they are kept separate in the adapter layer (Phase B / Task A.9).
+// they are kept separate in the adapter layer.
 
 /** The three flag characters permitted in the v1 contract. */
 export type Flag = 'i' | 'm' | 's'

@@ -134,8 +134,7 @@ describe('spawned-binary scan exit codes (documented contract 0/1/2/3)', () => {
 })
 
 describe('spawned-binary A1 exit-code contract: verdict-neutral by default (2026-07-13)', () => {
-  // RCA (review/fable/2026-07-06-prelaunch-code-review/raw-fable/06-cli-repo.md
-  // P0, commands/scan.ts:54-67): a default `shipguard scan` against a fixture with
+  // Root cause: a default `shipguard scan` against a fixture with
   // a hardcoded live secret exited 0 while the written contract claimed "0=safe".
   // A1 makes this the INTENDED, documented behavior: exit 0 = "scan completed,
   // read the JSON `recommendation`" — --strict is the opt-in hard gate.
@@ -276,8 +275,7 @@ describe('spawned-binary runtime-error exit code 3 ', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // P1 regression (review/fable/2026-07-06-prelaunch-code-review/raw-fable/
-  // 06-cli-repo.md, git.ts:45-47): a genuine `git` failure during `--changed`
+  // Regression: a genuine `git` failure during `--changed`
   // collection must surface as exit 3 with the git stderr in the message —
   // never silently as exit 0 "0 files scanned, SAFE." This is the FULL
   // end-to-end spawned-binary version of the git.ts/scanner.ts unit coverage.

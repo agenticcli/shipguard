@@ -41,7 +41,7 @@ describe('runProRules', () => {
 
   it('anti-pattern on the same line suppresses the occurrence (retained as suppressed, not dropped)', () => {
     // UPDATED from the old behavior: the native-v1 adapter implements per-line
-    // anti-pattern suppression per the contract spec (Task A.3). An occurrence
+    // anti-pattern suppression per the contract spec. An occurrence
     // whose line matches an anti-pattern is RETAINED with suppressionState=suppressed
     // and blocking=false — it is NOT silently dropped (old file-wide anti-pattern
     // behavior). This mirrors how shipguard-ignore comment suppression works.

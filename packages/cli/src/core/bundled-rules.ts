@@ -2,7 +2,7 @@
 //
 // WHY THIS FILE EXISTS
 // ====================
-// The platform repo's `rules.md` §9 row 1 promises an anonymous, logged-out user
+// The product promises an anonymous, logged-out user
 // "Bundled offline-free rules only (bundleEligible: true)". Until 2026-08-04 the CLI
 // shipped no corpus rule at all: its free tier came entirely from the hand-written
 // check modules in src/checks/**, whose flat rule IDs (`hardcoded_secret`,

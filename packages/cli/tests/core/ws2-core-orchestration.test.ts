@@ -862,9 +862,9 @@ const stubFinding: Finding = {
 const stubModule: CheckModule = { id: 'stub', name: 'Stub', run: vi.fn(() => [stubFinding]) }
 const STUB_TABLE = { 'stub:stubCheck': stubModule }
 
-describe('TC-CD-01 — checksum mismatch → fail closed (degraded=true, C.10 fix)', () => {
+describe('TC-CD-01 — checksum mismatch → fail closed (degraded=true)', () => {
   it('checksum mismatch → no findings, CODEREF_CHECKSUM_MISMATCH warning, degraded=true (fail closed, not silent skip)', () => {
-    // C.10 fix: a mismatch must set degraded=true and refuse to run the module.
+    // a mismatch must set degraded=true and refuse to run the module.
     // The old behavior was a silent continue WITHOUT setting degraded (the bug).
     const rule = {
       id: 'r-checksum', framework: ['generic'] as string[], category: 'secrets' as const,

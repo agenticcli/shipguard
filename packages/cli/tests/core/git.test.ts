@@ -27,8 +27,7 @@ describe('getChangedFiles', () => {
 })
 
 // ---------------------------------------------------------------------------
-// P1 regression (review/fable/2026-07-06-prelaunch-code-review/raw-fable/
-// 06-cli-repo.md, git.ts:45-47): distinguish "git ran, genuinely 0 changed
+// Regression: distinguish "git ran, genuinely 0 changed
 // files" from "git failed" — the old bare `catch { return [] }` made both
 // indistinguishable, so a `--changed` scan on Windows (where the old
 // `2>/dev/null || ...` shell fallback is guaranteed broken) or any git error

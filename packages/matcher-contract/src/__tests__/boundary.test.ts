@@ -1,4 +1,4 @@
-// Task B.4 — per-rule boundary mode type-shape tests
+// per-rule boundary mode type-shape tests
 //
 // PHASE B.4 commit 1: verify the TypeScript type shape of PatternMatcher.boundary.
 //

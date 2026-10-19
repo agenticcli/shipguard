@@ -37,7 +37,7 @@ const activeExecutor = re2jsV1Executor
 const DEFAULT_FLOOR_PATH = path.join(os.homedir(), '.shipguard', 'release-floor.json')
 
 /**
- * P0-5 — a HARD, NON-DEGRADABLE uncheckable-scan error. The server fail-closed because it would
+ * a HARD, NON-DEGRADABLE uncheckable-scan error. The server fail-closed because it would
  * have signed an EMPTY rule bundle (NO_RULES_APPLIED, HTTP 422). A scan that applied ZERO rules
  * checked nothing and MUST NOT be reported green: the CLI surfaces this as exit 3 (RUNTIME_ERROR),
  * NOT a degraded free scan (which, under the A1 contract, completes with exit 0 +
@@ -229,7 +229,7 @@ export async function fetchProRules(
     // 409 — scanId conflict/idempotency clash at the server. Not one of the named classes;
     // treated as SERVER_ERROR (transient — a fresh scanId/retry resolves it).
     if (res.status === 409) throw new ProFetchError('SERVER_ERROR', `Rule fetch conflict (409): ${res.statusText}`)
-    // P0-5 — a 422 with code NO_RULES_APPLIED is the server's fail-closed "I refused to sign an
+    // a 422 with code NO_RULES_APPLIED is the server's fail-closed "I refused to sign an
     // empty bundle" signal. This is NOT a transient failure to degrade past — throw a HARD error
     // that the scan command maps to exit 3 and that SUPPRESSES the free-rule fallback.
     if (res.status === 422) {
@@ -248,9 +248,9 @@ export async function fetchProRules(
   const credits = parseCreditsRemaining(res.headers)
   const rulesVersion = res.headers.get('X-Rules-Version') ?? undefined
 
-  // Finding 8 (GC.9b): read the raw response text FIRST, then run duplicate-key
+  // Hardening: read the raw response text FIRST, then run duplicate-key
   // detection via parseStrictNoDup before any JSON.parse. Using res.json() directly
-  // silently deduplicates keys before any detection can occur, making GC.9b illusory.
+  // silently deduplicates keys before any detection can occur, making the duplicate-key check illusory.
   // We must use the CONTRACT'S parseStrictNoDup (from canonical.ts) on the COMPLETE
   // raw response string so that duplicate-key injection is rejected before crypto.
   const rawText = await res.text()
@@ -506,7 +506,7 @@ export function deriveBlocking(rule: QualityGateRule): boolean {
 //   - Per-occurrence line-level anti-pattern suppression via the adapter (fixes
 //     file-wide anti-pattern bug)
 //   - evidence is now populated from CanonicalFinding.evidence (was not populated
-//     for pro findings previously — Task A-CLI-INT.2)
+//     for pro findings previously)
 //   - column is populated from CanonicalFinding.column
 //   - suppressionState and matcherType are populated (new Finding fields)
 //
@@ -720,7 +720,7 @@ export function runProRules(
           recommendation: rule.recommendation,
           blocking: isSuppressed ? false : deriveBlocking(rule),
           suppressed: isSuppressed,
-          // New fields from contract integration (Task A-CLI-INT.2)
+          // New fields from contract integration
           suppressionState: isSuppressed ? 'suppressed' : 'active',
           matcherType: cf.matcherType,
           // releaseId: 'pre-attestation' — not set on Finding until Phase C wires

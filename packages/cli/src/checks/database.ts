@@ -1,4 +1,4 @@
-// Free-tier checks — governance + tiering basis: /rules.md. Source of truth is migrating to the Convex rule registry.
+// Free-tier checks. The rule source of truth is migrating to a hosted rule registry.
 import type { CheckModule, FileInfo, Finding, Policy } from '@agenticcli/shared'
 import { compileDetectorRegex, type CompiledDetectorRegex } from '../core/re2-detector-engine.js'
 import { logger } from '../utils/logger.js'

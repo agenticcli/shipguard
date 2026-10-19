@@ -1,4 +1,4 @@
-// Task A.6 — Flags strict enum tests.
+// Flags strict enum tests.
 
 import { describe, it, expect } from 'vitest'
 import { parseFlags } from '../flags.js'
