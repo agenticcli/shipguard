@@ -58,7 +58,8 @@ describe('spawned CLI never attempts a telemetry send from tests', () => {
         SHIPGUARD_TELEMETRY_URL: 'http://127.0.0.1:1/cli-telemetry',
       },
     })
-    expect(attempts()).toEqual(['http://127.0.0.1:1/cli-telemetry'])
+    // Two sends on a fresh HOME: the one-off cli_first_run event, then the scan ping.
+    expect(attempts()).toEqual(['http://127.0.0.1:1/cli-telemetry', 'http://127.0.0.1:1/cli-telemetry'])
   }, 30_000)
 
   it('stripped env {PATH, HOME} (the nrun.test.ts pattern) -> zero attempts', async () => {

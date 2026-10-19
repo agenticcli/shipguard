@@ -10,6 +10,8 @@ import { hookCommand } from './commands/hook.js'
 import { schemaCommand } from './commands/schema.js'
 import { feedbackCommand, rateCommand } from './commands/feedback.js'
 import { telemetryCommand } from './commands/telemetry.js'
+import { sendLifecycleEvent } from './core/telemetry-events.js'
+import { logger } from './utils/logger.js'
 import { quickstartHelp } from './core/render.js'
 import {
   handleUncaughtException,
@@ -109,6 +111,34 @@ addSubcommand(schemaCommand())
 addSubcommand(feedbackCommand())
 addSubcommand(rateCommand())
 addSubcommand(telemetryCommand())
+
+// ---------------------------------------------------------------------------
+// First-run event: ONE anonymous `cli_first_run` per install id, sent before the first real command
+// runs (bounded <= 1.5 s, never rejects, never changes the command's output or exit code).
+// Not for `telemetry ...` (a user inspecting or opting out must not trigger a send), the root
+// quickstart screen, or `help`; --help/--version exit before any action hook. All opt-outs, the
+// debug print-only mode and the once-only marker live in core/telemetry-events.ts.
+// ---------------------------------------------------------------------------
+program.hook('preAction', async (_thisCommand, actionCommand) => {
+  try {
+    if (actionCommand === program || actionCommand.name() === 'help') return
+    for (let c: Command | null = actionCommand; c; c = c.parent) {
+      if (c.name() === 'telemetry') return
+    }
+    await sendLifecycleEvent(
+      'cli_first_run',
+      {
+        cliVersion:
+          typeof __SHIPGUARD_VERSION__ !== 'undefined'
+            ? __SHIPGUARD_VERSION__
+            : (process.env.npm_package_version ?? '0.0.0-dev'),
+      },
+      { projectDir: process.cwd() },
+    )
+  } catch (err) {
+    logger.debug(`telemetry: first-run event skipped (ignored): ${err instanceof Error ? err.message : String(err)}`)
+  }
+})
 
 // ---------------------------------------------------------------------------
 // `help` / `?` subcommand — branded quickstart screen

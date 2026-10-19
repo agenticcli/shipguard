@@ -45,7 +45,7 @@ describe('one-line stderr notice before the first ping, in every mode, once per 
       const cli = makeRecordedCli(devPath)
       try {
         const first = await cli.run(['scan', cli.project, ...flags], { env: { ...ON, ...extra } })
-        expect(first.attempts).toHaveLength(1)
+        expect(first.pings).toHaveLength(1)
         const noticeLines = first.stderr.split('\n').filter((l) => l.includes(NOTICE_MARK))
         expect(noticeLines).toHaveLength(1)
         for (const s of ['SHIPGUARD_TELEMETRY=0', 'DO_NOT_TRACK=1', 'shipguard telemetry disable']) {
@@ -55,7 +55,7 @@ describe('one-line stderr notice before the first ping, in every mode, once per 
         if (flags.includes('--json') || flags.includes('--sarif')) stdoutIsPureJson(first.stdout)
 
         const second = await cli.run(['scan', cli.project, ...flags], { env: { ...ON, ...extra } })
-        expect(second.attempts).toHaveLength(1)
+        expect(second.pings).toHaveLength(1)
         expect(second.stderr).not.toContain(NOTICE_MARK)
       } finally {
         cli.cleanup()
@@ -77,7 +77,7 @@ describe('telemetry.enabled: false is honoured (was: read by nothing)', () => {
       const cfg = join(cli.project, '.shipguard.yml')
       writeFileSync(cfg, 'configVersion: 2\ntelemetry:\n  enabled: true\n')
       const on = await cli.run(['scan', cli.project, '--json'], { env: ON })
-      expect(on.attempts).toHaveLength(1)
+      expect(on.pings).toHaveLength(1)
 
       writeFileSync(cfg, 'configVersion: 2\ntelemetry:\n  enabled: false\n')
       const off = await cli.run(['scan', cli.project, '--json'], { env: ON })
@@ -98,7 +98,7 @@ describe('telemetry.enabled: false is honoured (was: read by nothing)', () => {
       const policyPath = join(cli.project, 'shipguard.policy.yml')
       expect(existsSync(policyPath)).toBe(true)
       const on = await cli.run(['scan', cli.project, '--json'], { env: ON })
-      expect(on.attempts).toHaveLength(1)
+      expect(on.pings).toHaveLength(1)
 
       writeFileSync(policyPath, readFileSync(policyPath, 'utf-8') + 'telemetry:\n  enabled: false\n')
       const off = await cli.run(['scan', cli.project, '--json'], { env: ON })
@@ -151,7 +151,7 @@ describe('shipguard telemetry status | enable | disable', () => {
       const e = await cli.run(['telemetry', 'enable'], { env: {} })
       expect(e.code).toBe(0)
       const scan2 = await cli.run(['scan', cli.project, '--json'], { env: ON })
-      expect(scan2.attempts).toHaveLength(1)
+      expect(scan2.pings).toHaveLength(1)
     } finally {
       cli.cleanup()
     }
@@ -195,7 +195,7 @@ describe('a --strict exit no longer loses the ping, and the exit code is unchang
       const strict = await cli.run(['scan', cli.project, '--json', '--strict'], { env: ON, fetchDelayMs: 400 })
       expect(verdict).not.toBe('SAFE_TO_SHIP') // the fixture really is unsafe
       expect(strict.code).toBe(1)
-      expect(strict.attempts, 'fail-before: process.exit dropped the in-flight ping').toHaveLength(1)
+      expect(strict.pings, 'fail-before: process.exit dropped the in-flight ping').toHaveLength(1)
       stdoutIsPureJson(strict.stdout)
     } finally {
       cli.cleanup()
@@ -219,7 +219,7 @@ describe('a --strict exit no longer loses the ping, and the exit code is unchang
 
 describe('C4: pseudonymous install id, v2 payload, never in CI, telemetry reset', () => {
   const V2 = ['ci', 'cliVersion', 'durationBucket', 'eventId', 'installId', 'provenance', 'schema', 'verdict']
-  const sent = (r: { attempts: Array<{ body: string }> }) => JSON.parse(r.attempts[0].body) as Record<string, unknown>
+  const sent = (r: { pings: Array<{ body: string }> }) => JSON.parse(r.pings[0].body) as Record<string, unknown>
 
   it('human run: v2 payload with a random v4 install id, saved 0600 next to other keys, stable across runs', async () => {
     const cli = makeRecordedCli(devPath)
@@ -238,8 +238,8 @@ describe('C4: pseudonymous install id, v2 payload, never in CI, telemetry reset'
       expect(sent(b).installId).toBe(pa.installId)
       expect(sent(b).eventId).not.toBe(pa.eventId)
       // never the path, repo or anything else local
-      expect(a.attempts[0].body).not.toContain(cli.project)
-      expect(a.attempts[0].body).not.toContain(cli.home)
+      expect(a.pings[0].body).not.toContain(cli.project)
+      expect(a.pings[0].body).not.toContain(cli.home)
     } finally {
       cli.cleanup()
     }

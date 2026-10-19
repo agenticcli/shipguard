@@ -16,6 +16,9 @@
  * never created or sent in CI, never linked to a ShipGuard account, sent only to the telemetry endpoint.
  * `shipguard telemetry reset` forgets it.
  *
+ * Two more one-off events share this path (core/telemetry-events.ts, schema 3): `cli_first_run` (once per
+ * install id) and `cli_login` (after a successful login). Same keys minus verdict/durationBucket plus `event`.
+ *
  * WHAT IS NEVER SENT:
  *   file paths, file contents, project/repo/branch/commit names (hashed or not), hostnames, usernames,
  *   env values, rule ids, finding text, exact counts or durations — anything identifying
@@ -255,12 +258,12 @@ export function decideTelemetry(
 
 /** The one-line stderr notice printed before the first ping on an install. */
 export const NOTICE_TEXT =
-  'shipguard: sends a pseudonymous usage ping after each scan (version, verdict, duration bucket, a random install id outside CI; never code, paths or your account). ' +
+  'shipguard: sends a pseudonymous usage ping after each scan, plus one event on first run and one after a successful login (version, verdict, duration bucket, a random install id outside CI; never code, paths or your account). ' +
   'Turn it off: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, or `shipguard telemetry disable`. https://agenticcli.dev/docs#telemetry'
 
 /** Hard ceiling on how long a caller waits for the ping (abort fires at 1 s; this covers slow teardown). */
 export const PING_WAIT_MS = 1500
-const FETCH_TIMEOUT_MS = 1000
+export const FETCH_TIMEOUT_MS = 1000
 
 export interface SendOptions {
   /** Override build provenance (tests). Default: this build's. */
@@ -273,7 +276,7 @@ export interface SendOptions {
   configDir?: string
 }
 
-function debugEnabled(env: NodeJS.ProcessEnv): boolean {
+export function debugEnabled(env: NodeJS.ProcessEnv): boolean {
   const v = env.SHIPGUARD_TELEMETRY_DEBUG
   return Boolean(v) && v !== '0'
 }

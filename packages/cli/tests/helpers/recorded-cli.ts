@@ -43,7 +43,12 @@ export interface RecordedRun {
   code: number
   stdout: string
   stderr: string
+  /** Every send the CLI attempted: scan pings (schema 2) AND lifecycle events (schema 3). */
   attempts: Attempt[]
+  /** Only the per-scan pings (schema 2). Most tests about scan telemetry want this, not `attempts`. */
+  pings: Attempt[]
+  /** Only the one-off lifecycle events (schema 3: cli_first_run, cli_login). */
+  events: Attempt[]
 }
 
 export interface RecordedCli {
@@ -111,7 +116,19 @@ process.stdout.write(JSON.stringify({code:r.status===null?-1:r.status,stdout:r.s
       const attempts = existsSync(log)
         ? readFileSync(log, 'utf-8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Attempt)
         : []
-      return { ...parsed, attempts }
+      const schemaOf = (a: Attempt): number | undefined => {
+        try {
+          return (JSON.parse(a.body) as { schema?: number }).schema
+        } catch {
+          return undefined
+        }
+      }
+      return {
+        ...parsed,
+        attempts,
+        pings: attempts.filter((a) => schemaOf(a) !== 3),
+        events: attempts.filter((a) => schemaOf(a) === 3),
+      }
     },
   }
 }

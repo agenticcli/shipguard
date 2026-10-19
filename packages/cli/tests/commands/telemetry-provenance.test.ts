@@ -71,7 +71,7 @@ describe('built CLI provenance (e2e, nothing leaves the machine)', () => {
 
   it('canary: a PUBLISHED build with telemetry on attempts the production relay (recorder sees it)', async () => {
     const r = await pubCli.run(['scan', pubCli.project, '--json', '--quiet'], { env: ON })
-    expect(r.attempts.map((a) => a.url)).toEqual([PROD])
+    expect(r.attempts.map((a) => a.url)).toEqual([PROD, PROD]) // cli_first_run + the scan ping
   })
 
   it('DEV build with telemetry on and no URL attempts nothing (was: pinged prod)', async () => {
@@ -97,6 +97,6 @@ describe('built CLI provenance (e2e, nothing leaves the machine)', () => {
     const r = await devCli.run(['scan', devCli.project, '--json', '--quiet'], {
       env: { ...ON, SHIPGUARD_TELEMETRY_URL: 'http://127.0.0.1:1/cli-telemetry' },
     })
-    expect(r.attempts.map((a) => a.url)).toEqual(['http://127.0.0.1:1/cli-telemetry'])
+    expect(r.attempts.map((a) => a.url)).toEqual(['http://127.0.0.1:1/cli-telemetry', 'http://127.0.0.1:1/cli-telemetry']) // cli_first_run + the scan ping
   })
 })
