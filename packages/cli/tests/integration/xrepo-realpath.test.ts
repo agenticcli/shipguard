@@ -612,7 +612,7 @@ describeXrepo(
 
   // ── b. EXECUTION: accepted rules actually execute via re2js engine ──────────
   //
-  // FIX 11(a): Prior version was vacuous — evaluated an empty file and only
+  // Prior version was vacuous — evaluated an empty file and only
   // asserted an array is returned.  The strengthened version:
   //   1. Picks the jwt-none-algorithm rule from selectedRules by id
   //      (generic.auth.jwt-none-algorithm) — it is always in the generic/free
@@ -846,7 +846,7 @@ describeXrepo(
 
   // ── f. NEGATIVE wrong-runtimeId: manifest signed with NATIVE runtimeId → runtimeId-mismatch ──
   //
-  // FIX 11(b): The prior version mutated matcherRuntimeId in an ALREADY-SIGNED manifest,
+  // The prior version mutated matcherRuntimeId in an ALREADY-SIGNED manifest,
   // so the CLI rejected at Step 1 (attestation.manifestDigest mismatch) — never reaching
   // Step 5 (runtimeId check).  This did not prove runtimeId rejection specifically.
   //

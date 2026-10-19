@@ -1,4 +1,4 @@
-// Task A.12 — Conformance module public API
+// Conformance module public API
 //
 // Exports:
 //   - vectors: structured conformance vector set (inputs + expected hashes)

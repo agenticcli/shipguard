@@ -1,4 +1,4 @@
-// TDD: Task A.8 — DegradedReason, ScanOutcome, resolveExitCode
+// DegradedReason, ScanOutcome, resolveExitCode
 // Failing tests first, then minimal impl, then commit.
 
 import { describe, it, expect } from 'vitest'
@@ -175,7 +175,7 @@ describe('resolveExitCode — degraded scan never exits 0', () => {
 
 describe('resolveExitCode — exit 1 wins over exit 2 when blocking + --strict + config-degraded', () => {
   it('exit 1 when blocking + --strict + config-degraded (exit 1 wins over 2)', () => {
-    // GROUND-TRUTH: constants.ts:9-14 / scan.ts:54-67 — exit 1 wins over 2
+    // Note: constants.ts:9-14 / scan.ts:54-67 — exit 1 wins over 2
     const outcome: ScanOutcome = {
       degraded: true,
       degradedReason: DegradedReason['compile-failure'],

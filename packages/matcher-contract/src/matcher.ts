@@ -1,6 +1,5 @@
 // Discriminated matcher-type union + executor interfaces.
 // Matching logic is intentionally deferred to Phase B adapters.
-// See Task A.2 in the matcher spec.
 
 // ---------------------------------------------------------------------------
 // File view & execution context
@@ -8,12 +7,12 @@
 
 /**
  * A snapshot of a single file as the executor sees it.
- * `content` is guaranteed to be valid UTF-8 (TextDecoder fatal-mode, Task A.5).
+ * `content` is guaranteed to be valid UTF-8 (TextDecoder fatal-mode).
  */
 export interface FileView {
   /** Path relative to the scan root, normalised with forward slashes, no leading slash. */
   relativePath: string
-  /** UTF-8 decoded file content with BOM stripped and CRLF normalised to LF (Task A.5). */
+  /** UTF-8 decoded file content with BOM stripped and CRLF normalised to LF. */
   content: string
 }
 
@@ -29,7 +28,7 @@ export interface ExecCtx {
 }
 
 // ---------------------------------------------------------------------------
-// Match result — full model (Task A.3)
+// Match result — full model
 // ---------------------------------------------------------------------------
 
 /**
@@ -47,7 +46,7 @@ export type SuppressionState = 'active' | 'suppressed'
 /**
  * One non-overlapping occurrence of a match within a file.
  *
- * ## Offset unit — UTF-16 code units (Codex E3)
+ * ## Offset unit — UTF-16 code units
  * ALL positional fields use **UTF-16 code units**, matching JavaScript's
  * `String` indexing and the re2js engine's offset semantics.  Byte offsets
  * and Unicode code-point offsets are intentionally absent: the triple-offset
@@ -313,7 +312,7 @@ export interface FileRelationshipMatcher {
 // TODO(config-value): a 4th variant for config-value matchers is defined in the
 // authoring schema (scripts/schema.ts) but 0 of 222 corpus rules use it.
 // Defer to a future minor version once corpus rules actually require it.
-// See 2026-06-25-re2-IMPLEMENTATION-PLAN.md Task A.2.
+// See the matcher spec.
 
 // ---------------------------------------------------------------------------
 // Discriminated union

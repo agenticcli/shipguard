@@ -1,5 +1,5 @@
 /**
- * Unit tests for coderef rule dispatch (Suricata-model Phase 1).
+ * Unit tests for coderef rule dispatch (Suricata model).
  *
  * All dispatch functions accept injectable cliVersion + table + manifest
  * so no filesystem access is needed — fast, deterministic, zero mocking.
@@ -244,7 +244,7 @@ describe('runCoderefRules — checksum guard', () => {
     const result = runCoderefRules([rule], FILES, POLICY, '1.0.0', STUB_TABLE, manifest)
 
     expect(result.findings).toHaveLength(0)
-    // C.10 fix: mismatch must set degraded=true (was a silent continue before)
+    // mismatch must set degraded=true (was a silent continue before)
     expect(result.degraded).toBe(true)
     expect(result.warnings[0]).toMatch(/CODEREF_CHECKSUM_MISMATCH/)
   })

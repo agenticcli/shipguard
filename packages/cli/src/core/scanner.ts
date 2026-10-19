@@ -193,7 +193,7 @@ export async function scan(
 
   if (options.changedOnly && isGitRepo(cwd)) {
     // getChangedFiles() throws GitCommandError on a genuine git failure — it
-    // is intentionally NOT caught here. RCA (review P1, git.ts:45-47): the old
+    // is intentionally NOT caught here. RCA (git.ts:45-47): the old
     // implementation silently returned [] on ANY git error, so `--changed`
     // would report "0 files scanned, SAFE" for a git failure indistinguishably
     // from "genuinely nothing changed." Letting the throw propagate up to
@@ -202,7 +202,7 @@ export async function scan(
     const changedRelPaths = getChangedFiles(cwd)
     if (changedRelPaths.length === 0) {
       // Git ran successfully and genuinely found nothing changed — this is
-      // the OTHER branch of the P1 fix: an explicit, distinguishable message
+      // the OTHER branch of the fix: an explicit, distinguishable message
       // for "0 files, and that's correct" vs a swallowed git failure.
       logger.info('--changed: git ran successfully — 0 changed files to scan.')
     }
@@ -238,7 +238,7 @@ export async function scan(
         // (readFiles uses followSymbolicLinks:false in fast-glob). The --changed
         // path resolves a git-reported path with join(cwd,rel); a symlink in that
         // path could escape the project root. We resolve the real path and verify
-        // it starts with cwd before reading (GROUND-TRUTH §1 / scanner.ts:90-133).
+        // it starts with cwd before reading.
         //
         // Note: realpath() throws ENOENT for dangling symlinks → caught below →
         // accumulated as an unreadable file (intentionally degraded, not silently
@@ -290,7 +290,7 @@ export async function scan(
 
         // Gate 3: binary detection — scan the ENTIRE buffer using the contract's
         // detectBinary (NUL-anywhere + density heuristic). The old code checked
-        // only the first 8192 bytes (GROUND-TRUTH §1 binary bug).
+        // only the first 8192 bytes.
         if (detectBinary(new Uint8Array(buffer))) {
           skippedBinary++
           onProgress?.(++changedProcessed, changedTotal, relPath)
@@ -298,7 +298,7 @@ export async function scan(
         }
 
         // Gate 4: strict UTF-8 decoding — NEVER use buffer.toString('utf-8').
-        // See fs.ts Gate 4 comment for full rationale (GROUND-TRUTH §1 / fs.ts:205).
+        // See fs.ts Gate 4 comment for full rationale.
         const decoded = decodeUtf8Strict(new Uint8Array(buffer))
         if (!decoded.ok) {
           changedInvalidUtf8.push({ relativePath: relPath, reason: decoded.reason })
@@ -364,7 +364,7 @@ export async function scan(
     files,
   )
 
-  // Bundled corpus rules — the governed offline free set (rules.md §9 row 1). These run
+  // Bundled corpus rules — the governed offline free set. These run
   // for EVERY scan including anonymous/offline ones: the bundle is compiled into this
   // binary, so there is no network call, no auth, and no credit to spend. They go through
   // runProRules (the declarative re2js-v1 engine) because that is the same engine the
@@ -379,7 +379,7 @@ export async function scan(
   const bundledFindings = applySuppressions(runProRules(loadBundledRules(), files, policy), files)
 
   // Where a hand-written legacy check and a governed corpus rule both fired on the SAME
-  // line, keep the corpus finding and drop the legacy duplicate (rules.md §10). This can
+  // line, keep the corpus finding and drop the legacy duplicate. This can
   // never remove a detection — it only ever fires when both already matched.
   const { findings: dedupedLegacy, corpusFindings: dedupedCorpus, notes: dedupNotes, severityDisagreements } =
     dedupeLegacyAgainstCorpus(legacyFindings, bundledFindings, (cf) => {
@@ -418,7 +418,7 @@ export async function scan(
     // Load the build-time checksum manifest so coderef dispatch verifies each
     // module against its SHA-256 hash. Returns undefined if dist/checksum-manifest.json
     // does not exist (pre-build / test-injection path — dispatch skips check gracefully).
-    // GC.12 / C.10: a tampered or absent-from-manifest module is fail-closed (not silent).
+    // a tampered or absent-from-manifest module is fail-closed (not silent).
     const checksumManifest = loadChecksumManifest()
     const { findings: proFindings, degraded, warnings } = runProRulesWithDispatch(
       proRules,
@@ -506,7 +506,7 @@ export async function scan(
   }
 
   // Invalid-UTF-8 files: cannot scan without risking false-negatives (secrets
-  // straddling a boundary destroyed by replacement chars — GROUND-TRUTH §1).
+  // straddling a boundary destroyed by replacement chars).
   // Degrade loudly so the user knows the scan is incomplete.
   if (changedInvalidUtf8.length > 0) {
     const named = changedInvalidUtf8.slice(0, 10).map(f => f.relativePath).join(', ')

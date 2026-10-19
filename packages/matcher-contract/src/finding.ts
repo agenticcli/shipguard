@@ -10,7 +10,7 @@
 //   - `Finding.evidence` is optional, not populated for pro findings →
 //     CanonicalFinding makes it mandatory (null for redacted/unavailable)
 //   - CanonicalFinding adds: severity, blocking, suppressionState, releaseId,
-//     matcherType — fields the CLI will wire in via Task A-CLI-INT.2
+//     matcherType — fields the CLI will wire in later
 //
 // WHAT IS EXCLUDED FROM THE CANONICAL FORM
 // =========================================

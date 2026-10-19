@@ -1,4 +1,4 @@
-// Free-tier checks — governance + tiering basis: /rules.md. Source of truth is migrating to the Convex rule registry.
+// Free-tier checks. The rule source of truth is migrating to a hosted rule registry.
 // Phase D.4: migrated to re2js engine via compileDetectorRegex() (ReDoS-immune, engine-consistent).
 import type { CheckModule, FileInfo, Finding, Policy } from '@agenticcli/shared'
 import { compileDetectorRegex } from '../core/re2-detector-engine.js'
@@ -583,7 +583,7 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
         const line = lines[i]
 
         // Skip lines that are pure environment variable references with no quoted literal.
-        // FIX 6 — env-ref line-skip too broad (false negative):
+        // env-ref line-skip too broad (false negative):
         // The previous check used LITERAL_ASSIGN_RE (`=\s*['"]`) which only matches the
         // form `= 'value'` / `= "value"`. A line like:
         //   `const url = process.env.DB_URL || "postgres://user:pass@host"`
@@ -597,7 +597,7 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
         // This preserves the original intent (pure `x = process.env.SECRET` lines with no
         // quotes are still skipped) while allowing lines that also contain string literals
         // (including template literals) to be scanned normally.
-        // FIX 3: include backtick in the guard — a line like
+        // include backtick in the guard — a line like
         //   `const k = process.env.KEY || \`sk_live_abc123...\``
         // has no `'` or `"` but does contain a backtick template secret; it must not be skipped.
         if (ENV_REFERENCE_ONLY_RE.test(line) && !line.includes("'") && !line.includes('"') && !line.includes('`')) continue

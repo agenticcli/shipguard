@@ -8,7 +8,7 @@
  *
  * FAIL-BEFORE: before core/verdict.ts existed, `computeRiskScore` alone decided the verdict
  * from the score, so a truncated/unreadable scan with a low score printed SAFE_TO_SHIP right
- * next to its own `degraded: true` flag (the H4 false-safe, CAT1 §2c).
+ * next to its own `degraded: true` flag (the false-safe verdict).
  *
  * DISCIPLINE: unit-level, pure functions. The behavioral proof on the spawned
  * binary lives in tests/commands/scan-verdict-failclosed.test.ts.

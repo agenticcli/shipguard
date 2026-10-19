@@ -4,7 +4,7 @@
  * WHAT THIS GUARDS
  * ================
  * Until 2026-08-04 the CLI shipped ZERO rules from the governed corpus. The platform
- * repo's `rules.md` §9 promised anonymous users "Bundled offline-free rules only
+ * product promised anonymous users "Bundled offline-free rules only
  * (bundleEligible: true)" and the CLI's free tier was instead 30 hand-written checks whose
  * IDs had no overlap with the corpus at all. Nothing failed, because nothing checked.
  *

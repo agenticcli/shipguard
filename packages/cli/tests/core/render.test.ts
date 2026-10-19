@@ -443,7 +443,7 @@ describe('renderFindingsSummary', () => {
 })
 
 // ---------------------------------------------------------------------------
-// displayWidth — display-width helper (FIX 1)
+// displayWidth — display-width helper
 // ---------------------------------------------------------------------------
 
 describe('displayWidth', () => {
@@ -485,7 +485,7 @@ describe('displayWidth', () => {
 })
 
 // ---------------------------------------------------------------------------
-// verdictPanel border alignment — all content lines same display width (FIX 1)
+// verdictPanel border alignment — all content lines same display width
 // ---------------------------------------------------------------------------
 
 describe('verdictPanel border alignment', () => {

@@ -1,4 +1,4 @@
-// Task A.3 — MatchResult full model tests.
+// MatchResult full model tests.
 // TDD: these tests are written BEFORE the implementation to drive it.
 
 import { describe, it, expect } from 'vitest'

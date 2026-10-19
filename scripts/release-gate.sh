@@ -161,7 +161,7 @@ echo "PASS [G6] re2js in dependencies"
 
 # Gate 7: the offline rule bundle must be present, non-empty, and actually compiled into
 # the binary. THIS IS THE GATE THAT WOULD HAVE CAUGHT THE ORIGINAL DEFECT: for months the
-# CLI shipped ZERO rules from the governed corpus while the platform's rules.md §9 promised
+# CLI shipped ZERO rules from the governed corpus while the product promised
 # anonymous users exactly those rules, and every existing gate passed the whole time,
 # because none of them looked at what the artifact contained.
 #
@@ -206,7 +206,11 @@ if [[ "$DRY_RUN" == "1" ]]; then
     echo "=== DRY RUN: $GATE_FAILURES gate(s) FAILED — no sentinel written ==="
     exit 1
   fi
-  echo "=== DRY RUN: all gates passed (G2c skipped) — no sentinel written ==="
+  if [[ "$PROVENANCE" == "published" ]]; then
+    echo "=== DRY RUN: all gates passed — no sentinel written ==="
+  else
+    echo "=== DRY RUN: all gates passed (G2c skipped: dev build) — no sentinel written ==="
+  fi
   exit 0
 fi
 

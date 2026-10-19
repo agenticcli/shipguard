@@ -1,6 +1,5 @@
 /**
- * E5 observability/audit-trail store — versioned schema + forward-only migrations.
- * Design: 05-OBSERVABILITY-SCHEMA-DESIGN.md §1.3.
+ * observability/audit-trail store — versioned schema + forward-only migrations.
  *
  * Each migration is a numbered, idempotent SQL step applied inside the single open
  * transaction store.ts wraps around migrate(). Forward-only: there is no down-migration.
@@ -105,7 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_findings_rule_key ON findings (rule_id, finding_k
  * Migration 2 — scanId retry-idempotency reservations (scanId reuse).
  *
  * Sibling table, additive, forward-only — does NOT touch the `scans` table's own
- * `scan_id` primary key or any existing column (05-OBSERVABILITY-SCHEMA-DESIGN.md §1.3's
+ * `scan_id` primary key or any existing column (the schema design's
  * "additive later, never a schema redo" promise from migration 1's own design note).
  *
  * `scan_id_reservations` is keyed by (repo_id, reuse_key) as a COMPOSITE PRIMARY KEY —

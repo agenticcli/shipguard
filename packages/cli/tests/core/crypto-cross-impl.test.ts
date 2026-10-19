@@ -22,7 +22,7 @@
  *   - BundleEnvelope Ed25519 signature (signBundleEnvelope, §3.5)
  *   - CorpusAttestation (CI-signed, Release-Attestation key, role 2)
  *   - FreshnessToken (CI-signed, CI-Freshness key, role 3)
- *   - verifyBundleResponse in release-verify.ts (GC.1–GC.16 attack coverage)
+ *   - verifyBundleResponse in release-verify.ts (attack coverage)
  */
 
 import { describe, it, expect } from 'vitest'

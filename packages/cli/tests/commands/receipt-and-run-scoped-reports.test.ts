@@ -9,7 +9,7 @@
  * two scans that report differently can be told apart as "the code changed" vs "ShipGuard
  * changed"; (b) `latest.json` was one mutable file every scan overwrote in place, so two
  * concurrent scans raced and a reader could get a torn document or the wrong run's result
- * (Fable N7 / Codex Rec 9).
+ *.
  *
  * SCOPE, honestly: this makes ShipGuard attestation-READY (the fields map onto an in-toto
  * verification predicate / SLSA VSA). It builds NO signing pipeline — the design kills that

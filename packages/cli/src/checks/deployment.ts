@@ -1,4 +1,4 @@
-// Free-tier checks — governance + tiering basis: /rules.md. Source of truth is migrating to the Convex rule registry.
+// Free-tier checks. The rule source of truth is migrating to a hosted rule registry.
 // Phase D.4: all content-scanning RegExp migrated to re2js via compileDetectorRegex().
 import type { CheckModule, FileInfo, Finding, Policy } from '@agenticcli/shared'
 import { basename, extname } from 'node:path'
@@ -481,7 +481,7 @@ function checkPackageJson(file: FileInfo): Finding[] {
     // malformed package.json silently disabled the NODE_ENV=development /
     // DEBUG=true build-script detections here with zero warning. Every
     // catch block must log. See database.ts's identical
-    // fix (same review finding) for the full rationale on why a Finding is
+    // fix (same defect) for the full rationale on why a Finding is
     // used as the visibility channel (check modules are pure Finding[]
     // producers with no other output path back to the scan result).
     const detail = err instanceof Error ? err.message : String(err)

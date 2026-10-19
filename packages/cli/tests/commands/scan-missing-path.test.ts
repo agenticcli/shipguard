@@ -1,5 +1,5 @@
 /**
- * `shipguard scan <missing-path>` must fail cleanly (terminal-lab finding, issue-register row 263).
+ * `shipguard scan <missing-path>` must fail cleanly (found with the terminal lab).
  *
  * Symptom: `shipguard scan /nonexistent` printed "Unhandled rejection: ENOENT ... chdir" and exited 3
  * with no telemetry, although the telemetry schema has verdict "error".

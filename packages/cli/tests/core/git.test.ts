@@ -27,8 +27,7 @@ describe('getChangedFiles', () => {
 })
 
 // ---------------------------------------------------------------------------
-// P1 regression (review/fable/2026-07-06-prelaunch-code-review/raw-fable/
-// 06-cli-repo.md, git.ts:45-47): distinguish "git ran, genuinely 0 changed
+// Regression: distinguish "git ran, genuinely 0 changed
 // files" from "git failed" — the old bare `catch { return [] }` made both
 // indistinguishable, so a `--changed` scan on Windows (where the old
 // `2>/dev/null || ...` shell fallback is guaranteed broken) or any git error
@@ -90,7 +89,7 @@ describe('getChangedFiles — genuine git failure throws GitCommandError (not sw
 
   it('FAIL-BEFORE regression: a corrupted/failing git invocation THROWS ' +
      'GitCommandError with the stderr — it does NOT silently return []. ' +
-     'This is the exact P1 bug: the old code had `catch { return [] }`, making ' +
+     'This is the exact bug: the old code had `catch { return [] }`, making ' +
      'a genuine git failure indistinguishable from "nothing changed."', async () => {
     // git.ts is already statically imported (real, unmocked) at the top of this
     // file — Node's ESM module cache would otherwise return that same real

@@ -1,11 +1,9 @@
 /**
- * Coderef rule dispatch — Suricata hybrid model (Phase 1 registry engine).
+ * Coderef rule dispatch — Suricata hybrid model (registry engine).
  *
  * Rules with `implType:"coderef"` carry a `codeRef{ moduleId, exportName,
  * minCliVersion, checksum }` pointer. This module resolves those pointers to
  * the real CheckModule.run implementations that are bundled in the CLI binary.
- *
- * Governance: /rules.md + docs/superpowers/specs/2026-06-08-rule-registry-lifecycle-design.md §3
  */
 import type { CheckModule, QualityGateRule, FileInfo, Policy, Finding } from '@agenticcli/shared'
 
@@ -82,7 +80,7 @@ export interface CoderefDispatchResult {
 }
 
 // ---------------------------------------------------------------------------
-// Optional checksum manifest type (Phase 2 build-time artifact).
+// Optional checksum manifest type (build-time artifact).
 // If absent, checksum verification is skipped gracefully.
 // ---------------------------------------------------------------------------
 
@@ -119,7 +117,7 @@ export function runCoderefRules(
 
   // Cast to the CLI-local augmented type — WHY: QualityGateRule is the shared
   // interface which intentionally does not carry implType/codeRef (those live
-  // in the Convex schema and the Sonnet registry agent owns shared type changes).
+  // in the Convex schema and shared type changes are owned there).
   const augmented = rules as CoderefRule[]
 
   const coderefs = augmented.filter(r => r.implType === 'coderef')
@@ -144,8 +142,8 @@ export function runCoderefRules(
 
     // 2. Checksum guard: if manifest present, verify moduleId checksum.
     //    FAIL CLOSED on mismatch or absent-from-manifest — a tampered or
-    //    unrecognized module must NOT run silently (GC.12 / C.10 fix).
-    //    Cryptographic signing of the manifest is deferred (Codex E1 scope);
+    //    unrecognized module must NOT run silently (checksum fail-closed fix).
+    //    Cryptographic signing of the manifest is deferred (not yet implemented);
     //    this is integrity/fail-closed only.
     if (manifest) {
       const expected = manifest[ref.moduleId]
@@ -166,7 +164,7 @@ export function runCoderefRules(
         continue
       }
     }
-    // If no manifest exists, skip the checksum check gracefully (Phase 2 build artifact).
+    // If no manifest exists, skip the checksum check gracefully (build artifact).
 
     // 3. Resolve the dispatch key: "moduleId:exportName"
     const dispatchKey = `${ref.moduleId}:${ref.exportName}`

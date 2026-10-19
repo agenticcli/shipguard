@@ -17,8 +17,7 @@ import { PlatformUnavailableError, isPlatformUnavailable, parseRetryAfterSeconds
 // We store the OAuth tokens in a plain 0600 file under ~/.config/shipguard — the same
 // approach gh / aws-cli / npm use. We deliberately do NOT use a native OS keychain
 // (keytar / @napi-rs.keyring): native install-scripts conflict with our zero-install-
-// scripts supply-chain policy and break headless CI. See docs/tiered-identity-model.md
-// (§ "CLI Token Storage") for the full threat model.
+// scripts supply-chain policy and break headless CI.
 //
 // "0600" alone is industry-standard but only safe if it is actually ENFORCED. So:
 //   • on write we tighten the dir to 0700 and the file to 0600 (chmod, not just the
@@ -176,7 +175,7 @@ async function exchangeApiKeyForToken(apiKey: string, apiUrl: string): Promise<s
     } catch {
       // Body wasn't parseable JSON — fall back to statusText; still throws below.
     }
-    // The platform-unavailable 503 is the service being down, not a key problem (review finding 1).
+    // The platform-unavailable 503 is the service being down, not a key problem.
     if (isPlatformUnavailable(res, body)) {
       throw new PlatformUnavailableError(
         typeof body?.error === 'string' ? body.error : PLATFORM_UNAVAILABLE_DEFAULT_MESSAGE,
@@ -258,7 +257,7 @@ export async function getAuthToken(apiUrl?: string): Promise<string | null> {
         return access_token;
       }
       // The platform-unavailable 503 is NOT a refused refresh: the service is down on its own side
-      // (platform-unavailable-20261018, review finding 1). Surface it as its own class instead of
+      // . Surface it as its own class instead of
       // returning null, which would read as "log in again".
       let refusedBody: { code?: unknown; error?: unknown } | null = null;
       try {

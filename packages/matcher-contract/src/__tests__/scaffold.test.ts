@@ -1,4 +1,4 @@
-// Task A.1 — Package scaffold verification tests.
+// Package scaffold verification tests.
 // These are smoke tests asserting the package resolves and exports compile correctly.
 
 import { describe, it, expect } from 'vitest'

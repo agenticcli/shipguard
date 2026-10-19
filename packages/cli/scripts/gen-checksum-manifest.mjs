@@ -6,13 +6,13 @@
  * file in dist/, computes SHA-256 of each, and writes dist/checksum-manifest.json.
  *
  * The manifest is consumed by the CLI at runtime to verify each dispatched
- * coderef module against its build-time hash (fail-closed on mismatch — GC.12).
+ * coderef module against its build-time hash (fail-closed on mismatch).
  *
  * Format: { [moduleId]: "sha256hex" }
  * moduleId matches the keys used in DEFAULT_DISPATCH_TABLE (e.g. "secrets",
  * "auth", "database", "deployment", "payments").
  *
- * Cryptographic SIGNING of this manifest is deferred (Codex E1 scope).
+ * Cryptographic SIGNING of this manifest is deferred (not yet implemented).
  * This is integrity/fail-closed only.
  *
  * Zero new runtime dependencies — uses Node built-ins only.
@@ -39,7 +39,7 @@ const distDir = join(__dirname, '..', 'dist')
 // This gives a tamper-detectable signal: if any dist file changes, all hashes
 // change and the manifest is stale.
 //
-// This is sufficient for C.10 / GC.12 fail-closed semantics: a tampered CLI
+// This is sufficient for fail-closed semantics: a tampered CLI
 // binary produces a different combined hash → manifest mismatch → non-safe.
 //
 // Future: if coderef modules are split into separate chunk files, update this

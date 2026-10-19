@@ -9,8 +9,7 @@ const CLI_VERSION =
   typeof __SHIPGUARD_VERSION__ !== 'undefined' ? __SHIPGUARD_VERSION__ : (process.env.npm_package_version ?? '0.0.0-dev')
 
 /**
- * `shipguard history` — read-only view of the local audit-trail store (E5, DIY-first per
- * 05-OBSERVABILITY-SCHEMA-DESIGN.md §6: "the schema is the product's documented on-disk
+ * `shipguard history` — read-only view of the local audit-trail store (DIY-first: "the schema is the product's documented on-disk
  * FORMAT ... a user or their own agent is free to `sqlite3 .shipguard/history.db` and write
  * their own queries" — this command is a convenience view, not the only way in).
  * Informational only — never gates, never changes any exit code.

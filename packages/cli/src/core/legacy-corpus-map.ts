@@ -9,7 +9,7 @@
 // `hardcoded_secret`, once as `generic.secrets.openai-api-key` — is noise that makes the
 // tool look broken.
 //
-// THE DECISION (rules.md §10)
+// THE DECISION
 // ===========================
 //  1. Every legacy check is RETAINED. Deleting hand-written checks to "let the corpus win"
 //     would be a straight detection regression: the corpus has no rule for a git-tracked
@@ -196,7 +196,7 @@ export interface DedupResult {
  *     `generic.secrets.stripe-live-key` -> critical (v5), `generic.cors.wildcard-origin`
  *     -> high (v4) — so both pairs now agree and this branch only still matters as a
  *     structural guarantee against a FUTURE re-divergence, not because one exists today.
- *     Severity canon is a governance decision for the corpus owner (rules.md), never
+ *     Severity canon is a governance decision for the corpus owner, never
  *     something this dedup function should settle by silently picking the lower number.
  *
  *  4. Dedup never softens BLOCK/WARN behaviour either. Severity is not the whole story: the

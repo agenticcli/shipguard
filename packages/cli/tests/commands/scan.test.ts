@@ -97,7 +97,7 @@ afterEach(() => {
 // that lived here. Under A1 (),
 // `degraded`/`degradedReasons` are JSON-only fields — exit code stays 0
 // (scan completed) regardless of degradation, because the exit-2 slot is
-// reserved strictly for config errors now (review finding: exit 2 doubling
+// reserved strictly for config errors now (exit 2 doubling
 // as both "config error" and "degraded scan" left an agent unable to tell
 // the two apart from the exit code alone).
 

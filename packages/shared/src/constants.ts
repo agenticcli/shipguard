@@ -19,7 +19,7 @@ export const DEFAULT_POLICY_PATH = 'shipguard.policy.yml'
 export const DEFAULT_REPORT_DIR = '.shipguard/reports'
 export const DEFAULT_REPORT_FILE = '.shipguard/reports/latest.md'
 
-// E5 observability/audit-trail store (05-OBSERVABILITY-SCHEMA-DESIGN.md §1.2)
+// observability/audit-trail store
 export const DEFAULT_HISTORY_PATH = '.shipguard/history.db'
 export const HISTORY_PATH_ENV_VAR = 'SHIPGUARD_HISTORY_PATH'
 export const DEFAULT_REPO_ID_FALLBACK_PATH = '.shipguard/repo-id'

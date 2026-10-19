@@ -615,7 +615,7 @@ export function actionFooter(opts: {
     lines.push('')
     // Truth check (2026-08-04): logging in does not unlock a separate "Pro rules" set —
     // it serves the FULL CURRENT corpus, the same content every paid tier gets, metered by
-    // the plan's included credits (platform rules.md §9). Say that, not the old claim.
+    // the plan's included credits. Say that, not the old claim.
     lines.push(`  ${chalk.yellow('shipguard login')}                    ${chalk.dim('# sign in for the full rule corpus')}`)
     lines.push(`  ${chalk.yellow('shipguard scan --pro')}               ${chalk.dim('# scan with it (uses one scan credit)')}`)
   }

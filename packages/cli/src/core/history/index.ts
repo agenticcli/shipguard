@@ -87,7 +87,7 @@ function buildRuleOutcomes(
 }
 
 /**
- * The E5 write-point + the ONE regression claim, wired together. Called once per scan from
+ * The history write-point + the ONE regression claim, wired together. Called once per scan from
  * commands/scan.ts, AFTER the scan itself has produced its findings/verdict. Side-effect-free
  * to that verdict and exit code by construction: every failure mode here (unsupported Node
  * runtime, disk full, corrupt file, migration failure, lock timeout) resolves to a typed

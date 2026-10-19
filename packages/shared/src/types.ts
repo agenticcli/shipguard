@@ -13,7 +13,7 @@ export interface Finding {
   /**
    * 1-based column of the match start on its line (UTF-16 code units from the
    * start of the line after the preceding '\n').  Populated by the pro-scanner
-   * via the matcher-contract adapter (Task A-CLI-INT.2).
+   * via the matcher-contract adapter.
    *
    * Since 2026-08-04 this is populated for the BUNDLED CORPUS rules too — they run through
    * the same adapter on every offline scan. Still absent on findings from the hand-written
@@ -46,7 +46,7 @@ export interface Finding {
   releaseId?: string
   /**
    * Discriminant of the rule's Matcher type: "pattern" | "file-presence" | "file-relationship".
-   * Populated by the pro-scanner via the matcher-contract adapter (Task A-CLI-INT.2), and
+   * Populated by the pro-scanner via the matcher-contract adapter, and
    * since 2026-08-04 by the bundled corpus rules that run on every offline scan. Absent on
    * findings from the hand-written check modules.
    */
@@ -91,7 +91,7 @@ export interface Policy {
   /** Optional file-read limits to prevent OOM on large codebases. Merged with defaults if absent. */
   limits?: PolicyLimits
   /**
-   * E5 observability/audit-trail store config (05-OBSERVABILITY-SCHEMA-DESIGN.md §1.2, §1.7).
+   * observability/audit-trail store config.
    * Optional — a scan with no `history` block uses the default path and unlimited retention.
    */
   history?: {
@@ -110,7 +110,7 @@ export interface Policy {
 
 /**
  * The local audit-trail/history store's persistence outcome for THIS scan.
- * §1.6 of 05-OBSERVABILITY-SCHEMA-DESIGN.md — the hard rule this type exists to enforce:
+ * The hard rule this type exists to enforce:
  * a scan may only claim a regression verdict when `stateStatus` is `complete` for both the
  * current run and whatever it was compared against.
  *
@@ -275,8 +275,7 @@ export interface ScanResult {
   cliVersion?: string
   aiCodeIssues?: number
   /**
-   * E5 observability store fields — additive, non-breaking to the frozen --json contract.
-   * See 05-OBSERVABILITY-SCHEMA-DESIGN.md §1.6 and §4.
+   * Observability store fields — additive, non-breaking to the frozen --json contract.
    */
   /** Persistence outcome of the local history store for this scan. Absent on very old CLI builds. */
   stateStatus?: StateStatus

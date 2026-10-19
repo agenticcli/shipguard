@@ -214,7 +214,7 @@ describe('explicit --pro fetch-failure behavior matrix', () => {
     expect(stdoutJson).toMatchObject({ code: 'SERVER_ERROR', degraded: false })
   })
 
-  it('NoRulesAppliedError (P0-5, pre-existing) is NEVER affected by --allow-degraded — always exit 3', async () => {
+  it('NoRulesAppliedError is NEVER affected by --allow-degraded — always exit 3', async () => {
     const noRulesErr = new Error('Pro rule fetch resolved zero rules — fail-closed.')
     noRulesErr.name = 'NoRulesAppliedError'
     ;(noRulesErr as unknown as { code: string }).code = 'NO_RULES_APPLIED'

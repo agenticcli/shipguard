@@ -664,7 +664,7 @@ describe('PART 4 — Targeted mutation tests', () => {
 })
 
 // ---------------------------------------------------------------------------
-// PART 5: MULTILINE-SECRET REGRESSION — FIX 4 (HIGH: exec-once false negative)
+// PART 5: MULTILINE-SECRET REGRESSION — HIGH: exec-once false negative
 //
 // The bug: when the FIRST match on a line was excluded by postExcludeFollowedBy,
 // the old code `continue`d to the NEXT line, skipping any later genuine secret
@@ -675,7 +675,7 @@ describe('PART 4 — Targeted mutation tests', () => {
 //   AAAA is excluded (followed by ' +'), BBBB must still be flagged.
 // ---------------------------------------------------------------------------
 
-describe('PART 5 — Multiline-secret regression (FIX 4: matchAll replaces exec-once)', () => {
+describe('PART 5 — Multiline-secret regression (matchAll replaces exec-once)', () => {
   // 40-char strings that pattern #13 (High-Entropy Secret String) will match.
   // Pattern requires a var-name prefix: api_key|secret|token|password|passwd|auth_key|access_key
   const EXCL = 'abcdefghijklmnopqrstuvwxyz0123456789ABCD' // excluded (followed by ' +')
@@ -743,7 +743,7 @@ describe('PART 5 — Multiline-secret regression (FIX 4: matchAll replaces exec-
 })
 
 // ---------------------------------------------------------------------------
-// PART 6: ENV-REF LINE-SKIP TOO BROAD — FIX 6 (MED: false negative)
+// PART 6: ENV-REF LINE-SKIP TOO BROAD — MED: false negative
 //
 // The bug: in secrets.ts the per-line env-reference skip used LITERAL_ASSIGN_RE
 // (`=\s*['"]`) to decide "this line has a literal assignment". But that pattern
@@ -753,7 +753,7 @@ describe('PART 5 — Multiline-secret regression (FIX 4: matchAll replaces exec-
 // LITERAL_ASSIGN_RE.test() returned false → the WHOLE line was skipped →
 // the hardcoded credential was missed (false negative).
 //
-// FIX 6: the skip now triggers only when the line has an env reference AND
+// the skip now triggers only when the line has an env reference AND
 // contains NO quote characters at all (`'` or `"`). If any quote exists on the
 // line, the line is NOT skipped (there may be a string literal to scan).
 //
@@ -761,10 +761,10 @@ describe('PART 5 — Multiline-secret regression (FIX 4: matchAll replaces exec-
 // AFTER FIX: such lines are scanned normally → hardcoded secrets are flagged.
 // ---------------------------------------------------------------------------
 
-describe('PART 6 — Env-ref line-skip too broad (FIX 6: hardcoded secret alongside env ref IS flagged)', () => {
+describe('PART 6 — Env-ref line-skip too broad (hardcoded secret alongside env ref IS flagged)', () => {
 
   // ── Regression: hardcoded secret + env ref on the same line ────────────────
-  it('FIX 6: hardcoded postgres URL in fallback expression alongside env ref IS flagged (was false negative)', () => {
+  it('hardcoded postgres URL in fallback expression alongside env ref IS flagged (was false negative)', () => {
     // TRIGGER CONDITION (OLD BUG): ENV_REFERENCE_ONLY_RE matches `process.env.DB_URL`;
     // LITERAL_ASSIGN_RE (`=\\s*['"]`) does NOT match because `= process.env...` does not
     // put a quote immediately after `=`, and `||` before the URL is not `=` — so the
@@ -785,7 +785,7 @@ describe('PART 6 — Env-ref line-skip too broad (FIX 6: hardcoded secret alongs
     ).toBe(true)
   })
 
-  it('FIX 6: hardcoded Stripe key in fallback expression alongside env ref IS flagged (was false negative)', () => {
+  it('hardcoded Stripe key in fallback expression alongside env ref IS flagged (was false negative)', () => {
     // Same trigger: `= process.env.STRIPE_KEY` → no `=\s*['"]` match → old code skipped.
     // After fix: `'sk_live_...'` quote present → not skipped → flagged.
     const line = `const sk = process.env.STRIPE_KEY || 'sk_live_abcdefghijklmnopqrstuvwx'`
@@ -798,7 +798,7 @@ describe('PART 6 — Env-ref line-skip too broad (FIX 6: hardcoded secret alongs
   })
 
   // ── Preservation: pure env-reference line (no quotes) still NOT flagged ────
-  it('FIX 6 preservation: a pure env-reference line with no quotes is still NOT flagged', () => {
+  it('a pure env-reference line with no quotes is still NOT flagged', () => {
     // `const x = process.env.SECRET` has no quotes → still skipped → no false positive.
     const line = `const dbUrl = process.env.DATABASE_URL`
     const file = makeFile('lib/db.ts', line)

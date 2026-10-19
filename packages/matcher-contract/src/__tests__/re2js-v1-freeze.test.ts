@@ -1,4 +1,4 @@
-// FIX 7 regression test — RE2JS_V1_ADAPTER_IMPL_HASH and RE2JS_V1_RUNTIME_ID
+// Regression test — RE2JS_V1_ADAPTER_IMPL_HASH and RE2JS_V1_RUNTIME_ID
 //
 // Validates that the two frozen constants in re2js-v1.ts match the current
 // source file's content and the correct runtimeId derivation.
@@ -77,7 +77,7 @@ function blankedSourceBytes(): Buffer {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('RE2JS_V1_ADAPTER_IMPL_HASH — freeze regression (FIX 7)', () => {
+describe('RE2JS_V1_ADAPTER_IMPL_HASH — freeze regression', () => {
   it('matches SHA-256 of the current re2js-v1.ts with both constant-value lines blanked', () => {
     const blanked = blankedSourceBytes()
     const actualHash = createHash('sha256').update(blanked).digest('hex')
@@ -105,7 +105,7 @@ describe('RE2JS_V1_ADAPTER_IMPL_HASH — freeze regression (FIX 7)', () => {
   })
 })
 
-describe('RE2JS_V1_RUNTIME_ID — derivation regression (FIX 7)', () => {
+describe('RE2JS_V1_RUNTIME_ID — derivation regression', () => {
   it('matches computeMatcherRuntimeId with freeze inputs from the 0.5.0 build', () => {
     // Freeze inputs (matcher spec §9.1) documented in re2js-v1.ts:
     //   contractVersion: '0.5.0'

@@ -1,6 +1,6 @@
 /**
  * ShipGuard CLI telemetry — pseudonymous, opt-out, fire-and-forget. Schema v2
- * (contract: agenticcli docs/posthog/contracts/cli-telemetry-v2.md).
+ * (cli-telemetry contract v2).
  *
  * WHAT IS SENT (always and only, exactly these keys):
  *   schema         — 2

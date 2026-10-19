@@ -825,13 +825,13 @@ describe('native-v1: antiPatternScope — context window modes', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 12. Fix 4 (F3-contract): requiresPattern fail-closed behavior
+// 12. requiresPattern fail-closed behavior
 // ---------------------------------------------------------------------------
 
-describe('native-v1: Fix 4 — requiresPattern fails closed (fires finding, not silent zero)', () => {
+describe('native-v1: requiresPattern fails closed (fires finding, not silent zero)', () => {
   it('requiresFile found + requiresPattern set → fails closed (fires finding)', () => {
     // The harness cannot read companion file content to evaluate requiresPattern.
-    // Fix 4: fail closed — fire a finding rather than silently returning zero.
+    // fail closed — fire a finding rather than silently returning zero.
     const matcher = {
       type: 'file-relationship' as const,
       fileGlob: '**/.env',

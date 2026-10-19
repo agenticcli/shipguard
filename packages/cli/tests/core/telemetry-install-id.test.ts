@@ -1,6 +1,6 @@
 /**
  * C4 unit tests: the pseudonymous install id and CI detection.
- * Contract: agenticcli docs/posthog/contracts/cli-telemetry-v2.md sections 4 and 6.
+ * Contract: cli-telemetry v2, sections 4 and 6.
  */
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

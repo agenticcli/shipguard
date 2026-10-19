@@ -1,4 +1,4 @@
-// Task A.5 — Input normalization function tests.
+// Input normalization function tests.
 // TDD: written BEFORE the implementation.
 
 import { describe, it, expect } from 'vitest'
@@ -189,7 +189,7 @@ describe('A.5 — detectBinary', () => {
   })
 
   it('scans beyond the first 8192 bytes (larger window than the live bug)', () => {
-    // Live bug: binary check was first 8192 bytes only (GROUND-TRUTH §1).
+    // Live bug: binary check was first 8192 bytes only.
     // A.5 must scan a larger window OR scan all bytes (NUL-anywhere).
     // Test: NUL at position 9000 (> 8192) must be detected.
     const buf = new Uint8Array(10_000)

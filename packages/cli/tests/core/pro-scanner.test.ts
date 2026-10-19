@@ -41,7 +41,7 @@ describe('runProRules', () => {
 
   it('anti-pattern on the same line suppresses the occurrence (retained as suppressed, not dropped)', () => {
     // UPDATED from the old behavior: the native-v1 adapter implements per-line
-    // anti-pattern suppression per the contract spec (Task A.3). An occurrence
+    // anti-pattern suppression per the contract spec. An occurrence
     // whose line matches an anti-pattern is RETAINED with suppressionState=suppressed
     // and blocking=false — it is NOT silently dropped (old file-wide anti-pattern
     // behavior). This mirrors how shipguard-ignore comment suppression works.
@@ -505,12 +505,12 @@ describe('Finding 4 — execution exceptions fail closed', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Fix 1: blocking decision comes from rule.blocking, not severity coercion
+// blocking decision comes from rule.blocking, not severity coercion
 // ---------------------------------------------------------------------------
 
-describe('Fix 1 — blocking from rule.blocking flag, not severity coercion', () => {
+describe('blocking from rule.blocking flag, not severity coercion', () => {
   it('action=block produces blocking=true finding', () => {
-    // Fix 1: action=block (derived from r.blocking===true) → finding.blocking===true
+    // action=block (derived from r.blocking===true) → finding.blocking===true
     const rule = makeRule({
       id: 'block-rule',
       severity: 'critical',
@@ -526,7 +526,7 @@ describe('Fix 1 — blocking from rule.blocking flag, not severity coercion', ()
   })
 
   it('action=warn produces blocking=false even for critical severity', () => {
-    // Fix 1: action=warn → blocking=false regardless of severity
+    // action=warn → blocking=false regardless of severity
     const rule = makeRule({
       id: 'warn-rule',
       severity: 'critical',
@@ -561,12 +561,12 @@ describe('Fix 1 — blocking from rule.blocking flag, not severity coercion', ()
 })
 
 // ---------------------------------------------------------------------------
-// Fix 3: full matcher field propagation (presenceRule, requiresFile, requiresPattern)
+// full matcher field propagation (presenceRule, requiresFile, requiresPattern)
 // ---------------------------------------------------------------------------
 
-describe('Fix 3 — full matcher field propagation from ExecutableRule', () => {
+describe('full matcher field propagation from ExecutableRule', () => {
   it('file-relationship rule with requiresFile fires finding when companion absent', () => {
-    // Fix 3: the context.requiresFile must be propagated from the rule's requiresFile field,
+    // the context.requiresFile must be propagated from the rule's requiresFile field,
     // not lost during the ExecutableRule→QualityGateRule mapping.
     const rule = makeRule({
       id: 'fr-with-requiresFile',
@@ -611,7 +611,7 @@ describe('Fix 3 — full matcher field propagation from ExecutableRule', () => {
   })
 
   it('file-relationship rule with requiresPattern fails closed (fires finding)', () => {
-    // Fix 3 + Fix 4: requiresPattern in file-relationship must fail closed.
+    // requiresPattern in file-relationship must fail closed.
     // The harness cannot evaluate the pattern (no file content available),
     // so it should fire a finding rather than silently returning zero.
     const rule = makeRule({
@@ -638,7 +638,7 @@ describe('Fix 3 — full matcher field propagation from ExecutableRule', () => {
 })
 
 // ---------------------------------------------------------------------------
-// FIX 1 (CRITICAL): end-to-end scope/boundary test through pro-scanner's mapping
+// end-to-end scope/boundary test through pro-scanner's mapping
 //
 // Proves that antiPatternScope:'block' delivered from the wire ExecutableRule
 // is correctly propagated through the fetchProRules mapping into the QualityGateRule
@@ -647,7 +647,7 @@ describe('Fix 3 — full matcher field propagation from ExecutableRule', () => {
 // This is the proof that the CLI now honors the signed corpus scope (Gate-C ≡ production).
 // ---------------------------------------------------------------------------
 
-describe('FIX 1 — antiPatternScope propagated through pro-scanner mapping (end-to-end)', () => {
+describe('antiPatternScope propagated through pro-scanner mapping (end-to-end)', () => {
   // The test pattern: 'eval\\(' fires on any line containing eval(
   // The anti-pattern: 'SAFE' suppresses the finding if 'SAFE' is in the scope window
   //
@@ -672,7 +672,7 @@ describe('FIX 1 — antiPatternScope propagated through pro-scanner mapping (end
   //   - Window = lines [1..4]; "SAFE" is found on line 2 → The match IS suppressed
   //
   // The test builds QualityGateRule objects that SIMULATE what fetchProRules builds after
-  // the FIX 1 mapping — i.e. the matcher object INCLUDES antiPatternScope from the wire rule.
+  // the mapping — i.e. the matcher object INCLUDES antiPatternScope from the wire rule.
   // This goes THROUGH the runProRules execution path (same as production), not a direct executor call.
 
   const FILE_CONTENT = 'if (cond) {\n  // SAFE\n  eval(x)\n}'
@@ -685,7 +685,7 @@ describe('FIX 1 — antiPatternScope propagated through pro-scanner mapping (end
       antiPatterns: ['SAFE'],
       flags: '',
     }
-    // Only include antiPatternScope when set — mirrors the FIX 1 mapping behavior:
+    // Only include antiPatternScope when set — mirrors the mapping behavior:
     // '...(rAny["antiPatternScope"] !== undefined && { antiPatternScope: rAny["antiPatternScope"] })'
     if (scope !== undefined) {
       matcher.antiPatternScope = scope
@@ -719,7 +719,7 @@ describe('FIX 1 — antiPatternScope propagated through pro-scanner mapping (end
     // → The match on line 2 is suppressed.
     //
     // This is the critical proof: if antiPatternScope were NOT propagated through the mapping
-    // (FIX 1 bug), both 'statement' and 'block' would behave identically (defaulting to
+    // (the old bug), both 'statement' and 'block' would behave identically (defaulting to
     // 'statement') — and this test would FAIL because the finding would NOT be suppressed.
     const ruleBlock = makeRuleWithScope('block')
     const findings = runProRules(
@@ -754,17 +754,17 @@ describe('FIX 1 — antiPatternScope propagated through pro-scanner mapping (end
 })
 
 // ---------------------------------------------------------------------------
-// FIX 2 (HIGH): action:block blocks regardless of severity — no reconstruction
+// action:block blocks regardless of severity — no reconstruction
 //
 // Proves that an action:block rule produces blocking:true in findings regardless
 // of severity (even medium). This was the false-negative for medium-severity
 // block rules like flask.redirect.open-redirect.
 // ---------------------------------------------------------------------------
 
-describe('FIX 2 — action:block blocks regardless of severity (no severity-based reconstruction)', () => {
+describe('action:block blocks regardless of severity (no severity-based reconstruction)', () => {
   it('action:block with medium severity produces blocking:true (flask.redirect.open-redirect pattern)', () => {
     // This is the exact failure mode: severity:medium → blocking:false (old) → action:'warn' (old)
-    // After FIX 2: action comes directly from the rule (not reconstructed from blocking),
+    // action comes directly from the rule (not reconstructed from blocking),
     // so action:block always → blocking:true in the finding.
     const rule = makeRule({
       id: 'test.medium.block-rule',
@@ -797,7 +797,7 @@ describe('FIX 2 — action:block blocks regardless of severity (no severity-base
   })
 
   it('action:warn with critical severity produces blocking:false', () => {
-    // Inverse of FIX 2: action:warn should NOT block even for critical severity.
+    // Inverse: action:warn should NOT block even for critical severity.
     const rule = makeRule({
       id: 'test.critical.warn-rule',
       severity: 'critical',

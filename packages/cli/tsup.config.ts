@@ -29,7 +29,7 @@ export default defineConfig({
   // Post-build: generate dist/checksum-manifest.json so the CLI can verify
   // each dispatched coderef module against its build-time SHA-256 hash.
   // Runs AFTER tsup writes dist/ — zero new runtime deps (Node crypto only).
-  // GC.12 / C.10: fail-closed on tampered coderef module (not a silent skip).
+  // fail-closed on tampered coderef module (not a silent skip).
   // Post-build generators, in order:
   //  1. checksum-manifest.json — SHA-256 of each emitted chunk, for coderef dispatch.
   //  2. cli-facts.json — the machine-readable facts document the agenticcli web site and

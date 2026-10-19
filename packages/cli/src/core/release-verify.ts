@@ -7,21 +7,21 @@
 //   - Any step failure → { ok: false, reason, nonSafe: true }.
 //   - Floor durability: write-temp → fsync(temp) → rename → fsync(dir).
 //
-// GC attacks blocked:
-//   GC.1  — tampered manifest: attestation sig rejects
-//   GC.2  — dropped rule: verifyExactSet missing-rule violation
-//   GC.3  — extra/duplicate rule: verifyExactSet extra-rule/duplicate-id violation
-//   GC.4  — sequence floor: incoming < floor.sequence → REJECT
-//   GC.4a — idempotent re-fetch: same tuple accepted, floor not updated
-//   GC.4b — expired freshness: clock check rejects
-//   GC.4c — wrong-role freshness key: verifyFreshness role check rejects
-//   GC.4d — freshness bound to different manifest: manifestDigest cross-check rejects
-//   GC.4e — gap in sequence (floor+3): accepted (gap-tolerant)
-//   GC.7  — replay with different scanId: requestDigest cross-check rejects
-//   GC.8  — bundle key used for attestation: resolveAndImportKey role check rejects
-//   GC.9b — duplicate JSON key: parseStrictNoDup rejects before any crypto
-//   GC.10 — bundle key for attestation: role check on kid rejects
-//   GC.16c— floor write failure: scan completes non-safe
+// Attacks blocked:
+//   tampered manifest: attestation sig rejects
+//   dropped rule: verifyExactSet missing-rule violation
+//   extra/duplicate rule: verifyExactSet extra-rule/duplicate-id violation
+//   sequence floor: incoming < floor.sequence → REJECT
+//   idempotent re-fetch: same tuple accepted, floor not updated
+//   expired freshness: clock check rejects
+//   wrong-role freshness key: verifyFreshness role check rejects
+//   freshness bound to different manifest: manifestDigest cross-check rejects
+//   gap in sequence (floor+3): accepted (gap-tolerant)
+//   replay with different scanId: requestDigest cross-check rejects
+//   bundle key used for attestation: resolveAndImportKey role check rejects
+//   duplicate JSON key: parseStrictNoDup rejects before any crypto
+//   bundle key for attestation: role check on kid rejects
+//   floor write failure: scan completes non-safe
 //   runtimeId-mismatch — manifest.matcherRuntimeId !== RE2JS_V1_RUNTIME_ID: REJECT
 
 import * as fs from 'node:fs'
@@ -86,11 +86,11 @@ export type VerifyResult = VerifyOk | VerifyFail
 
 /** Canonical executable-rule form (matcher spec §3.1, contract 0.5.1). */
 export interface ExecutableRule {
-  // FIX 1+2 (0.5.0): action and blocking are now in the hash preimage.
+  // 0.5.0: action and blocking are now in the hash preimage.
   action?: 'block' | 'warn' | 'monitor'
   antiBoundary?: 'none' | 'word' | 'token'
   antiPattern?: string
-  // FIX 1+2 (0.5.0): antiPatternScope and boundary are now in the hash preimage.
+  // 0.5.0: antiPatternScope and boundary are now in the hash preimage.
   // Tampering these fields now causes the recomputed hash to disagree with the manifest.
   antiPatternScope?: 'statement' | 'block' | 'function' | 'file' | { lines: number }
   blocking?: boolean
@@ -98,7 +98,7 @@ export interface ExecutableRule {
   categories?: string[]
   /**
    * 0.5.1 (per-rule confidence — hardcoded-confidence fix): per-rule detection confidence from the
-   * corpus governance model (rule-corpus/rule-logic.md §4). REQUIRED and hashed — a bundle
+   * corpus governance model. REQUIRED and hashed — a bundle
    * whose rules lack confidence FAILS validation (fail-closed); the CLI never defaults to HIGH.
    */
   confidence: 'HIGH' | 'MEDIUM' | 'LOW'
@@ -249,7 +249,7 @@ export function compareFloorTuples(floor: CliFloorTuple, incoming: CliFloorTuple
  *   4. Write durably (write-temp → fsync → rename → fsync-dir) BEFORE returning accepted.
  *
  * @throws if the lock cannot be acquired (timeout) or if a durability write step fails.
- *         Callers should translate those throws into non-safe scan results (GC.16c).
+ *         Callers should translate those throws into non-safe scan results.
  */
 function atomicAcceptFloor(floorPath: string, incoming: CliFloorTuple): FloorAcceptResult {
   const lockPath = `${floorPath}.lock`
@@ -263,7 +263,7 @@ function atomicAcceptFloor(floorPath: string, incoming: CliFloorTuple): FloorAcc
   const releaseLock = acquireFloorLock(lockPath)
   try {
     // ── Under-lock: read current floor ────────────────────────────────────────
-    // Fix 2: read-first approach — distinguish ENOENT (genuine first-use) from
+    // read-first approach — distinguish ENOENT (genuine first-use) from
     // other I/O errors (corruption/permission problem → fail closed).
     // The existsSync() approach had a TOCTOU and conflated ENOENT with other errors.
     let lockedFloor: CliFloorTuple | null = null
@@ -290,7 +290,7 @@ function atomicAcceptFloor(floorPath: string, incoming: CliFloorTuple): FloorAcc
       try {
         lockedFloor = parseStrictNoDup(rawFloor) as CliFloorTuple
         // Validate the parsed floor has the required fields AND safe-integer values.
-        // Fix 2: Number.isSafeInteger() guards against float/NaN/Infinity injection.
+        // Number.isSafeInteger() guards against float/NaN/Infinity injection.
         if (
           typeof lockedFloor.sequence !== 'number' ||
           !Number.isSafeInteger(lockedFloor.sequence) ||
@@ -367,12 +367,12 @@ function atomicAcceptFloor(floorPath: string, incoming: CliFloorTuple): FloorAcc
  *
  * Implements matcher spec §7.2 verification order (all 7 steps):
  *  0. Parse all 5 components with duplicate-detecting parser
- *  1. Verify corpusAttestation (GC.1, GC.8, GC.10)
- *  2. Verify bundleEnvelope (GC.7)
- *  3. Verify freshnessTok (GC.4b, GC.4c, GC.4d)
- *  4. Verify completeness — exact multiset (GC.2, GC.3)
+ *  1. Verify corpusAttestation
+ *  2. Verify bundleEnvelope
+ *  3. Verify freshnessTok
+ *  4. Verify completeness — exact multiset
  *  5. Verify matcherRuntimeId === RE2JS_V1_RUNTIME_ID (runtimeId-mismatch)
- *  6. Sequence floor anti-downgrade (GC.4, GC.16c)
+ *  6. Sequence floor anti-downgrade
  *  7. Return selectedRules (plaintext in attested format)
  */
 export async function verifyBundleResponse(
@@ -573,7 +573,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-1b: Validate manifest.rules[] entries (Fix 9 — recursive schema)
+  // 0b-1b: Validate manifest.rules[] entries (recursive schema)
   {
     const manifestRulesArr = manifest['rules'] as unknown[]
     const MANIFEST_RULE_REQUIRED = ['id', 'executableHash', 'enabled', 'framework', 'tier', 'severity', 'matcherType', 'title', 'flags', 'sourceYamlDigest']
@@ -610,7 +610,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-1c: Validate manifest.capProfile fields (Fix 9 — recursive schema)
+  // 0b-1c: Validate manifest.capProfile fields (recursive schema)
   {
     const cap = manifest['capProfile']
     if (cap === null || typeof cap !== 'object' || Array.isArray(cap)) {
@@ -631,7 +631,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-1d: Validate manifest.matcherEngineOptions (Fix 9 — recursive schema)
+  // 0b-1d: Validate manifest.matcherEngineOptions (recursive schema)
   {
     const opts = manifest['matcherEngineOptions']
     if (opts === null || typeof opts !== 'object' || Array.isArray(opts)) {
@@ -649,7 +649,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-4b: Validate envelope.expectedRuleSet entries (Fix 9 — recursive schema)
+  // 0b-4b: Validate envelope.expectedRuleSet entries (recursive schema)
   {
     const expectedSet = envelope['expectedRuleSet'] as unknown[]
     for (let i = 0; i < expectedSet.length; i++) {
@@ -673,7 +673,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-4c: Validate envelope.frameworks entries (Fix 9 — recursive schema)
+  // 0b-4c: Validate envelope.frameworks entries (recursive schema)
   {
     const frameworks = envelope['frameworks']
     if (!Array.isArray(frameworks)) {
@@ -738,8 +738,8 @@ export async function verifyBundleResponse(
       }
 
       // Type/enum validation
-      // 0.5.1 (per-rule confidence): confidence must be exactly HIGH|MEDIUM|LOW (corpus governance enum,
-      // rule-corpus/rule-logic.md §4). Any other value is a schema violation → reject nonSafe.
+      // 0.5.1 (per-rule confidence): confidence must be exactly HIGH|MEDIUM|LOW (corpus governance enum).
+      // Any other value is a schema violation → reject nonSafe.
       if (typeof rObj['confidence'] !== 'string' || !VALID_CONFIDENCE.has(rObj['confidence'] as string)) {
         return { ok: false, reason: `selectedRules[${i}].confidence must be "HIGH"|"MEDIUM"|"LOW", got "${String(rObj['confidence'])}"`, nonSafe: true }
       }
@@ -779,7 +779,7 @@ export async function verifyBundleResponse(
           return { ok: false, reason: `selectedRules[${i}].antiBoundary must be none|word|token`, nonSafe: true }
         }
       }
-      // FIX 1+2: validate antiPatternScope — string enum OR {lines:N} object
+      // validate antiPatternScope — string enum OR {lines:N} object
       if ('antiPatternScope' in rObj && rObj['antiPatternScope'] !== undefined) {
         const scope = rObj['antiPatternScope']
         const VALID_SCOPE_STRINGS = new Set(['statement', 'block', 'function', 'file'])
@@ -802,7 +802,7 @@ export async function verifyBundleResponse(
           return { ok: false, reason: `selectedRules[${i}].blocking must be a boolean`, nonSafe: true }
         }
       }
-      // FIX 1+2: validate boundary — now part of hash preimage
+      // validate boundary — now part of hash preimage
       if ('boundary' in rObj && rObj['boundary'] !== undefined) {
         if (typeof rObj['boundary'] !== 'string' || !VALID_BOUNDARY.has(rObj['boundary'] as string)) {
           return { ok: false, reason: `selectedRules[${i}].boundary must be "none"|"word"|"token"`, nonSafe: true }
@@ -826,7 +826,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // ── Step 1: Verify corpusAttestation (GC.1, GC.8, GC.10) ─────────────────
+  // ── Step 1: Verify corpusAttestation ─────────────────
   // 1a. Recompute manifestDigest = SHA-256("shipguard-manifest-v1\x00" + JCS(manifest))
   const manifestDigest = sha256hex('shipguard-manifest-v1\x00' + canonicalJson(manifest))
 
@@ -871,7 +871,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 1e. Verify attestation signature (rejects wrong role: GC.8, GC.10)
+  // 1e. Verify attestation signature (rejects wrong role)
   try {
     // Build attestation-without-signature
     const { signature: _sig, ...attestationWithoutSig } = attestation as Record<string, unknown> & { signature: string }
@@ -884,7 +884,7 @@ export async function verifyBundleResponse(
     return { ok: false, reason: `attestation-verify-failed: ${msg}`, nonSafe: true }
   }
 
-  // ── Step 2: Verify bundleEnvelope (GC.7) ──────────────────────────────────
+  // ── Step 2: Verify bundleEnvelope ──────────────────────────────────
   // 2a. Compute requestDigest = SHA-256(JCS({frameworks, options, scanId}))
   // matcher spec §3.5: "SHA-256 of the canonical request object (frameworks + options + scanId)"
   // No domain prefix defined for the request object — use plain canonicalJson
@@ -917,7 +917,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 2c. Verify envelope signature (GC.7: replay for different scanId blocked by requestDigest)
+  // 2c. Verify envelope signature (replay for different scanId blocked by requestDigest)
   try {
     const { signature: _eSig, ...envelopeWithoutSig } = envelope as Record<string, unknown> & { signature: string }
     const envPreimage = new TextEncoder().encode(
@@ -929,7 +929,7 @@ export async function verifyBundleResponse(
     return { ok: false, reason: `envelope-verify-failed: ${msg}`, nonSafe: true }
   }
 
-  // ── Step 3: Verify freshnessTok (GC.4b, GC.4c, GC.4d) ───────────────────
+  // ── Step 3: Verify freshnessTok ───────────────────
   // 3a. Freshness clock checks
   const nowFresh = Math.floor(Date.now() / 1000)
   const issuedAt = freshnessTok['issuedAt'] as number
@@ -969,12 +969,12 @@ export async function verifyBundleResponse(
   if (freshnessTok['manifestDigest'] !== manifestDigest) {
     return {
       ok: false,
-      reason: `freshnessTok.manifestDigest mismatch — token bound to a different manifest (GC.4d)`,
+      reason: `freshnessTok.manifestDigest mismatch — token bound to a different manifest`,
       nonSafe: true,
     }
   }
 
-  // 3c. Verify freshness signature (GC.4c: wrong-role key rejects via resolveAndImportKey)
+  // 3c. Verify freshness signature (wrong-role key rejects via resolveAndImportKey)
   try {
     const { signature: _fSig, ...freshnessWithoutSig } = freshnessTok as Record<string, unknown> & { signature: string }
     const freshPreimage = new TextEncoder().encode(
@@ -986,7 +986,7 @@ export async function verifyBundleResponse(
     return { ok: false, reason: `freshness-verify-failed: ${msg}`, nonSafe: true }
   }
 
-  // ── Step 4: Completeness — exact multiset (GC.2, GC.3) ───────────────────
+  // ── Step 4: Completeness — exact multiset ───────────────────
   // 4a. Compute per-rule hashes and verify against manifest entries
   // Build a map of manifest entries for O(1) lookup
   const manifestRuleMap = new Map<string, Record<string, unknown>>()
@@ -1089,7 +1089,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // ── Step 6: Sequence floor anti-downgrade (GC.4, GC.16c) ─────────────────
+  // ── Step 6: Sequence floor anti-downgrade ─────────────────
   // Finding 1 fix: ALL of read → compare → accept-decision → write happen under
   // ONE advisory lock via atomicAcceptFloor(). The pre-lock loadFloor + post-lock
   // write pattern was a TOCTOU: a concurrent seq-3 could write first while seq-2
@@ -1132,7 +1132,7 @@ export async function verifyBundleResponse(
     floorResult = atomicAcceptFloor(floorPath, incomingTuple)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    // Lock timeout or durable-write I/O failure → non-safe (GC.16c)
+    // Lock timeout or durable-write I/O failure → non-safe
     return {
       ok: false,
       reason: `floor-write-failure: ${msg}`,

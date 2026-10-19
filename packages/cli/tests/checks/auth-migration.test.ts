@@ -967,7 +967,7 @@ router.get('/billing/subscribe', h4)`
 })
 
 // ---------------------------------------------------------------------------
-// PART 5: TEMPLATE-INTERPOLATION REGRESSION — FIX 14 (MEDIUM: false positive)
+// PART 5: TEMPLATE-INTERPOLATION REGRESSION — MEDIUM: false positive
 //
 // The bug: the lexer dropped the ENTIRE template literal including ${…} contents,
 // so an auth call inside `${requireAuth(req)}` was not seen as executable.
@@ -976,7 +976,7 @@ router.get('/billing/subscribe', h4)`
 // Fix: lex ${…} contents as EXECUTABLE; only template TEXT segments are non-exec.
 // ---------------------------------------------------------------------------
 
-describe('PART 5 — Template-interpolation regression (FIX 14: ${} emitted as executable)', () => {
+describe('PART 5 — Template-interpolation regression (${} emitted as executable)', () => {
 
   it('REGRESSION: auth call inside ${…} is recognized — no spurious unprotected-route finding', () => {
     // A Next.js admin page where the auth check is inside a template interpolation.
@@ -1037,7 +1037,7 @@ export default async function AdminPage() {
 })
 
 // ---------------------------------------------------------------------------
-// PART 6: INTERPOLATION-SPOOF REGRESSION — FIX 3 (HIGH: false negative / auth bypass)
+// PART 6: INTERPOLATION-SPOOF REGRESSION — HIGH: false negative / auth bypass
 //
 // The bug: the interpolation body was scanned with a plain brace-depth counter
 // that did NOT lex strings or comments inside `${…}`. This caused string literals
@@ -1051,10 +1051,10 @@ export default async function AdminPage() {
 // `${…}` as non-executable, so only real code calls are recognised as auth.
 // ---------------------------------------------------------------------------
 
-describe('PART 6 — Interpolation-spoof regression (FIX 3: string inside ${} is non-executable)', () => {
+describe('PART 6 — Interpolation-spoof regression (string inside ${} is non-executable)', () => {
 
   // ── (a) String literal with auth call name as content — should NOT suppress ──
-  it('(a) FIX 3: ${"requireAuth()"} (auth name as STRING) does NOT suppress unprotected finding', () => {
+  it('(a) ${"requireAuth()"} (auth name as STRING) does NOT suppress unprotected finding', () => {
     // BEFORE FIX: `"requireAuth()"` was emitted as executable → AUTH_CALL_PATTERN matched
     //             `requireAuth(` → route appeared protected → no finding (FALSE NEGATIVE).
     // AFTER FIX:  the string `"requireAuth()"` is classified as non-executable → pattern
@@ -1072,7 +1072,7 @@ describe('PART 6 — Interpolation-spoof regression (FIX 3: string inside ${} is
   })
 
   // ── (b) Single-quoted string — likewise must not suppress ──────────────────
-  it("(b) FIX 3: \${'isAuthenticated'} (auth name as single-quoted STRING) does NOT suppress finding", () => {
+  it("(b) \${'isAuthenticated'} (auth name as single-quoted STRING) does NOT suppress finding", () => {
     const content = `export default async function AdminPage() {
   const label = \`Auth function: \${'isAuthenticated'}\`
   return <div>{label}</div>
@@ -1084,7 +1084,7 @@ describe('PART 6 — Interpolation-spoof regression (FIX 3: string inside ${} is
   })
 
   // ── (c) REAL auth call in interpolation — must still be recognized ─────────
-  it('(c) FIX 3: ${requireAuth(req)} (REAL call in interpolation) IS recognized — no finding', () => {
+  it('(c) ${requireAuth(req)} (REAL call in interpolation) IS recognized — no finding', () => {
     // This test verifies the fix does NOT introduce a false positive: a genuine
     // auth call inside `${…}` must still be seen as executable.
     const content = `import { requireAuth } from '@/auth'
@@ -1100,7 +1100,7 @@ export default async function AdminPage(req: Request) {
   })
 
   // ── (d) Brace inside string inside interpolation — must NOT truncate ────────
-  it('(d) FIX 3: brace inside a string inside ${} does NOT truncate the interpolation span', () => {
+  it('(d) brace inside a string inside ${} does NOT truncate the interpolation span', () => {
     // The old depth-counter treated `{` inside a string as increasing depth.
     // So `${"{" + requireAuth(req)}` would: open at `${` (depth=1), increment at
     // the `{` inside the string (depth=2), then close at the `}` of the string
@@ -1128,7 +1128,7 @@ export default async function AdminPage(req: Request) {
 })
 
 // ---------------------------------------------------------------------------
-// PART 7: REGEX-LITERAL AUTH SPOOF REGRESSION — FIX 1 (HIGH: false negative)
+// PART 7: REGEX-LITERAL AUTH SPOOF REGRESSION — HIGH: false negative
 //
 // The bug (pre-fix): regex literal bodies were emitted as EXECUTABLE text.
 // A decoy like `const x = /requireAuth()/` caused the lexer to emit `requireAuth(`
@@ -1144,10 +1144,10 @@ export default async function AdminPage(req: Request) {
 // identifier, digit, `.`) is treated as division, not a regex start.
 // ---------------------------------------------------------------------------
 
-describe('PART 7 — Regex-literal auth spoof regression (FIX 1: regex body is non-executable)', () => {
+describe('PART 7 — Regex-literal auth spoof regression (regex body is non-executable)', () => {
 
   // ── (a) Decoy regex literal — should NOT suppress unprotected finding ────────
-  it('(a) FIX 1: const x = /requireAuth()/ (regex literal) does NOT suppress unprotected-route finding', () => {
+  it('(a) const x = /requireAuth()/ (regex literal) does NOT suppress unprotected-route finding', () => {
     // BEFORE FIX: the regex body `requireAuth()` was emitted as executable text,
     //             causing AUTH_CALL_PATTERN to match → route appeared protected → NO finding.
     // AFTER FIX:  regex body is a non-executable gap → pattern does NOT match → route IS flagged.
@@ -1163,7 +1163,7 @@ describe('PART 7 — Regex-literal auth spoof regression (FIX 1: regex body is n
   })
 
   // ── (b) Another regex decoy form ─────────────────────────────────────────────
-  it('(b) FIX 1: /verifyToken\\(/ regex literal does NOT suppress finding', () => {
+  it('(b) /verifyToken\\(/ regex literal does NOT suppress finding', () => {
     const content = `export default function AdminPage() {
   const re = /verifyToken\(/
   return <div/>
@@ -1175,7 +1175,7 @@ describe('PART 7 — Regex-literal auth spoof regression (FIX 1: regex body is n
   })
 
   // ── (c) REAL auth call is still recognized (no regression) ───────────────────
-  it('(c) FIX 1: real requireAuth(req) call (not in a regex) IS recognized — no finding', () => {
+  it('(c) real requireAuth(req) call (not in a regex) IS recognized — no finding', () => {
     const content = `import { requireAuth } from '@/auth'
 export default async function AdminPage(req: Request) {
   requireAuth(req)
@@ -1188,7 +1188,7 @@ export default async function AdminPage(req: Request) {
   })
 
   // ── (d) Division operator is not mis-lexed as a regex ────────────────────────
-  it('(d) FIX 1: division like `a / requireAuth.length / 2` is NOT mis-lexed as a regex — finding still emitted', () => {
+  it('(d) division like `a / requireAuth.length / 2` is NOT mis-lexed as a regex — finding still emitted', () => {
     // The `/` after `a` (an identifier) is a division operator, not a regex start.
     // The text `requireAuth.length` after the first `/` is still code (division context),
     // so it's emitted as executable. requireAuth.length does NOT match AUTH_CALL_PATTERN
@@ -1207,7 +1207,7 @@ export default async function AdminPage(req: Request) {
 })
 
 // ---------------------------------------------------------------------------
-// PART 8: NESTED-TEMPLATE REAL AUTH CALL REGRESSION — FIX 2 (MEDIUM: false positive)
+// PART 8: NESTED-TEMPLATE REAL AUTH CALL REGRESSION — MEDIUM: false positive
 //
 // The bug (pre-fix): `lexInterpolationBody` discarded `inner.execText` from nested
 // template interpolations. A real auth call inside a doubly-nested interpolation
@@ -1217,13 +1217,13 @@ export default async function AdminPage(req: Request) {
 // BEFORE FIX: inner execText dropped → requireAuth(req) not seen → false positive.
 // AFTER FIX:  inner execText appended → requireAuth(req) is seen → no finding.
 //
-// The regex-literal exclusion (FIX 1) applies recursively inside nested bodies too.
+// The regex-literal exclusion applies recursively inside nested bodies too.
 // ---------------------------------------------------------------------------
 
-describe('PART 8 — Nested-template real auth call regression (FIX 2: inner execText propagated)', () => {
+describe('PART 8 — Nested-template real auth call regression (inner execText propagated)', () => {
 
   // ── (a) Real auth call in doubly-nested interpolation ────────────────────────
-  it('(a) FIX 2: real requireAuth(req) in doubly-nested `${`${requireAuth(req)}`}` IS recognized — no finding', () => {
+  it('(a) real requireAuth(req) in doubly-nested `${`${requireAuth(req)}`}` IS recognized — no finding', () => {
     // BEFORE FIX: inner.execText was discarded → requireAuth(req) not seen → route
     //             flagged as unprotected (false positive).
     // AFTER FIX:  inner.execText is appended → requireAuth(req) is detected → no finding.
@@ -1239,7 +1239,7 @@ export default async function AdminPage(req: Request) {
   })
 
   // ── (b) String spoof inside doubly-nested interpolation — still flagged ──────
-  it('(b) FIX 2: string spoof `${`${"requireAuth()"}`}` (string inside nested template) still flagged', () => {
+  it('(b) string spoof `${`${"requireAuth()"}`}` (string inside nested template) still flagged', () => {
     // The string literal `"requireAuth()"` inside the nested interpolation is
     // non-executable — the recursive call already classifies it correctly.
     // Even after propagating inner.execText, the string content is NOT in execText.

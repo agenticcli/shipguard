@@ -117,7 +117,7 @@ describe('fetchProRules classifies every failure class via ProFetchError', () =>
     expect((err as Error).message).toMatch(/ECONNREFUSED/)
   })
 
-  it('422 WITHOUT NO_RULES_APPLIED code → ProFetchError BUNDLE_INVALID (distinct from the P0-5 hard error)', async () => {
+  it('422 WITHOUT NO_RULES_APPLIED code → ProFetchError BUNDLE_INVALID (distinct from the hard error)', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(422, { error: 'some other validation issue' }))
     const { fetchProRules, ProFetchError, NoRulesAppliedError } = await import('../../src/core/pro-scanner.js')
     const err = await fetchProRules(['nextjs'], undefined, API_URL).catch((e) => e)
@@ -126,7 +126,7 @@ describe('fetchProRules classifies every failure class via ProFetchError', () =>
     expect((err as InstanceType<typeof ProFetchError>).code).toBe('BUNDLE_INVALID')
   })
 
-  it('422 WITH NO_RULES_APPLIED code → still NoRulesAppliedError, NOT a ProFetchError (P0-5 unaffected)', async () => {
+  it('422 WITH NO_RULES_APPLIED code → still NoRulesAppliedError, NOT a ProFetchError', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(
       jsonResponse(422, { error: 'empty bundle', code: 'NO_RULES_APPLIED' }),
     )

@@ -47,7 +47,7 @@ const REQUIRED_TOP_LEVEL = [
   'schemaVersion',
   'degraded',
   'creditsWarning',
-  // E5 (schemaVersion 2 → 3): the local history store's persistence outcome and whether the
+  // schemaVersion 2 → 3: the local history store's persistence outcome and whether the
   // regression comparison ran are always populated, success or failure — see history/index.ts.
   'stateStatus',
   'regressionCheckSkipped',
@@ -67,7 +67,7 @@ const OPTIONAL_TOP_LEVEL = [
   'rulesVersion',
   'aiCodeIssues',
   'degradedReasons',
-  // E5 — present only when regressionCheckSkipped is true (reason) or false (the two lists).
+  // Present only when regressionCheckSkipped is true (reason) or false (the two lists).
   'regressionCheckSkippedReason',
   'regressions',
   'coverageChanged',

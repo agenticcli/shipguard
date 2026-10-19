@@ -381,7 +381,7 @@ function evaluatePattern(
       // rule-corpus change away from being armed, and the failure would be invisible: a
       // green scan is exactly what a skipped rule looks like.
       //
-      // The re2js executor already throws here (its FIX 5 atomic-compile contract). This
+      // The re2js executor already throws here (its atomic-compile contract). This
       // brings the native fallback to the same behaviour, so which executor is active can
       // never change whether a broken rule is loud or silent.
       const detail = err instanceof Error ? err.message : String(err)
@@ -445,7 +445,7 @@ function evaluatePattern(
             // Skipping a broken anti-pattern is WORSE than skipping a broken pattern: the
             // rule keeps firing but without the guard that stops it firing on legitimate
             // code, so the user gets false positives with no indication that the rule is
-            // running half-configured. Same reasoning as re2js-v1's FIX 5, which already
+            // running half-configured. Same reasoning as re2js-v1's atomic-compile contract, which already
             // refuses to run a rule whose anti-pattern would not compile.
             const detail = err instanceof Error ? err.message : String(err)
             // eslint-disable-next-line no-console
@@ -549,7 +549,7 @@ function evaluateFileRelationship(
     // Companion file IS found AND requiresPattern IS set.
     // The harness provides allRelativePaths but NOT file content, so we cannot
     // evaluate the pattern against the companion file.
-    // Fix 4 (F3-contract): fail closed — fire a finding rather than silently returning
+    // fail closed — fire a finding rather than silently returning
     // zero findings. A silent zero is a false negative: a rule that checks
     // "companion file must contain X" would never fire even when X is absent.
     return [
@@ -569,7 +569,7 @@ function evaluateFileRelationship(
   }
 
   // requiresPattern without requiresFile: the harness provides only paths, not content.
-  // Fix 4 (F3-contract): fail closed — fire a finding instead of returning zero.
+  // fail closed — fire a finding instead of returning zero.
   // A silent zero is a false negative on a signed rule that requires a content check.
   return [
     {
@@ -603,7 +603,7 @@ function evaluateFileRelationship(
  *   severity → 'medium'
  *   blocking → false
  *
- * The CLI integration layer (Task A-CLI-INT.2) will wrap this executor with
+ * The CLI integration layer will wrap this executor with
  * a rule-aware shim that injects the real id/severity/blocking before delegating
  * to evaluate().
  */

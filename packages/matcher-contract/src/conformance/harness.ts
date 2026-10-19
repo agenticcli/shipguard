@@ -1,4 +1,4 @@
-// Task A.12 — Conformance harness
+// Conformance harness
 //
 // runConformance(executor, vectors) — injects a MatcherExecutor and asserts
 // byte-identical canonical findings for executor-dependent vectors.

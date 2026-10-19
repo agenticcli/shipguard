@@ -1,8 +1,8 @@
 /**
- * E5 end-to-end wiring proof — spawns the BUILT binary (not an in-process mock) so this
+ * History end-to-end wiring proof — spawns the BUILT binary (not an in-process mock) so this
  * asserts the REAL `scan --json` contract and the REAL `shipguard history` command, the
  * same way scan-json-schema-freeze.test.ts pins the frozen schema. Covers the exact
- * evidence the E5 dispatch asked for: the coverage-changed-vs-regression guard AND
+ * evidence asked for: the coverage-changed-vs-regression guard AND
  * DB-unavailable-never-blocks-a-scan, both through the production command surface.
  */
 import { execSync } from 'node:child_process'
@@ -62,7 +62,7 @@ beforeAll(() => {
   }
 }, 120_000)
 
-describe('E5 end-to-end: scan --json history fields + shipguard history', () => {
+describe('history end-to-end: scan --json history fields + shipguard history', () => {
   it('first scan of a fresh repo → stateStatus complete, regressionCheckSkipped (no baseline yet)', async () => {
     const fixture = mkFixture()
     const { code, json } = (await scanJson(fixture))

@@ -1,4 +1,4 @@
-// Task A.12 — Conformance vector data
+// Conformance vector data
 //
 // A STRUCTURED set of input fixtures → expected canonical findings +
 // expected canonical-JSON hashes. Used by the conformance harness.
