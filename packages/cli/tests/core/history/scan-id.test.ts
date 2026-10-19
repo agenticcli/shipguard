@@ -15,7 +15,7 @@
  * FIX: `resolveScanId` (history/scan-id.ts) computes a PRE-scan reuse key (requested scope +
  * whether `--pro` was requested + a local-only working-tree content identity — see
  * identity.ts's `resolveContentIdentity`) and looks it up in a new sibling SQLite table,
- * `scan_id_reservations` (schema.ts migration 2), reusing the E5 history store rather than a
+ * `scan_id_reservations` (schema.ts migration 2), reusing the history store rather than a
  * second persistence layer. A hit within the reuse window reuses the prior scanId; a miss (or
  * an expired hit) mints + persists a fresh one. Every failure mode (Node <22.5, corrupt/locked
  * store, no resolvable git HEAD) falls back to today's exact behavior: a fresh in-memory

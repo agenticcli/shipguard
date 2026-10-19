@@ -7,12 +7,12 @@
 //    for a non-matching input of length 20+ (native RegExp would hang).
 // 3. RE2JS_V1_RUNTIME_ID is deterministic, frozen, and differs from
 //    NATIVE_V1_RUNTIME_ID (two distinct adapters = two distinct IDs).
-// 4. RE2-incompatible primary patterns (lookaheads) THROW fail-closed (FIX 5).
+// 4. RE2-incompatible primary patterns (lookaheads) THROW fail-closed.
 //    Gate B must prevent these from ever reaching the executor in production.
 //
 // NOTE on zero-width-1 vector (`(?=SECRET)` lookahead):
 //   native-v1 records one zero-width occurrence; re2js-v1 THROWS fail-closed
-//   (compile error — lookaheads are not RE2-compatible, FIX 5). This vector
+//   (compile error — lookaheads are not RE2-compatible). This vector
 //   is in the executor-dependent exclusion list and is not run against re2js-v1
 //   in the shared conformance suite.
 
@@ -53,8 +53,8 @@ describe('A.12 conformance — re2js-v1 executor', () => {
     expect(report.failed).toBe(0)
   })
 
-  it('RE2-incompatible vectors (lookahead etc.) fail-closed — THROW, not silent zero (FIX 5)', () => {
-    // FIX 5: RE2-incompatible primary patterns now throw fail-closed instead of
+  it('RE2-incompatible vectors (lookahead etc.) fail-closed — THROW, not silent zero', () => {
+    // RE2-incompatible primary patterns now throw fail-closed instead of
     // silently producing 0 findings.  Gate B prevents these from reaching the
     // executor in production; if they do, it is a bundle integrity violation.
     for (const vectorId of RE2_INCOMPATIBLE_VECTOR_IDS) {
@@ -100,7 +100,7 @@ describe('conformance parity — native-v1 vs re2js-v1 byte-identical hashes', (
   // the live corpus. The divergence is safe and documented.
   const KNOWN_DIVERGENCES: Record<string, string> = {
     'zero-width-1':
-      'Lookahead (?=SECRET) is unsupported by RE2 — re2js THROWS fail-closed (FIX 5). ' +
+      'Lookahead (?=SECRET) is unsupported by RE2 — re2js THROWS fail-closed. ' +
       'Gate B rejects lookahead patterns; divergence is safe and expected.',
   }
 
@@ -108,7 +108,7 @@ describe('conformance parity — native-v1 vs re2js-v1 byte-identical hashes', (
     if (KNOWN_DIVERGENCES[vector.id]) {
       it(`[KNOWN DIVERGENCE] ${vector.id}: ${KNOWN_DIVERGENCES[vector.id]}`, () => {
         // Document the divergence but do NOT assert parity.
-        // native-v1 succeeds; re2js-v1 throws fail-closed (FIX 5: no silent skip).
+        // native-v1 succeeds; re2js-v1 throws fail-closed (no silent skip).
         expect(() => {
           nativeV1Executor.evaluate(
             vector.input.matcher!,
@@ -257,15 +257,15 @@ describe('RE2JS_V1_RUNTIME_ID — frozen identity', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 5. Fail-closed on RE2-incompatible patterns (FIX 5 — was: graceful degrade)
+// 5. Fail-closed on RE2-incompatible patterns (was: graceful degrade)
 //
-// FIX 5 (0.5.0): RE2-incompatible primary patterns now THROW (fail-closed)
+// 0.5.0: RE2-incompatible primary patterns now THROW (fail-closed)
 // instead of silently skipping to zero findings. Gate B MUST reject such
 // patterns before they reach the executor — if they reach it, it is a bundle
 // integrity violation and we must hard-fail rather than silently suppress.
 // ---------------------------------------------------------------------------
 
-describe('re2js-v1: fail-closed on RE2-incompatible primary patterns (FIX 5)', () => {
+describe('re2js-v1: fail-closed on RE2-incompatible primary patterns', () => {
   it('lookahead (?=x) THROWS a bundle-degraded error (fail-closed)', () => {
     const matcher = {
       type: 'pattern' as const,
@@ -277,7 +277,7 @@ describe('re2js-v1: fail-closed on RE2-incompatible primary patterns (FIX 5)', (
     const file = { relativePath: 'src/test.ts', content: 'const SECRET = 1\n' }
     const ctx: ExecCtx = { allRelativePaths: ['src/test.ts'], releaseId: 'test-release' }
 
-    // Must THROW — fail-closed (FIX 5). Gate B prevents this in the live corpus;
+    // Must THROW — fail-closed. Gate B prevents this in the live corpus;
     // if it reaches the executor, the whole evaluation is aborted.
     expect(() => {
       re2jsV1Executor.evaluate(matcher, file, ctx)
@@ -285,7 +285,7 @@ describe('re2js-v1: fail-closed on RE2-incompatible primary patterns (FIX 5)', (
   })
 
   it('mixed patterns: RE2-incompatible + RE2-compatible → THROWS on the incompatible one', () => {
-    // FIX 5: even if a later pattern is valid, the first invalid pattern must fail-closed.
+    // even if a later pattern is valid, the first invalid pattern must fail-closed.
     const matcher = {
       type: 'pattern' as const,
       fileGlob: '**/*.ts',

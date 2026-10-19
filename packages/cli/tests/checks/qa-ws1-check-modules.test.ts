@@ -1,5 +1,5 @@
 /**
- * QA Workstream WS-1 — CLI Check Modules
+ * QA — CLI Check Modules
  * Covers: SEC-001..SEC-008, AUTH-001..AUTH-004, DB-001..DB-003,
  *         DEPLOY-001..DEPLOY-002, PAY-001..PAY-002, EDGE-001
  *

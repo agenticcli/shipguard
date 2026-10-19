@@ -193,7 +193,7 @@ export async function scan(
 
   if (options.changedOnly && isGitRepo(cwd)) {
     // getChangedFiles() throws GitCommandError on a genuine git failure — it
-    // is intentionally NOT caught here. RCA (review P1, git.ts:45-47): the old
+    // is intentionally NOT caught here. RCA (git.ts:45-47): the old
     // implementation silently returned [] on ANY git error, so `--changed`
     // would report "0 files scanned, SAFE" for a git failure indistinguishably
     // from "genuinely nothing changed." Letting the throw propagate up to
@@ -202,7 +202,7 @@ export async function scan(
     const changedRelPaths = getChangedFiles(cwd)
     if (changedRelPaths.length === 0) {
       // Git ran successfully and genuinely found nothing changed — this is
-      // the OTHER branch of the P1 fix: an explicit, distinguishable message
+      // the OTHER branch of the fix: an explicit, distinguishable message
       // for "0 files, and that's correct" vs a swallowed git failure.
       logger.info('--changed: git ran successfully — 0 changed files to scan.')
     }

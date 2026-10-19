@@ -86,11 +86,11 @@ export type VerifyResult = VerifyOk | VerifyFail
 
 /** Canonical executable-rule form (matcher spec §3.1, contract 0.5.1). */
 export interface ExecutableRule {
-  // FIX 1+2 (0.5.0): action and blocking are now in the hash preimage.
+  // 0.5.0: action and blocking are now in the hash preimage.
   action?: 'block' | 'warn' | 'monitor'
   antiBoundary?: 'none' | 'word' | 'token'
   antiPattern?: string
-  // FIX 1+2 (0.5.0): antiPatternScope and boundary are now in the hash preimage.
+  // 0.5.0: antiPatternScope and boundary are now in the hash preimage.
   // Tampering these fields now causes the recomputed hash to disagree with the manifest.
   antiPatternScope?: 'statement' | 'block' | 'function' | 'file' | { lines: number }
   blocking?: boolean
@@ -98,7 +98,7 @@ export interface ExecutableRule {
   categories?: string[]
   /**
    * 0.5.1 (per-rule confidence — hardcoded-confidence fix): per-rule detection confidence from the
-   * corpus governance model (rule-corpus/rule-logic.md §4). REQUIRED and hashed — a bundle
+   * corpus governance model. REQUIRED and hashed — a bundle
    * whose rules lack confidence FAILS validation (fail-closed); the CLI never defaults to HIGH.
    */
   confidence: 'HIGH' | 'MEDIUM' | 'LOW'
@@ -263,7 +263,7 @@ function atomicAcceptFloor(floorPath: string, incoming: CliFloorTuple): FloorAcc
   const releaseLock = acquireFloorLock(lockPath)
   try {
     // ── Under-lock: read current floor ────────────────────────────────────────
-    // Fix 2: read-first approach — distinguish ENOENT (genuine first-use) from
+    // read-first approach — distinguish ENOENT (genuine first-use) from
     // other I/O errors (corruption/permission problem → fail closed).
     // The existsSync() approach had a TOCTOU and conflated ENOENT with other errors.
     let lockedFloor: CliFloorTuple | null = null
@@ -290,7 +290,7 @@ function atomicAcceptFloor(floorPath: string, incoming: CliFloorTuple): FloorAcc
       try {
         lockedFloor = parseStrictNoDup(rawFloor) as CliFloorTuple
         // Validate the parsed floor has the required fields AND safe-integer values.
-        // Fix 2: Number.isSafeInteger() guards against float/NaN/Infinity injection.
+        // Number.isSafeInteger() guards against float/NaN/Infinity injection.
         if (
           typeof lockedFloor.sequence !== 'number' ||
           !Number.isSafeInteger(lockedFloor.sequence) ||
@@ -573,7 +573,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-1b: Validate manifest.rules[] entries (Fix 9 — recursive schema)
+  // 0b-1b: Validate manifest.rules[] entries (recursive schema)
   {
     const manifestRulesArr = manifest['rules'] as unknown[]
     const MANIFEST_RULE_REQUIRED = ['id', 'executableHash', 'enabled', 'framework', 'tier', 'severity', 'matcherType', 'title', 'flags', 'sourceYamlDigest']
@@ -610,7 +610,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-1c: Validate manifest.capProfile fields (Fix 9 — recursive schema)
+  // 0b-1c: Validate manifest.capProfile fields (recursive schema)
   {
     const cap = manifest['capProfile']
     if (cap === null || typeof cap !== 'object' || Array.isArray(cap)) {
@@ -631,7 +631,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-1d: Validate manifest.matcherEngineOptions (Fix 9 — recursive schema)
+  // 0b-1d: Validate manifest.matcherEngineOptions (recursive schema)
   {
     const opts = manifest['matcherEngineOptions']
     if (opts === null || typeof opts !== 'object' || Array.isArray(opts)) {
@@ -649,7 +649,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-4b: Validate envelope.expectedRuleSet entries (Fix 9 — recursive schema)
+  // 0b-4b: Validate envelope.expectedRuleSet entries (recursive schema)
   {
     const expectedSet = envelope['expectedRuleSet'] as unknown[]
     for (let i = 0; i < expectedSet.length; i++) {
@@ -673,7 +673,7 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-4c: Validate envelope.frameworks entries (Fix 9 — recursive schema)
+  // 0b-4c: Validate envelope.frameworks entries (recursive schema)
   {
     const frameworks = envelope['frameworks']
     if (!Array.isArray(frameworks)) {
@@ -738,8 +738,8 @@ export async function verifyBundleResponse(
       }
 
       // Type/enum validation
-      // 0.5.1 (per-rule confidence): confidence must be exactly HIGH|MEDIUM|LOW (corpus governance enum,
-      // rule-corpus/rule-logic.md §4). Any other value is a schema violation → reject nonSafe.
+      // 0.5.1 (per-rule confidence): confidence must be exactly HIGH|MEDIUM|LOW (corpus governance enum).
+      // Any other value is a schema violation → reject nonSafe.
       if (typeof rObj['confidence'] !== 'string' || !VALID_CONFIDENCE.has(rObj['confidence'] as string)) {
         return { ok: false, reason: `selectedRules[${i}].confidence must be "HIGH"|"MEDIUM"|"LOW", got "${String(rObj['confidence'])}"`, nonSafe: true }
       }
@@ -779,7 +779,7 @@ export async function verifyBundleResponse(
           return { ok: false, reason: `selectedRules[${i}].antiBoundary must be none|word|token`, nonSafe: true }
         }
       }
-      // FIX 1+2: validate antiPatternScope — string enum OR {lines:N} object
+      // validate antiPatternScope — string enum OR {lines:N} object
       if ('antiPatternScope' in rObj && rObj['antiPatternScope'] !== undefined) {
         const scope = rObj['antiPatternScope']
         const VALID_SCOPE_STRINGS = new Set(['statement', 'block', 'function', 'file'])
@@ -802,7 +802,7 @@ export async function verifyBundleResponse(
           return { ok: false, reason: `selectedRules[${i}].blocking must be a boolean`, nonSafe: true }
         }
       }
-      // FIX 1+2: validate boundary — now part of hash preimage
+      // validate boundary — now part of hash preimage
       if ('boundary' in rObj && rObj['boundary'] !== undefined) {
         if (typeof rObj['boundary'] !== 'string' || !VALID_BOUNDARY.has(rObj['boundary'] as string)) {
           return { ok: false, reason: `selectedRules[${i}].boundary must be "none"|"word"|"token"`, nonSafe: true }

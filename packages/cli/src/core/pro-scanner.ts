@@ -301,11 +301,11 @@ export async function fetchProRules(
     }
 
     // Map ExecutableRule[] → QualityGateRule[] for the existing scan pipeline.
-    // Fix 1: use r.blocking for the blocking decision (not r.severity === 'error').
+    // use r.blocking for the blocking decision (not r.severity === 'error').
     //   The old code coerced blocking from the 3-value severity enum; that caused
     //   every signed rule to map to action='warn' since 'error' is not in the new
     //   5-value enum (critical|high|medium|low|info) and the condition was never true.
-    // Fix 3: propagate ALL matcher fields from the ExecutableRule to QualityGateRule.
+    // propagate ALL matcher fields from the ExecutableRule to QualityGateRule.
     //   The old code hardcoded fileGlob:'**/*' and dropped presenceRule/requiresFile/
     //   requiresPattern, causing file-presence and file-relationship rules to behave
     //   as if they had no targeting or context.
@@ -318,13 +318,13 @@ export async function fetchProRules(
     const rules = verifyResult.selectedRules.map(r => {
       const rAny = r as unknown as Record<string, unknown>
 
-      // FIX 2: use r.action directly (the author's signed intent) rather than
+      // use r.action directly (the author's signed intent) rather than
       // reconstructing action from r.blocking. The prior code:
       //   action: (r.blocking === true ? 'block' : 'warn')
       // was wrong for medium-severity rules with action:block (e.g. flask.redirect.open-redirect:
       // severity:medium → blocking:false at build time (old severity-based derivation) →
       // reconstructed as action:'warn' here → production silently downgrades a BLOCK rule).
-      // With FIX 2 in build-manifest.ts, blocking = (action === 'block'), so both fields
+      // In build-manifest.ts, blocking = (action === 'block'), so both fields
       // are consistent. Using r.action directly is the correct single source of truth.
       const action = (rAny['action'] as string | undefined) ?? (r.blocking ? 'block' : 'warn')
 
@@ -339,7 +339,7 @@ export async function fetchProRules(
         // Per-rule confidence (hardcoded-confidence fix): carry the rule's REAL signed confidence.
         // verifyBundleResponse has already fail-closed if any rule lacks confidence, so
         // r.confidence is guaranteed present here — never a silent HIGH default. Corpus
-        // governance (rule-corpus/rule-logic.md §4) calibrates action to this value, and
+        // governance calibrates action to this value, and
         // deriveBlocking() + CLI output/JSON depend on it being the author's signed intent.
         confidence: r.confidence,
         matcher: {
@@ -349,7 +349,7 @@ export async function fetchProRules(
           patterns: r.pattern ? [r.pattern] : [],
           antiPatterns: r.antiPattern ? [r.antiPattern] : [],
           flags: r.flags,
-          // FIX 1 (CRITICAL): antiPatternScope and boundary are now part of the 20-field
+          // antiPatternScope and boundary are now part of the 20-field
           // hash preimage (contract 0.5.0) and ARE delivered on the wire ExecutableRule.
           // They were missing from this mapping, causing runProRules to always default to
           // antiPatternScope:'statement' / boundary:'none' — ignoring the corpus values.
@@ -442,7 +442,7 @@ function validateBundleCompile(
     const re2jsFlags = toRe2jsFlags(flagsResult.flags)
 
     // 2. Try to compile every primary pattern with re2js (EXACT same engine as the
-    //    executor). FIX 5: use re2js, not native RegExp — a pattern that passes
+    //    executor). use re2js, not native RegExp — a pattern that passes
     //    native compilation but fails re2js would previously pass preflight then be
     //    silently skipped at runtime (zero findings). Now we catch it here.
     for (const p of rule.matcher.patterns) {
@@ -461,7 +461,7 @@ function validateBundleCompile(
       }
     }
 
-    // 3. Try to compile every anti-pattern with re2js (FIX 3 + FIX 5).
+    // 3. Try to compile every anti-pattern with re2js.
     //    An invalid anti-pattern is NOT silently dropped — it degrades the bundle.
     //    Using re2js here ensures preflight is consistent with runtime execution.
     for (const ap of rule.matcher.antiPatterns) {
@@ -474,7 +474,7 @@ function validateBundleCompile(
           reason:
             `Rule ${rule.id}: anti-pattern "${ap}" fails re2js compilation — ${msg}. ` +
             `The entire bundle is degraded rather than running the rule without its ` +
-            `anti-pattern guard (atomic compile, FIX 5 fail-closed).`,
+            `anti-pattern guard (atomic compile, fail-closed).`,
         }
       }
     }
@@ -484,7 +484,7 @@ function validateBundleCompile(
 }
 
 /**
- * Exported (E5) so the history store's ruleOutcomes can compute "is this rule blocking in
+ * Exported so the history store's ruleOutcomes can compute "is this rule blocking in
  * the CURRENT scan's corpus" using the exact same rule → blocking derivation the scanner
  * itself uses to set Finding.blocking — keeping the two in lockstep without duplicating the
  * precedence logic (action field wins; falls back to confidence/severity heuristics).
@@ -601,7 +601,7 @@ export function runProRules(
     let matcherForExecutor: PatternMatcher | FilePresenceMatcher | FileRelationshipMatcher
 
     if (rule.matcher.type === 'pattern') {
-      // FIX 1+2: read antiPatternScope and boundary from the delivered rule.
+      // read antiPatternScope and boundary from the delivered rule.
       // In contract 0.5.0, these fields are part of the hash preimage and
       // delivered in the wire ExecutableRule. Read them dynamically — QualityGateRule
       // doesn't have typed accessors for these contract-level fields.
@@ -614,7 +614,7 @@ export function runProRules(
         patterns: rule.matcher.patterns,
         antiPatterns: rule.matcher.antiPatterns,
         flags: rule.matcher.flags ?? '',
-        // FIX 1+2: pass through delivered values; executor defaults to 'none'/'statement'.
+        // pass through delivered values; executor defaults to 'none'/'statement'.
         ...(boundary !== undefined && { boundary }),
         ...(antiPatternScope !== undefined && { antiPatternScope }),
       } satisfies PatternMatcher
@@ -739,7 +739,7 @@ export function runProRules(
 }
 
 // ---------------------------------------------------------------------------
-// runProRulesWithDispatch — Suricata-model orchestrator (Phase 1 registry engine)
+// runProRulesWithDispatch — Suricata-model orchestrator (registry engine)
 //
 // Partitions rules by implType:
 //   - "coderef" (or implType present and === "coderef") → coderef-dispatch

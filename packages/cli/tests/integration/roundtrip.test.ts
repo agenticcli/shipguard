@@ -122,7 +122,7 @@ async function buildRoundtripFixtures(): Promise<RoundtripFixtures> {
       id,
       matcherType: 'file-presence',
       requiresFile: `${id}.lock`,
-      // Fix 1/5: 5-value severity enum — 'warning' is no longer valid.
+      // 5-value severity enum — 'warning' is no longer valid.
       severity: 'medium',
       tier: 'free',
       title: `Roundtrip Test Rule ${id}`,

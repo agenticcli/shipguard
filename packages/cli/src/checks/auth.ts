@@ -197,13 +197,13 @@ function isNextjsProject(files: FileInfo[]): boolean {
  *
  * Template interpolation note: `${…}` bodies ARE lexed recursively so that string
  * literals inside `${"requireAuth()"}` are correctly classified as non-executable
- * (preventing interpolation-spoof false negatives). See FIX 3 comment below.
+ * (preventing interpolation-spoof false negatives). See the interpolation-spoof comment below.
  */
 
 /**
  * Recursively lex the body of a `${…}` interpolation expression.
  *
- * FIX 3 — Interpolation-spoof false negative:
+ * Interpolation-spoof false negative:
  *
  * The previous implementation scanned the interpolation body with a simple
  * brace-depth counter, emitting the raw text (including any string literals
@@ -317,7 +317,7 @@ function lexInterpolationBody(src: string, start: number): { execText: string; e
           // correctly (so its `}` does not affect the outer depth counter).
           i += 2 // skip '${'
           const inner = lexInterpolationBody(src, i)
-          // FIX 2: emit the inner interpolation body's EXECUTABLE text so that a
+          // emit the inner interpolation body's EXECUTABLE text so that a
           // real auth call in a doubly-nested interpolation (e.g.
           //   `${`${requireAuth(req)}`}` ) is still recognised by the detector.
           // The recursive call already classifies strings/comments inside the inner
@@ -465,7 +465,7 @@ function extractExecutableText(src: string): string {
           i = start + 1
         } else {
           // Valid regex literal span — emit as NON-EXECUTABLE (a gap).
-          // FIX 1: regex bodies are skipped like string literals to prevent a decoy
+          // regex bodies are skipped like string literals to prevent a decoy
           // like `const x = /requireAuth()/` from matching RE2_AUTH_CALL_PATTERN.
           // A regex body never executes, so excluding it is both correct and safe.
           appendNonExecGap()
@@ -535,7 +535,7 @@ function extractExecutableText(src: string): string {
     // Dropping interpolation would cause active auth calls inside ${} to be missed,
     // producing a spurious "unprotected route" false positive.
     //
-    // FIX 3 — Interpolation-spoof false negative:
+    // Interpolation-spoof false negative:
     // The interpolation body is now lexed via lexInterpolationBody() which correctly
     // classifies strings / comments inside `${…}` as non-executable. This means
     // `${"requireAuth()"}` is no longer spoofed into a false "auth found" signal —
@@ -561,7 +561,7 @@ function extractExecutableText(src: string): string {
           // Emit the text segment up to here as a non-exec gap.
           appendNonExecGap()
           i += 2 // skip '$' and '{'
-          // Lex the interpolation body with full string/comment awareness (FIX 3).
+          // Lex the interpolation body with full string/comment awareness.
           // lexInterpolationBody() returns only executable text from the body and
           // the index of the closing `}`, correctly ignoring strings/comments/nested
           // templates so that e.g. ${"requireAuth()"} does not spoof the detector.

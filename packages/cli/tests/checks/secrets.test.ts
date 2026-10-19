@@ -260,7 +260,7 @@ describe('secretsCheck — bare DB URI detection: bare DB URI detected regardles
 })
 
 // ---------------------------------------------------------------------------
-// FIX 3: backtick (template literal) secret not skipped by env-ref guard
+// backtick (template literal) secret not skipped by env-ref guard
 //
 // The bug: the env-ref skip only checked for `'` and `"` in the line.
 // A line like:
@@ -272,9 +272,9 @@ describe('secretsCheck — bare DB URI detection: bare DB URI detected regardles
 // AFTER FIX:  backtick is included in the guard → line is scanned → secret IS flagged.
 // ---------------------------------------------------------------------------
 
-describe('secretsCheck — FIX 3: backtick template-literal secret not skipped by env-ref guard', () => {
+describe('secretsCheck — backtick template-literal secret not skipped by env-ref guard', () => {
 
-  it('FIX 3: process.env.KEY || `sk_live_...` — backtick secret IS flagged', () => {
+  it('process.env.KEY || `sk_live_...` — backtick secret IS flagged', () => {
     // BEFORE FIX: no `'` or `"` on the line → env-ref guard skipped it → FALSE NEGATIVE.
     // AFTER FIX:  backtick check prevents skip → line is scanned → secret IS detected.
     const file = makeFile(
@@ -286,7 +286,7 @@ describe('secretsCheck — FIX 3: backtick template-literal secret not skipped b
     expect(stripeFindings.length, 'sk_live_ in a backtick literal alongside env ref must be flagged').toBeGreaterThan(0)
   })
 
-  it('FIX 3: pure process.env.SECRET with no quotes/backticks — still NOT flagged', () => {
+  it('pure process.env.SECRET with no quotes/backticks — still NOT flagged', () => {
     // Pure env reference with no string literal of any kind → must still be skipped.
     const file = makeFile(
       'lib/config.ts',

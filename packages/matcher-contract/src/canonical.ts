@@ -23,7 +23,7 @@
 //          1.5e-6   → "0.0000015"             (exp=-6 = -6, NOT < -6 → decimal)
 //        This IS the correct RFC 8785 behaviour — test expectations must
 //        match JS's actual String(n) output, not a human's mental model.
-//    JUDGMENT CALL (flagged per task spec): RFC 8785 §3.2.2 says
+//    JUDGMENT CALL: RFC 8785 §3.2.2 says
 //    "the serialization rules for Number values are identical to those
 //    used in the ES2020 specification for JSON.stringify", which defers to
 //    the abstract operation Number::toString. JS String(n) and
@@ -53,7 +53,7 @@ function serializeNumber(n: number): string {
       `canonicalJson: NaN and Infinity are not valid JSON values (got ${n})`,
     )
   }
-  // FIX 9 (matcher spec §2): reject fractional and unsafe-integer numbers in
+  // matcher spec §2: reject fractional and unsafe-integer numbers in
   // signed objects.  A non-safe-integer or fractional number in the preimage of a
   // cryptographically-signed object is a protocol violation — different JSON parsers
   // may represent the same IEEE 754 double with different decimal expansions, making
@@ -65,7 +65,7 @@ function serializeNumber(n: number): string {
   if (!Number.isSafeInteger(n) && !Object.is(n, -0)) {
     throw new TypeError(
       `canonicalJson: number ${n} is not a safe integer — fractional or out-of-range ` +
-      `numbers are rejected in signed objects (matcher spec §2 / FIX 9). ` +
+      `numbers are rejected in signed objects (matcher spec §2). ` +
       `Only safe integers (−2^53+1 to 2^53−1) are permitted.`,
     )
   }

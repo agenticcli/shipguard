@@ -17,8 +17,7 @@ import { PlatformUnavailableError, isPlatformUnavailable, parseRetryAfterSeconds
 // We store the OAuth tokens in a plain 0600 file under ~/.config/shipguard — the same
 // approach gh / aws-cli / npm use. We deliberately do NOT use a native OS keychain
 // (keytar / @napi-rs.keyring): native install-scripts conflict with our zero-install-
-// scripts supply-chain policy and break headless CI. See docs/tiered-identity-model.md
-// (§ "CLI Token Storage") for the full threat model.
+// scripts supply-chain policy and break headless CI.
 //
 // "0600" alone is industry-standard but only safe if it is actually ENFORCED. So:
 //   • on write we tighten the dir to 0700 and the file to 0600 (chmod, not just the

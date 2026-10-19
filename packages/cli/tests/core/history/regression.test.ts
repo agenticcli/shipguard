@@ -3,7 +3,7 @@ import { computeRegressionResult } from '../../../src/core/history/regression.js
 import type { ScanSnapshot } from '../../../src/core/history/regression.js'
 
 /**
- * The ONE regression claim (§4 of 05-OBSERVABILITY-SCHEMA-DESIGN.md), tested as a pure
+ * The ONE regression claim, tested as a pure
  * function — no DB involved. This is where the trust-critical false-positive guard lives:
  * a corpus/rule-version change must NEVER be reported as "you regressed."
  */

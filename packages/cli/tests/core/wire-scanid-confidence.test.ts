@@ -12,7 +12,7 @@
  * Per-rule confidence (hardcoded confidence):
  *   The CLI mapped EVERY delivered pro rule to confidence: 'HIGH'
  *   (pro-scanner.ts, the ExecutableRule→QualityGateRule mapping), ignoring the
- *   per-rule confidence the corpus governance model (rule-corpus/rule-logic.md §4)
+ *   per-rule confidence the corpus governance model
  *   calibrates action against.
  *   FAIL-BEFORE: a rule delivered with confidence MEDIUM/LOW surfaced as HIGH.
  *

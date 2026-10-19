@@ -46,7 +46,7 @@ import { canonicalJson } from './canonical.js'
  * Count: 21 fields (14 original + 6 added in 0.5.0 + confidence added in 0.5.1).
  *
  * 0.5.1 — `confidence` added (per-rule confidence): the corpus governance model
- * (rule-corpus/rule-logic.md §4) calibrates action to per-rule confidence (HIGH/MEDIUM/LOW),
+ * calibrates action to per-rule confidence (HIGH/MEDIUM/LOW),
  * but the wire ExecutableRule had no confidence field, so the CLI hardcoded every delivered
  * rule to HIGH. confidence is now a first-class hashed field: tampering it (e.g. demoting a
  * HIGH rule to LOW to soften output) changes the recomputed hash and the bundle is rejected.

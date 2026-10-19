@@ -8,5 +8,5 @@ dist/
 .env*.local
 .shipguard/
 reports/
-# Conformance test artifact — written to repo root by hash-equality-proof.ts (FIX 11)
+# Conformance test artifact — written to repo root by hash-equality-proof.ts
 computed-hashes.json

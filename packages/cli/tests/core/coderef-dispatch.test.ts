@@ -1,5 +1,5 @@
 /**
- * Unit tests for coderef rule dispatch (Suricata-model Phase 1).
+ * Unit tests for coderef rule dispatch (Suricata model).
  *
  * All dispatch functions accept injectable cliVersion + table + manifest
  * so no filesystem access is needed — fast, deterministic, zero mocking.

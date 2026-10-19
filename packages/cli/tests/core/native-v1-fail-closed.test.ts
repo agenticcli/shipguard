@@ -12,7 +12,7 @@
  * FIRING but without the guard that keeps it off legitimate code — false positives with no
  * signal that the rule is running half-configured.
  *
- * The re2js executor (the active one) already fails closed here under its FIX 5 atomic-compile
+ * The re2js executor (the active one) already fails closed here under its atomic-compile
  * contract. These tests pin the native fallback to the same behaviour, so which executor is
  * active can never decide whether a broken rule is loud or silent.
  *

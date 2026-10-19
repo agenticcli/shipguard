@@ -1,5 +1,5 @@
 /**
- * A-CLI-INT.1 TDD tests — --changed path symlink/root-containment guard.
+ * Tests — --changed path symlink/root-containment guard.
  *
  * The normal scan path (readFiles via fast-glob) uses followSymbolicLinks:false
  * which prevents out-of-root traversal. The --changed path was missing an
@@ -61,7 +61,7 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('scan() --changed path — symlink containment guard (A-CLI-INT.1)', () => {
+describe('scan() --changed path — symlink containment guard', () => {
   it('refuses a --changed path that is a symlink pointing outside the project root', async () => {
     // Project root with one legitimate in-tree file
     const project = mkTemp()
@@ -131,7 +131,7 @@ describe('scan() --changed path — symlink containment guard (A-CLI-INT.1)', ()
   })
 })
 
-describe('scan() --changed path — invalid UTF-8 file degrades loudly (A-CLI-INT.1)', () => {
+describe('scan() --changed path — invalid UTF-8 file degrades loudly', () => {
   it('marks scan degraded when a --changed file contains invalid UTF-8', async () => {
     const project = mkTemp()
 

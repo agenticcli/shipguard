@@ -58,7 +58,7 @@ describe('readFiles', () => {
     expect(files.some((f) => f.relativePath === 'foo.ts')).toBe(true)
   })
 
-  it('ignores .shipguard/** by default (FIX 3: tool must not scan its own report output)', async () => {
+  it('ignores .shipguard/** by default (tool must not scan its own report output)', async () => {
     const dir = mkTemp()
     // Create a regular source file
     writeFileSync(join(dir, 'index.ts'), 'const x = 1', 'utf-8')
@@ -76,10 +76,10 @@ describe('readFiles', () => {
 })
 
 // ---------------------------------------------------------------------------
-// A-CLI-INT.1 — invalid UTF-8: degrade loudly, never scan with garbage
+// invalid UTF-8: degrade loudly, never scan with garbage
 // ---------------------------------------------------------------------------
 
-describe('readFiles — invalid UTF-8 handling (A-CLI-INT.1)', () => {
+describe('readFiles — invalid UTF-8 handling', () => {
   it('accumulates a file with invalid UTF-8 in invalidUtf8Files and does NOT scan it', async () => {
     const dir = mkTemp()
 
@@ -152,10 +152,10 @@ describe('readFiles — invalid UTF-8 handling (A-CLI-INT.1)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// A-CLI-INT.1 — unreadable file handling: degrade loudly, never silently skip
+// unreadable file handling: degrade loudly, never silently skip
 // ---------------------------------------------------------------------------
 
-describe('readFiles — unreadable file handling (A-CLI-INT.1)', () => {
+describe('readFiles — unreadable file handling', () => {
   it('accumulates unreadable files in unreadableFiles and continues scanning others', async () => {
     const dir = mkTemp()
 

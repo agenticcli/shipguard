@@ -89,7 +89,7 @@ describe('getChangedFiles — genuine git failure throws GitCommandError (not sw
 
   it('FAIL-BEFORE regression: a corrupted/failing git invocation THROWS ' +
      'GitCommandError with the stderr — it does NOT silently return []. ' +
-     'This is the exact P1 bug: the old code had `catch { return [] }`, making ' +
+     'This is the exact bug: the old code had `catch { return [] }`, making ' +
      'a genuine git failure indistinguishable from "nothing changed."', async () => {
     // git.ts is already statically imported (real, unmocked) at the top of this
     // file — Node's ESM module cache would otherwise return that same real

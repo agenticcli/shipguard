@@ -274,7 +274,7 @@ Exit codes (verdict-neutral by default — ShipGuard informs, you choose the gat
      scan. Pass --allow-degraded to opt back into the free-scan
      fallback (degraded:true, exit code unaffected).
 
-Local history (E5): every scan is recorded to a local SQLite store
+Local history: every scan is recorded to a local SQLite store
 (\`.shipguard/history.db\` by default; override via \`history.path\` in
 shipguard.policy.yml or SHIPGUARD_HISTORY_PATH). \`stateStatus\` in --json
 reports whether that recording succeeded (complete/unavailable/corrupt) —
@@ -717,7 +717,7 @@ async function runScan(ctx: {
   }
 
   // ---------------------------------------------------------------------------
-  // E5 — local audit-trail store write + the ONE regression claim.
+  // Local audit-trail store write + the ONE regression claim.
   // Side-effect-free to the verdict/exit code above: every failure mode inside
   // recordScanHistory (unsupported Node runtime, disk full, corrupt file, lock
   // timeout) resolves to stateStatus + regressionCheckSkipped rather than throwing.
@@ -970,7 +970,7 @@ async function runScan(ctx: {
     }
   }
 
-  // --check-regressions (E5, opt-in ONLY) — a real regression is informational-only in
+  // --check-regressions (opt-in ONLY) — a real regression is informational-only in
   // JSON by default (result.regressions), same as any other finding. Passing this flag
   // opts into using the EXISTING BLOCKED exit code (never a new one) when at least one
   // regression fired. This does NOT touch resolveExitCode()'s A1 contract above — it is

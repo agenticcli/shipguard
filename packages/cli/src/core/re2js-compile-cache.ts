@@ -9,7 +9,7 @@
 // So the memoisation is applied from the CLI side by wrapping the static `RE2JS.compile`.
 // Behaviour is preserved: compilation is pure, a compiled RE2JS is stateless (matcher()
 // mints a fresh Matcher per call), and compile FAILURES are never cached — they re-throw on
-// every call, so the adapter's fail-closed contract (FIX 5) is unchanged.
+// every call, so the adapter's fail-closed contract is unchanged.
 //
 // The cache is bounded (cleared on overflow). Installation is idempotent.
 

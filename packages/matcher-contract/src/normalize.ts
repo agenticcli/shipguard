@@ -1,7 +1,7 @@
 // Input normalization functions — contract-side, pure, dependency-free.
 // These functions define the canonical pre-processing that the CLI MUST apply
 // to every file before passing it to a MatcherExecutor. CLI wiring (fs.ts /
-// scanner.ts) is a separate later task (A-CLI-INT.1).
+// scanner.ts) is a separate later task.
 //
 // DESIGN DECISIONS
 // ================

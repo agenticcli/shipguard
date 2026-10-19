@@ -147,8 +147,8 @@ function buildTestRuleHash(
     id: ruleId,
     matcherType: 'pattern' as const,
     pattern: 'TODO',
-    // Fix 1/5: use 5-value severity enum (critical|high|medium|low|info).
-    // The old 'warning' value is no longer valid after Fix 5 schema validation.
+    // use 5-value severity enum (critical|high|medium|low|info).
+    // The old 'warning' value is no longer valid after schema validation.
     severity,
     tier,
     title: `Test Rule ${ruleId}`,
@@ -210,7 +210,7 @@ async function buildValidFixtures(overrides?: {
       enabled: true,
       framework: 'generic',
       tier,
-      // Fix 1/5: use 5-value severity enum. 'warning' is no longer accepted.
+      // use 5-value severity enum. 'warning' is no longer accepted.
       severity: 'medium',
       matcherType: 'pattern',
       title: 'Test Rule rule-001',
@@ -1491,10 +1491,10 @@ describe('Finding 9 — strict schema validation of all 5 signed components', ()
 })
 
 // ---------------------------------------------------------------------------
-// Fix 2: ENOENT vs corruption in floor read
+// ENOENT vs corruption in floor read
 // ---------------------------------------------------------------------------
 
-describe('Fix 2 — floor ENOENT vs read-error distinction', () => {
+describe('floor ENOENT vs read-error distinction', () => {
   const cleanupFns: Array<() => void> = []
 
   afterEach(() => {
@@ -1590,10 +1590,10 @@ describe('Fix 2 — floor ENOENT vs read-error distinction', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Fix 9: Recursive strict schema validation
+// Recursive strict schema validation
 // ---------------------------------------------------------------------------
 
-describe('Fix 9 — recursive strict schema validation', () => {
+describe('recursive strict schema validation', () => {
   const cleanupFns: Array<() => void> = []
 
   afterEach(() => {

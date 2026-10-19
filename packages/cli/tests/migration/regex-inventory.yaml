@@ -14,7 +14,7 @@ summary:
     (the D.4 migration targets) — ALL NOW MIGRATED to re2js via compileDetectorRegex().
     Pro-rule patterns are already on the re2js-v1 contract path (1 migrated call-site).
     Infrastructure/non-content regex = 58 sites. Zero removed.
-    The re2js-v1 anti-pattern path uses re2js by design (FIX 3 in re2js-v1.ts §9)
+    The re2js-v1 anti-pattern path uses re2js by design (see re2js-v1.ts §9)
     and is correctly classified as non-content for the detector-migration scope.
     D.4 migration is COMPLETE (2026-06-25): 73 migrated, 58 non-content, 0 pending.
   counts:

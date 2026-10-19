@@ -51,8 +51,8 @@ describe('A.4 — canonicalJson (RFC 8785 / JCS)', () => {
     expect(canonicalJson(0)).toBe('0')
   })
 
-  it('rejects fractional and unsafe-integer numbers (FIX 9 / matcher spec §2)', () => {
-    // FIX 9: canonicalJson is used exclusively for cryptographic preimages of signed objects.
+  it('rejects fractional and unsafe-integer numbers (matcher spec §2)', () => {
+    // canonicalJson is used exclusively for cryptographic preimages of signed objects.
     // Fractional and unsafe-integer numbers are rejected: different JS engines may produce
     // different shortest-decimal representations for IEEE-754 doubles outside the safe-integer
     // range, making the canonical form ambiguous (canonicalization-confusion attack vector).

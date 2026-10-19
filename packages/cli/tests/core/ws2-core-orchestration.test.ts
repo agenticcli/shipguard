@@ -1,13 +1,13 @@
 /**
  * WS-2 Core Orchestration QA Tests
  *
- * Tests the "Core Orchestration" workstream: scanner, pro-scanner (incl.
+ * Tests core orchestration: scanner, pro-scanner (incl.
  * runProRulesWithDispatch), coderef-dispatch, policy, sarif mapper, report,
  * exit codes.
  *
  * Convention: Tests assert ACTUAL behaviour of the code.
  * Where actual behaviour differs from desired, the test is marked
- * it.fails() and the discrepancy is documented in docs/qa-results-WS2.md.
+ * it.fails() and the discrepancy is documented next to the test.
  * A PASS in this suite means code is correct. A it.fails() with the outer
  * wrapper PASSING means the bug is confirmed + encoded.
  */

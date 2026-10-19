@@ -18,7 +18,7 @@ import { logger } from '../../utils/logger.js'
  * the response never arrived) minted a brand-new scanId, and the server's (userId, scanId)
  * dedup could never fire. That is the double-charge gap this file closes.
  *
- * Design: reuse the E5 local SQLite history store (history/store.ts) rather than a second
+ * Design: reuse the local SQLite history store (history/store.ts) rather than a second
  * persistence layer. A NEW sibling table, `scan_id_reservations` (schema.ts migration 2),
  * keyed by (repo_id, reuse_key) — NOT the same as `scans.scope_fingerprint`, which needs
  * `proApplied` (an outcome only known AFTER the pro-fetch attempt, and only written once the
@@ -122,7 +122,7 @@ export function resolveScanIdReuseWindowMs(policy: Pick<Policy, 'history'>): num
  * the `--pro` rules fetch — the whole point is for the reused id to be available in time to
  * ride the Idempotency-Key header on that fetch.
  *
- * NEVER throws, NEVER blocks the scan (matches E5's `stateStatus` degrade contract, §1.6):
+ * NEVER throws, NEVER blocks the scan (matches the history store's `stateStatus` degrade contract):
  * any failure — Node <22.5 (no `node:sqlite`), unreadable/corrupt store, lock timeout, no
  * resolvable git HEAD — falls back to exactly today's behavior, `randomUUID()` with
  * `scanIdReused: false`. With the store absent entirely, behavior is strictly identical to
