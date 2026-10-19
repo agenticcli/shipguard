@@ -12,4 +12,4 @@ ShipGuard is a CLI-first release gate for AI-built apps. It scans your project l
 - `shipguard hook` installs the gate at the merge boundary (git hook, Claude Code hook or CI job).
 - Inline suppressions with `// shipguard-ignore: <ruleId> -- <reason>`.
 - A clear message when ShipGuard's hosted service is temporarily unavailable: the CLI says so plainly, shows the suggested wait, and `--json` carries the stable code `PLATFORM_UNAVAILABLE` with `retryAfterSeconds` when known. Exit code is 3; `--allow-degraded` still works.
-- Anonymous usage ping with simple opt-outs: `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `shipguard telemetry disable`.
+- Anonymous usage ping, plus two one-off events (first run, after login), with the same simple opt-outs: `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `shipguard telemetry disable`.

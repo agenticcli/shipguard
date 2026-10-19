@@ -49,7 +49,11 @@ async function run(args: string[], env: Record<string, string> = {}): Promise<Ru
     let data = ''
     req.on('data', (c) => (data += c))
     req.on('end', () => {
-      try { pings.push(JSON.parse(data)) } catch { /* not JSON: ignore */ }
+      try {
+        const parsed = JSON.parse(data) as Record<string, unknown>
+        // Schema 3 = one-off lifecycle events (cli_first_run); this file is about the scan ping.
+        if (parsed.schema !== 3) pings.push(parsed)
+      } catch { /* not JSON: ignore */ }
       res.statusCode = 200
       res.end('ok')
     })

@@ -3,6 +3,14 @@ import { saveCredentials } from '../core/auth.js'
 import { logger } from '../utils/logger.js'
 import { openUrl, parseOpenableUrl } from '../utils/open-url.js'
 import { assertTrustedApiUrl } from '../utils/trust.js'
+import { sendLifecycleEvent } from '../core/telemetry-events.js'
+
+// Same single source as cli.ts / scan.ts: injected by tsup `define` from package.json (see version-drift test).
+declare const __SHIPGUARD_VERSION__: string | undefined
+const CLI_VERSION =
+  typeof __SHIPGUARD_VERSION__ !== 'undefined'
+    ? __SHIPGUARD_VERSION__
+    : (process.env.npm_package_version ?? '0.0.0-dev')
 
 const DEFAULT_API_URL = 'https://agenticcli.dev'
 
@@ -52,6 +60,13 @@ export function loginCommand(): Command {
             apiUrl,
           })
           logger.success('Authenticated successfully!')
+          // Anonymous `cli_login` event: install id only, no account data; every telemetry opt-out is
+          // honoured inside sendLifecycleEvent. Bounded (<= 1.5 s), and it can never fail a login.
+          try {
+            await sendLifecycleEvent('cli_login', { cliVersion: CLI_VERSION }, { projectDir: process.cwd() })
+          } catch (err) {
+            logger.debug(`telemetry: login event skipped (ignored): ${err instanceof Error ? err.message : String(err)}`)
+          }
           return
         }
         const { error } = tokenBody

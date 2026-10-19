@@ -67,7 +67,7 @@ export function telemetryCommand(): Command {
           (installId ? '' : ' (a random id is made on the first ping outside CI)') +
           (detectCi() ? ' (CI detected: no install id is created or sent)' : ''),
       )
-      console.log(`Sends:       CLI version, verdict, duration bucket, CI flag, build type, install id (null in CI). Never code, paths, repo names or your account.`)
+      console.log(`Sends:       after each scan: CLI version, verdict, duration bucket, CI flag, build type, install id (null in CI). Plus one first-run and one login event (no verdict). Never code, paths, repo names or your account.`)
       console.log(`Turn off:    SHIPGUARD_TELEMETRY=0 | DO_NOT_TRACK=1 | shipguard telemetry disable`)
       console.log(`Inspect:     SHIPGUARD_TELEMETRY_DEBUG=1 shipguard scan   (prints the exact payload, sends nothing)`)
       console.log(`Details:     ${DOCS}`)
