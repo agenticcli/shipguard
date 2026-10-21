@@ -1,7 +1,9 @@
 # @agenticcli/shipguard
 
-## Unreleased
+## 0.8.1 — first public release with npm provenance (0.8.0 was tagged but never published: release workflow fix)
 
+- Fixed: npm trusted publishing in the release workflow, so 0.8.1 is published with provenance.
+- Fixed: if the login link from the server cannot be trusted, `shipguard login` now points you to `/auth/device` (the page that exists) instead of a missing `/activate` page.
 - Fixed: a rate-limited (429), server-error (5xx) or unreachable token refresh no longer tells you to log in again. The CLI retries up to 3 times (honouring `Retry-After`, up to 10 s), keeps your login, then stops with exit code 3 and a "try again in N s" message. Only a refusal such as 401 still asks you to log in.
 
 ## 0.8.0 — first public release (2026-10-19)

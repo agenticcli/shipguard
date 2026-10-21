@@ -24,7 +24,7 @@ export function loginCommand(): Command {
         logger.info(`\nVisit: ${safeUrl.href}`)
       } else {
         logger.warn('\nThe server sent a verification URL that is not a safe link to the ShipGuard server, so it was not opened or shown.')
-        logger.info(`Open ${apiUrl}/activate in your browser yourself.`)
+        logger.info(`Open ${apiUrl}/auth/device in your browser yourself.`)
       }
       logger.info(`Enter code: ${String(user_code).replace(/[^\x20-\x7E]/g, '')}\n`)
 
