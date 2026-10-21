@@ -226,8 +226,8 @@ async function readBodyQuietly(res: Response): Promise<{ code?: unknown; error?:
 }
 
 /**
- * POST the refresh with up to 3 tries on 429 / 5xx / network errors (backoff 1s, 2s; Retry-After wins
- * when <= 10s). Returns the final Response for 2xx and for definite refusals (401, 4xx, platform-unavailable
+ * POST the refresh with up to 3 tries on 429 / 408 / 425 / 5xx / network errors (full-jitter backoff up to 1s, 2s;
+ * a Retry-After is honoured as-is but never below the backoff minimum, and only when <= 10s). Returns the final Response for 2xx and for definite refusals (401, 4xx, platform-unavailable
  * 503). Throws RefreshUnavailableError when still 429/5xx/unreachable, so credentials stay and no login is requested.
  */
 async function fetchRefreshWithRetry(apiUrl: string, refreshToken: string): Promise<Response> {
@@ -236,16 +236,22 @@ async function fetchRefreshWithRetry(apiUrl: string, refreshToken: string): Prom
     const backoff = 2 ** (attempt - 1);
     let res: Response | undefined;
     let detail: string;
-    let wait = backoff;
+    let wait = backoff; // seconds reported to the user (upper bound of the sleep)
+    let sleepSeconds = Math.random() * backoff; // full jitter, within the bound
     try {
       res = await fetch(`${apiUrl}/api/auth/device/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
-      if (res.ok || (res.status !== 429 && res.status < 500)) return res;
+      const transient = res.status === 429 || res.status === 408 || res.status === 425 || res.status >= 500;
+      if (res.ok || !transient) return res;
       if (res.status >= 500 && isPlatformUnavailable(res, await readBodyQuietly(res))) return res;
-      wait = parseRetryAfterSeconds(res.headers) ?? backoff;
+      const retryAfter = parseRetryAfterSeconds(res.headers);
+      if (retryAfter !== undefined) {
+        wait = Math.max(retryAfter, backoff); // Retry-After: 0 must not mean an immediate retry
+        sleepSeconds = wait;
+      }
       detail = `HTTP ${res.status}`;
     } catch (err) {
       detail = err instanceof Error ? err.message : String(err);
@@ -258,10 +264,9 @@ async function fetchRefreshWithRetry(apiUrl: string, refreshToken: string): Prom
       );
     }
     console.error(`[shipguard] Token refresh got ${detail}; retrying in ${wait} s (attempt ${attempt}/${REFRESH_MAX_TRIES}).`);
-    await sleepMs(wait * 1000);
+    await sleepMs(sleepSeconds * 1000);
   }
 }
-
 
 /**
  * Resolve the Bearer token to use for an authenticated API call.

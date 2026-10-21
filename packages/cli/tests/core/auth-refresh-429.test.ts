@@ -108,4 +108,67 @@ describe('token refresh — 429 / 5xx / network are retried, never "log in again
     expect(await getAuthToken(API_URL)).toBeNull()
     expect(f).toHaveBeenCalledTimes(1)
   })
+
+  it('a 400 invalid_grant is "log in again": no retry, returns null', async () => {
+    await saveCredentials(EXPIRED)
+    const f = vi.fn().mockResolvedValue(response(400, { error: 'invalid_grant' }))
+    globalThis.fetch = f as never
+    expect(await getAuthToken(API_URL)).toBeNull()
+    expect(f).toHaveBeenCalledTimes(1)
+  })
+
+  it('a 403 is not retried and returns null', async () => {
+    await saveCredentials(EXPIRED)
+    const f = vi.fn().mockResolvedValue(response(403, { error: 'forbidden' }))
+    globalThis.fetch = f as never
+    expect(await getAuthToken(API_URL)).toBeNull()
+    expect(f).toHaveBeenCalledTimes(1)
+  })
+
+  it('exhausted 5xx: RefreshUnavailableError, credentials kept, exit-3 class via fetchProRules', async () => {
+    await saveCredentials(EXPIRED)
+    const f = vi.fn().mockResolvedValue(response(502))
+    globalThis.fetch = f as never
+    const p = fetchProRules(['nextjs'], undefined, API_URL).catch((e) => e)
+    await vi.advanceTimersByTimeAsync(20_000)
+    const err = await p
+    expect(f).toHaveBeenCalledTimes(3)
+    expect(err.code).toBe('RATE_LIMITED')
+    expect(err.message).toMatch(/HTTP 502/)
+    expect(loadCredentials()?.refreshToken).toBe('ref_xyz')
+  })
+
+  it.each([408, 425])('a %i is transient: retried, then succeeds', async (status) => {
+    await saveCredentials(EXPIRED)
+    const f = vi.fn().mockResolvedValueOnce(response(status)).mockResolvedValueOnce(OK)
+    globalThis.fetch = f as never
+    const p = getAuthToken(API_URL)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(await p).toBe('tok_fresh')
+    expect(f).toHaveBeenCalledTimes(2)
+  })
+
+  it('Retry-After: 0 is floored to the backoff minimum, not an immediate retry', async () => {
+    await saveCredentials(EXPIRED)
+    const f = vi.fn().mockResolvedValueOnce(response(429, {}, { 'Retry-After': '0' })).mockResolvedValueOnce(OK)
+    globalThis.fetch = f as never
+    const p = getAuthToken(API_URL)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(f).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await p).toBe('tok_fresh')
+  })
+
+  it('backoff without Retry-After is jittered within the 1s bound', async () => {
+    await saveCredentials(EXPIRED)
+    vi.spyOn(Math, 'random').mockReturnValue(0.25)
+    const f = vi.fn().mockResolvedValueOnce(response(503)).mockResolvedValueOnce(OK)
+    globalThis.fetch = f as never
+    const p = getAuthToken(API_URL)
+    await vi.advanceTimersByTimeAsync(249)
+    expect(f).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await p).toBe('tok_fresh')
+    vi.mocked(Math.random).mockRestore()
+  })
 })
