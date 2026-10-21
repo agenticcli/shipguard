@@ -1,5 +1,7 @@
 # @agenticcli/shipguard
 
+## 0.8.1 — first public release with npm provenance (0.8.0 was tagged but never published: release workflow fix)
+
 ## 0.8.0 — first public release (2026-10-19)
 
 ShipGuard is a CLI-first release gate for AI-built apps. It scans your project locally and tells you whether it is safe to ship.
