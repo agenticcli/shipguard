@@ -93,7 +93,8 @@ jobs:
             })"
 
       # setup-node has no registry-url: with it, setup-node writes an .npmrc and sets a placeholder
-      # NODE_AUTH_TOKEN, which can block the OIDC exchange. NODE_AUTH_TOKEN is also unset below.
+      # NODE_AUTH_TOKEN; we do not need it (no private deps), so it is dropped and NODE_AUTH_TOKEN is
+      # unset below to keep the publish on the OIDC trusted-publisher path only.
       # Docs: https://docs.npmjs.com/trusted-publishers
       - name: Publish to npm with provenance
         working-directory: packages/cli
@@ -104,4 +105,4 @@ jobs:
             *)   tag=latest ;;
           esac
           unset NODE_AUTH_TOKEN
-          npm publish "$tgz" --provenance --access public --tag "$tag" --loglevel verbose
+          npm publish "$tgz" --provenance --access public --tag "$tag"
