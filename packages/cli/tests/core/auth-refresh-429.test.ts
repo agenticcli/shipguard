@@ -49,6 +49,7 @@ afterEach(() => {
   vi.useRealTimers()
   rmSync(TEST_HOME, { recursive: true, force: true })
   errSpy.mockRestore()
+  vi.restoreAllMocks() // also undoes the Math.random spy even if a test failed midway
   globalThis.fetch = realFetch
 })
 
@@ -169,6 +170,5 @@ describe('token refresh — 429 / 5xx / network are retried, never "log in again
     expect(f).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(1)
     expect(await p).toBe('tok_fresh')
-    vi.mocked(Math.random).mockRestore()
   })
 })
