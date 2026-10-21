@@ -51,16 +51,18 @@ afterEach(() => {
 })
 
 describe('getAuthToken — refresh failures are loud, not silent', () => {
-  it('logs the thrown reason when the refresh request itself throws', async () => {
+  it('keeps the thrown reason when the refresh request itself throws (retried, then a wait message; issue #4)', async () => {
+    vi.useFakeTimers()
     await saveCredentials(EXPIRED_CREDS)
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND agenticcli.dev')) as never
 
-    const token = await getAuthToken('https://agenticcli.dev')
+    const p = getAuthToken('https://agenticcli.dev').catch((e) => e)
+    await vi.advanceTimersByTimeAsync(10_000)
+    const err = await p
+    vi.useRealTimers()
 
-    expect(token).toBeNull() // behaviour unchanged — caller still prompts re-login
-    const logged = errSpy.mock.calls.map((c) => String(c[0])).join('\n')
-    expect(logged).toMatch(/Token refresh failed/)
-    expect(logged).toMatch(/ENOTFOUND/) // the actual reason survives to the user
+    expect(err.name).toBe('RefreshUnavailableError') // not null: the caller must not prompt re-login
+    expect(err.message).toMatch(/ENOTFOUND/) // the actual reason survives to the user
   })
 
   it('logs the status when the server REFUSES the refresh (non-2xx)', async () => {
@@ -81,17 +83,20 @@ describe('getAuthToken — refresh failures are loud, not silent', () => {
 
   it('distinguishes a refusal from an outage — the two messages differ', async () => {
     await saveCredentials(EXPIRED_CREDS)
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable' }) as never
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized' }) as never
     await getAuthToken('https://agenticcli.dev')
     const refused = errSpy.mock.calls.map((c) => String(c[0])).join('\n')
     errSpy.mockClear()
 
+    vi.useFakeTimers()
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('socket hang up')) as never
-    await getAuthToken('https://agenticcli.dev')
-    const threw = errSpy.mock.calls.map((c) => String(c[0])).join('\n')
+    const p = getAuthToken('https://agenticcli.dev').catch((e) => e)
+    await vi.advanceTimersByTimeAsync(10_000)
+    const threw = String((await p).message)
+    vi.useRealTimers()
 
     expect(refused).not.toBe(threw)
-    expect(refused).toMatch(/503/)
+    expect(refused).toMatch(/401/)
     expect(threw).toMatch(/socket hang up/)
   })
 

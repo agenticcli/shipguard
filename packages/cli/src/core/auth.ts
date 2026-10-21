@@ -203,6 +203,71 @@ async function exchangeApiKeyForToken(apiKey: string, apiUrl: string): Promise<s
   return body.access_token;
 }
 
+/** Refresh was rate limited (429), hit a 5xx, or could not reach the server, after bounded retries. NOT "log in again". */
+export class RefreshUnavailableError extends Error {
+  constructor(message: string, readonly retryAfterSeconds: number) {
+    super(message);
+    this.name = 'RefreshUnavailableError';
+  }
+}
+
+const REFRESH_MAX_TRIES = 3;
+const REFRESH_MAX_WAIT_SECONDS = 10; // longest in-process wait; a longer Retry-After is reported, not slept
+const sleepMs = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function readBodyQuietly(res: Response): Promise<{ code?: unknown; error?: unknown } | null> {
+  try {
+    // clone() so the body can still be read by anyone else; a minimal Response-like object (tests) may lack it.
+    const probe = typeof res.clone === 'function' ? res.clone() : res;
+    return (await probe.json()) as { code?: unknown; error?: unknown };
+  } catch {
+    return null; // unreadable body: header checks still apply
+  }
+}
+
+/**
+ * POST the refresh with up to 3 tries on 429 / 408 / 425 / 5xx / network errors (full-jitter backoff up to 1s, 2s;
+ * a Retry-After is honoured as-is but never below the backoff minimum, and only when <= 10s). Returns the final Response for 2xx and for definite refusals (401, 4xx, platform-unavailable
+ * 503). Throws RefreshUnavailableError when still 429/5xx/unreachable, so credentials stay and no login is requested.
+ */
+async function fetchRefreshWithRetry(apiUrl: string, refreshToken: string): Promise<Response> {
+  let lastWait = 1;
+  for (let attempt = 1; ; attempt++) {
+    const backoff = 2 ** (attempt - 1);
+    let res: Response | undefined;
+    let detail: string;
+    let wait = backoff; // seconds reported to the user (upper bound of the sleep)
+    let sleepSeconds = Math.random() * backoff; // full jitter, within the bound
+    try {
+      res = await fetch(`${apiUrl}/api/auth/device/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      const transient = res.status === 429 || res.status === 408 || res.status === 425 || res.status >= 500;
+      if (res.ok || !transient) return res;
+      if (res.status >= 500 && isPlatformUnavailable(res, await readBodyQuietly(res))) return res;
+      const retryAfter = parseRetryAfterSeconds(res.headers);
+      if (retryAfter !== undefined) {
+        wait = Math.max(retryAfter, backoff); // Retry-After: 0 must not mean an immediate retry
+        sleepSeconds = wait;
+      }
+      detail = `HTTP ${res.status}`;
+    } catch (err) {
+      detail = err instanceof Error ? err.message : String(err);
+    }
+    lastWait = wait;
+    if (attempt >= REFRESH_MAX_TRIES || wait > REFRESH_MAX_WAIT_SECONDS) {
+      throw new RefreshUnavailableError(
+        `Token refresh is rate limited or temporarily unavailable (${detail}); your login is kept, try again in ${lastWait} s.`,
+        lastWait,
+      );
+    }
+    console.error(`[shipguard] Token refresh got ${detail}; retrying in ${wait} s (attempt ${attempt}/${REFRESH_MAX_TRIES}).`);
+    await sleepMs(sleepSeconds * 1000);
+  }
+}
+
 /**
  * Resolve the Bearer token to use for an authenticated API call.
  *
@@ -237,11 +302,7 @@ export async function getAuthToken(apiUrl?: string): Promise<string | null> {
   if (creds.refreshToken && creds.apiUrl) {
     try {
       assertTrustedApiUrl(creds.apiUrl)
-      const res = await fetch(`${creds.apiUrl}/api/auth/device/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: creds.refreshToken }),
-      });
+      const res = await fetchRefreshWithRetry(creds.apiUrl, creds.refreshToken);
       if (res.ok) {
         const { access_token, refresh_token, expires_in } = await res.json() as {
           access_token: string;
@@ -259,14 +320,7 @@ export async function getAuthToken(apiUrl?: string): Promise<string | null> {
       // The platform-unavailable 503 is NOT a refused refresh: the service is down on its own side
       // . Surface it as its own class instead of
       // returning null, which would read as "log in again".
-      let refusedBody: { code?: unknown; error?: unknown } | null = null;
-      try {
-        // clone() so the body can still be read by anyone else; a minimal Response-like object (tests) may lack it.
-        const probe = typeof res.clone === 'function' ? res.clone() : res;
-        refusedBody = (await probe.json()) as { code?: unknown; error?: unknown };
-      } catch {
-        refusedBody = null; // unreadable body: the header check below still applies
-      }
+      const refusedBody = await readBodyQuietly(res);
       if (isPlatformUnavailable(res, refusedBody)) {
         throw new PlatformUnavailableError(
           typeof refusedBody?.error === 'string' ? refusedBody.error : PLATFORM_UNAVAILABLE_DEFAULT_MESSAGE,
@@ -282,6 +336,7 @@ export async function getAuthToken(apiUrl?: string): Promise<string | null> {
       );
     } catch (err: unknown) {
       if (err instanceof PlatformUnavailableError) throw err; // the service is down, not the login
+      if (err instanceof RefreshUnavailableError) throw err; // 429/5xx/network: retry later, do NOT ask for login
       // Refresh failed — fall through and return null so the caller prompts re-login.
       // never a silent catch. The reason matters: an expired refresh token, a
       // rejected API URL, a DNS failure and an offline laptop all landed here identically

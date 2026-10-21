@@ -85,10 +85,12 @@ describe('getAuthToken — token refresh meets the platform-unavailable 503', ()
     expect(err.retryAfterSeconds).toBeUndefined()
   })
 
-  it('a plain 503 (no code, no header) still means "log in again" (returns null, unchanged)', async () => {
+  it('a plain 503 (no code, no header) is a retry-later failure, never "log in again" (issue #4)', async () => {
     await saveCredentials(EXPIRED_CREDS)
-    globalThis.fetch = vi.fn().mockResolvedValue(response(503, { error: 'boom' })) as never
-    expect(await getAuthToken(API_URL)).toBeNull()
+    globalThis.fetch = vi.fn().mockResolvedValue(response(503, { error: 'boom' }, { 'Retry-After': '60' })) as never
+    const err = await getAuthToken(API_URL).catch((e) => e)
+    expect(err.name).toBe('RefreshUnavailableError')
+    expect(err.retryAfterSeconds).toBe(60)
   })
 
   it('a 401 refusal still returns null (unchanged)', async () => {
