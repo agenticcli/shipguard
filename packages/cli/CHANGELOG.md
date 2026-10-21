@@ -1,5 +1,9 @@
 # @agenticcli/shipguard
 
+## Unreleased
+
+- Fixed: a rate-limited (429), server-error (5xx) or unreachable token refresh no longer tells you to log in again. The CLI retries up to 3 times (honouring `Retry-After`, up to 10 s), keeps your login, then stops with exit code 3 and a "try again in N s" message. Only a refusal such as 401 still asks you to log in.
+
 ## 0.8.0 — first public release (2026-10-19)
 
 ShipGuard is a CLI-first release gate for AI-built apps. It scans your project locally and tells you whether it is safe to ship.

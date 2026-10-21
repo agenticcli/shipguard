@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import * as os from 'node:os'
 
-import { getAuthToken } from './auth.js'
+import { getAuthToken, RefreshUnavailableError } from './auth.js'
 import { goLink } from './links.js'
 // The verifyAndDecryptBundle and verifyRuleBundle imports were removed (retired paths).
 // Both functions are permanently disabled tombstones. Any call to them throws
@@ -142,6 +142,10 @@ export async function fetchProRules(
   } catch (err) {
     if (err instanceof PlatformUnavailableError) {
       throw new ProFetchError('PLATFORM_UNAVAILABLE', err.message, { retryAfterSeconds: err.retryAfterSeconds })
+    }
+    // Refresh rate limited / 5xx / unreachable after retries: a wait-and-retry problem, not a login problem (exit 3).
+    if (err instanceof RefreshUnavailableError) {
+      throw new ProFetchError('RATE_LIMITED', err.message, { retryAfterSeconds: err.retryAfterSeconds })
     }
     throw err
   }
