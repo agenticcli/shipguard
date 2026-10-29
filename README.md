@@ -20,6 +20,12 @@ AI coding tools (Cursor, Copilot, Claude Code) write production code fast — so
 
 ---
 
+## Telemetry
+
+Published builds send a small anonymous usage ping (CLI version, a random install id, scan verdict and duration bucket; also once on first run and after `shipguard login`) — never your code, paths or repo names. Turn it off with `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `shipguard telemetry disable`. See [what is sent and how to opt out](packages/cli/README.md#telemetry).
+
+---
+
 ## Quick start
 
 ```bash

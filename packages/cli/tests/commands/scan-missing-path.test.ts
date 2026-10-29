@@ -11,7 +11,7 @@
  * Spawns the BUILT binary: in-process tests never exercise the real exit path.
  */
 import { execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -58,11 +58,15 @@ async function run(args: string[], env: Record<string, string> = {}): Promise<Ru
   const addr = server.address()
   const port = typeof addr === 'object' && addr ? addr.port : 0
   try {
+    // Pre-seed the first-run marker so only the scan ping is counted (cli_first_run has its own e2e test).
+    const home = mkTmp()
+    mkdirSync(join(home, '.config', 'shipguard'), { recursive: true })
+    writeFileSync(join(home, '.config', 'shipguard', 'telemetry-first-run-sent'), '1\n')
     const result = await spawnNode(distCli, args, {
       cwd: mkTmp(),
       env: {
         ...process.env,
-        HOME: mkTmp(),
+        HOME: home,
         SHIPGUARD_TELEMETRY_URL: `http://127.0.0.1:${port}/cli-telemetry`,
         SHIPGUARD_TELEMETRY: '1',
         DO_NOT_TRACK: '0',

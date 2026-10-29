@@ -32,6 +32,9 @@ beforeAll(() => {
   mkdirSync(project)
   writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }))
   writeFileSync(join(project, 'index.js'), 'console.log("hi")\n')
+  // First-run marker pre-seeded: these tests count the scan ping only.
+  mkdirSync(join(work, '.config', 'shipguard'), { recursive: true })
+  writeFileSync(join(work, '.config', 'shipguard', 'telemetry-first-run-sent'), '1\n')
   log = join(work, 'attempts.log')
   recorder = join(work, 'record-fetch.cjs')
   writeFileSync(

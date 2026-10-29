@@ -3,6 +3,7 @@ import { saveCredentials } from '../core/auth.js'
 import { logger } from '../utils/logger.js'
 import { openUrl, parseOpenableUrl } from '../utils/open-url.js'
 import { assertTrustedApiUrl } from '../utils/trust.js'
+import { CLI_VERSION, sendLifecycleEvent } from '../core/telemetry.js'
 
 const DEFAULT_API_URL = 'https://agenticcli.dev'
 
@@ -52,6 +53,8 @@ export function loginCommand(): Command {
             apiUrl,
           })
           logger.success('Authenticated successfully!')
+          // Fire-and-forget lifecycle ping; bounded, never rejects, honours every opt-out.
+          await sendLifecycleEvent('cli_login', { cliVersion: CLI_VERSION }, { projectDir: process.cwd() })
           return
         }
         const { error } = tokenBody

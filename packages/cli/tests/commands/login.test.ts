@@ -5,6 +5,12 @@ vi.mock('../../src/core/auth.js', () => ({
   clearCredentials: vi.fn(),
 }))
 
+const lifecycle = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+vi.mock('../../src/core/telemetry.js', async (orig) => ({
+  ...(await orig<typeof import('../../src/core/telemetry.js')>()),
+  sendLifecycleEvent: lifecycle,
+}))
+
 const { loginCommand } = await import('../../src/commands/login.js')
 
 describe('loginCommand', () => {
@@ -34,6 +40,18 @@ describe('loginCommand', () => {
 
     await loginCommand().parseAsync(['node', 'login'])
     expect(saveCredentials).toHaveBeenCalledOnce()
+    expect(lifecycle).toHaveBeenCalledOnce()
+    expect(lifecycle.mock.calls[0][0]).toBe('cli_login')
+  })
+
+  it('does not send cli_login when auth fails', async () => {
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ device_code: 'd', user_code: 'A', verification_uri: 'https://agenticcli.dev/activate', expires_in: 300, interval: 1 }) })
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'access_denied' }) }) as unknown as typeof fetch
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit') }) as never)
+    await expect(loginCommand().parseAsync(['node', 'login'])).rejects.toThrow('exit')
+    expect(lifecycle).not.toHaveBeenCalled()
+    exit.mockRestore()
   })
 
   it('fallback message points to /auth/device when the server URL is untrusted', async () => {
