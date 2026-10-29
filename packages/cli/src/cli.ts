@@ -12,6 +12,7 @@ import { schemaCommand } from './commands/schema.js'
 import { feedbackCommand, rateCommand } from './commands/feedback.js'
 import { telemetryCommand } from './commands/telemetry.js'
 import { quickstartHelp } from './core/render.js'
+import { CLI_VERSION, sendLifecycleEvent } from './core/telemetry.js'
 import {
   handleUncaughtException,
   handleUnhandledRejection,
@@ -72,6 +73,13 @@ Learn more:
   Site     ${goLink('site')}
   Pricing  ${goLink('pricing')}
   Issues   ${ISSUES_URL}`)
+
+// First command on an install: one `cli_first_run` event (opt-outs, CI and dev-build rules live in
+// sendLifecycleEvent; it never throws and is bounded). Skipped for `telemetry` so a user can opt out first.
+program.hook('preAction', async (_thisCommand, actionCommand) => {
+  if (actionCommand.name() === 'telemetry' || actionCommand.parent?.name() === 'telemetry') return
+  await sendLifecycleEvent('cli_first_run', { cliVersion: CLI_VERSION }, { projectDir: process.cwd() })
+})
 
 // Use exitOverride so that Commander errors throw instead of calling process.exit.
 // This lets us intercept unknown-command errors and emit a friendly message with
