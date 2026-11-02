@@ -1,6 +1,6 @@
 # @agenticcli/shipguard
 
-## Unreleased
+## 0.9.0 - 2026-11-02
 
 - Fixed: a scan can no longer say `SAFE_TO_SHIP` over files it did not read. UTF-16 files (with or without a byte-order mark) and text files with a stray NUL byte are now scanned (each NUL is read as a space, so line numbers do not move). Before, one NUL byte next to a secret hid the whole file.
 - Fixed: a scan that read nothing (an empty folder, only ignored or binary files, or `--changed` on a clean checkout) is now `degraded` with `NO_FILES_SCANNED`, so the verdict is `DO_NOT_SHIP` and `--strict` exits 1. Run `shipguard scan` for the whole tree.
