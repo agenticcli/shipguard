@@ -1,0 +1,62 @@
+# C0 rehearsal re-run (QA agent): build:publish tarball of head ed3a6ae988fae141d65883977a45d559782ca9d1
+# date 2026-11-02T16:06:31Z  node v24.22.1  pnpm 9.15.0
+# tree clean before build: yes
+## step 1: pnpm run build, then SHIPGUARD_PUBLISHED_BUILD=1 build:publish, then npm pack
+build exit: 0
+build:publish exit: 0
+npm pack exit: 0
+tarball: agenticcli-shipguard-0.8.1.tgz  sha256: 049c4e9a98d954375659ef3f09a11e18f2cc778ae4f99ba5907dfa139ebeb284  bytes: 145529
+## step 2: npm install --ignore-scripts --offline into an empty temp dir
+npm install exit: 0
+installed --version: 0.8.1  packed package.json version: 0.8.1
+installed dist/cli.js sha256 == repo dist/cli.js sha256: yes
+published-build marker in installed cli: 2 match(es)
+## step 3: C0 rows against the INSTALLED binary (SHIPGUARD_CLI=<inst>/node_modules/@agenticcli/shipguard/dist/cli.js)
+### B2 B3 B4 B5 B6 B23 matrix, B4 500-file tree, B7 coverage JSON, B8 limits + large assets, B10 B18 B19 B22, B12 pipe, B16 EPIPE, B20, binary strings
+ Test Files  9 passed (9)
+      Tests  68 passed (68)
+### QA-added e2e rows: never-safe-over-unread-key, slow bash pipe, undecodable folder name
+     × full: d\xFF/x.env (key) alone: UNREADABLE_FILE, degraded (never a silent drop)
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 12 passed (13)
+### B13 slow lane (5.7 MB, 12 s hold, JSON + SARIF)
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+## step 3b: real host assets over 512 KiB (copied to a temp dir, never committed)
+  667036 host0.jpg
+  3420261 host1.pdf
+  992509 host2.mp4
+  838131 host3.png
+  555745 host4.png
+  645735 host5.gz
+  13 ok.js
+exit 0
+{"degraded":false,"rec":"SAFE_TO_SHIP","codes":[],"skipped":{"binary":6,"tooLarge":0,"symlink":0,"unknownBinary":0,"invalidUtf8":0,"unreadable":0,"special":0,"binaryHeadOnly":6},"scanned":1,"cliVersion":"0.8.1","schemaVersion":"6"}
+## step 3c: time-to-exit of a 580 KB --json --strict run into a pipe read at once (installed binary)
+  bytes: 349463
+  CLI exit: 1  wall ms: 1052
+## step 3d: exit-code contract on the installed binary
+  missing path --json --strict: exit 2 (contract 2)
+  clean+real-binary tree, no flag: exit 0 (contract 0)
+  empty dir, no flag: exit 0 (contract 0, degraded)
+  empty dir, --strict: exit 0 (contract 1, NO_FILES_SCANNED)
+  schema --json lists NO_FILES_SCANNED: true  UNSCANNED_UNKNOWN_BINARY: true
+## step 5: G8 shipped-tree self-scan (slow lane, on the publish build whose dist/cli.js equals the tarball's)
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+# tree clean after: yes
+
+## QA notes (added after the run, by hand)
+- Plan C0 rows (step 3 group 1: B2 B3 B4 B5 B6 B8 B10 B12 B16 B18 B19 B20 B22 B23, binary strings; B13 slow lane): all pass
+  on the installed tarball binary (68/68 and 2/2). Real host assets (6 files over 512 KiB): binaryHeadOnly 6, not degraded.
+  G8: pass. Exit 2 for a missing path: kept.
+- Step 3c label: the fixture there is 120 files x 2 keys, so the document was 349,463 bytes (not 580 KB); exit 1, 1.05 s.
+- Step 3d "empty dir, --strict: exit 0" is a FINDING, not a script slip: the line before it scanned the same folder
+  without --strict, and that first scan wrote `.gitignore` (history store courtesy line `.shipguard/`) into it. The
+  --strict run then scanned that tool-written file (coverage.scanned 1) and reported SAFE_TO_SHIP. A fresh empty
+  folder with --strict gives NO_FILES_SCANNED, DO_NOT_SHIP, exit 1. Same on a real-binaries-only folder (run 2 SAFE).
+  Red test: packages/cli/tests/commands/scan-no-files-scanned-repeat.test.ts.
+- QA row "full: d\xFF/x.env (key) alone" fails on the tarball as on the dev build: a folder whose name is not valid
+  UTF-8 is silently dropped by the full scan (SAFE_TO_SHIP, --strict exit 0). Red test:
+  packages/cli/tests/commands/scan-undecodable-dir-name.test.ts.
+- Recommendation from this rehearsal: do not publish this head until both findings are fixed or accepted by the owner.

@@ -1,0 +1,128 @@
+
+ RUN  v4.1.11 /home/dev/1mUSD/shipguard-public-wt-honest-coverage-20261102/packages/cli
+
+ ❯ tests/commands/scan-coverage-json.test.ts (5 tests | 4 failed) 2291ms
+     × a clean scan has coverage, the invariant, schemaVersion 6 and no _skipped* keys 429ms
+     × names are sorted, project-relative and capped at 50 while the count stays exact 470ms
+     × --changed reports mode and the raw git count 455ms
+     × human output prints the Coverage line on a CLEAN scan and names each skip category 432ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/commands/scan-coverage-json.test.ts > coverage in --json > a clean scan has coverage, the invariant, schemaVersion 6 and no _skipped* keys
+AssertionError: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-json.test.ts:15:32
+     13|     const run = await scanJson(mkTree({ 'a.js': 'const a = 1\n', 'b.js…
+     14|     const json = run.json!
+     15|     expect(json.schemaVersion).toBe('6')
+       |                                ^
+     16|     expect(json.coverage).toMatchObject({ discovered: 2, scanned: 2, m…
+     17|     expect(json.coverage.skipped).toEqual({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/commands/scan-coverage-json.test.ts > coverage in --json > names are sorted, project-relative and capped at 50 while the count stays exact
+TypeError: Cannot read properties of undefined (reading 'skipped')
+ ❯ tests/commands/scan-coverage-json.test.ts:33:26
+     31|     }
+     32|     const json = (await scanJson(mkTree(files))).json!
+     33|     expect(json.coverage.skipped.unknownBinary).toBe(60)
+       |                          ^
+     34|     const names: string[] = json.coverage.files.unknownBinary
+     35|     expect(names).toHaveLength(50)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/commands/scan-coverage-json.test.ts > coverage in --json > --changed reports mode and the raw git count
+TypeError: Cannot read properties of undefined (reading 'mode')
+ ❯ tests/commands/scan-coverage-json.test.ts:42:26
+     40|   it('--changed reports mode and the raw git count', async () => {
+     41|     const json = (await scanJson(mkTree({ 'a.js': 'x\n', 'b.js': 'y\n'…
+     42|     expect(json.coverage.mode).toBe('changed')
+       |                          ^
+     43|     expect(json.coverage.changed).toEqual({ listed: 2, outsideScope: 0…
+     44|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/commands/scan-coverage-json.test.ts > coverage in --json > human output prints the Coverage line on a CLEAN scan and names each skip category
+AssertionError: expected '  ✓  No findings detected — clean sca…' to match /Coverage: scanned 1 of 1 files/
+
+- Expected:
+/Coverage: scanned 1 of 1 files/
+
++ Received:
+"  ✓  No findings detected — clean scan.
+  Coverage: 30 bundled rules from the maintained corpus, plus local checks
+  for secrets, auth, payments, database and deployment. Runs offline, no account needed.
+  `shipguard login` scans against the full current corpus, not just the offline subset.
+  Plans: https://agenticcli.dev/go/pricing
+
+
+  ── What now? ──────────────────────────────────────────────
+
+  shipguard report                    # open the full report
+  shipguard feedback \"<thoughts>\"     # what do you think?
+
+  shipguard login                    # sign in for the full rule corpus
+  shipguard scan --pro               # scan with it (uses one scan credit)
+
+  Full docs: https://agenticcli.dev/go/docs
+
+
+╭────────────────────────────────────────────────────────────────────────────╮
+│   ShipGuard — Release Gate Report                                          │
+├────────────────────────────────────────────────────────────────────────────┤
+│   Severity breakdown                                                       │
+│   ██████████████████████████████  all clear                                │
+├────────────────────────────────────────────────────────────────────────────┤
+│   Run summary                                                              │
+│   Files scanned:  1                                                        │
+│   Elapsed time:   255ms                                                    │
+│   Total findings: 0                                                        │
+├────────────────────────────────────────────────────────────────────────────┤
+│   How ShipGuard helped                                                     │
+│   Clean — safe to ship. No issues found.                                   │
+├────────────────────────────────────────────────────────────────────────────┤
+│   Report written                                                           │
+│   .shipguard/reports/latest.md                                             │
+│   agent view: …/runs/77e6cd42-0715-43d1-ad64-85c7dfc80192.json             │
+├────────────────────────────────────────────────────────────────────────────┤
+│   Learn more                                                               │
+│   Docs     https://agenticcli.dev/go/docs                                  │
+│   Site     https://agenticcli.dev/go/site                                  │
+│   Pricing  https://agenticcli.dev/go/pricing                               │
+├────────────────────────────────────────────────────────────────────────────┤
+│   ✅  SAFE TO SHIP                                                         │
+│   SHIP IT — nothing blocking. Go make something people want.               │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯
+
+──────────────────────────────────────────────────
+ℹ ShipGuard — scanning my-app
+ℹ Scan path: /tmp/sg-e2e-2z5XlL
+ℹ Mode: full project scan
+──────────────────────────────────────────────────
+ℹ Scanning files...
+"
+
+ ❯ tests/commands/scan-coverage-json.test.ts:54:41
+     52|   it('human output prints the Coverage line on a CLEAN scan and names …
+     53|     const clean = await runCli(['scan', mkTree({ 'a.js': 'x\n' })])
+     54|     expect(clean.stdout + clean.stderr).toMatch(/Coverage: scanned 1 o…
+       |                                         ^
+     55|     const b = noise(200, 5)
+     56|     b[0] = 0x41
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 1 passed (5)
+   Start at  14:46:30
+   Duration  2.71s (transform 183ms, setup 79ms, import 128ms, tests 2.29s, environment 0ms)
+

@@ -57,10 +57,15 @@ import type { QualityGateRule, FileInfo, Finding, ScanResult, CheckModule } from
 // ============================================================
 // ---------------------------------------------------------------------------
 
-vi.mock('../../src/core/git.js', () => ({
-  isGitRepo: vi.fn(() => false),
-  getChangedFiles: vi.fn(() => []),
-}))
+// scan() now calls getChangedFilesDetailed; derive it from the getChangedFiles mock (see scanner.test.ts).
+vi.mock('../../src/core/git.js', () => {
+  const getChangedFiles = vi.fn((_dir: string): string[] => [])
+  return {
+    isGitRepo: vi.fn(() => false),
+    getChangedFiles,
+    getChangedFilesDetailed: vi.fn((dir: string) => ({ paths: getChangedFiles(dir), unaddressable: [] as string[], outsideScope: 0, unreadable: [] as string[] })),
+  }
+})
 
 const { scan } = await import('../../src/core/scanner.js')
 const gitModule = await import('../../src/core/git.js')

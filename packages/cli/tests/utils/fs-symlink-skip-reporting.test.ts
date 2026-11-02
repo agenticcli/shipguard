@@ -119,8 +119,14 @@ describe('readFiles — symlink skip is named + loud (symlink reporting)', () =>
 describe('readFiles — binary skip is named (symlink reporting, informational only)', () => {
   it('names a skipped binary file in skippedBinaryFiles', async () => {
     const project = mkTemp()
-    // A NUL byte anywhere in the buffer trips detectBinary() (fs.ts Gate 3).
-    writeFileSync(join(project, 'data.bin'), Buffer.from([0x00, 0x01, 0x02, 0x03]))
+    // Honest-coverage update: a NUL byte alone no longer means "binary". A REAL binary needs magic
+    // bytes AND mostly non-printable content (classify.ts, plan D4). This is a PNG signature followed
+    // by non-printable data, so it is a real binary and is still counted under skippedBinary.
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from(Array.from({ length: 256 }, (_, i) => (i % 2 === 0 ? 0x00 : 0x80 + (i % 64)))),
+    ])
+    writeFileSync(join(project, 'data.bin'), png)
     writeFileSync(join(project, 'real.ts'), 'const a = 1', 'utf-8')
 
     const result = await readFiles(project, ['**/*'])

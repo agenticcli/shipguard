@@ -116,7 +116,19 @@ vi.mock('../../src/core/pro-scanner.js', () => ({
 const { scanCommand } = await import('../../src/commands/scan.js')
 const { logger } = await import('../../src/utils/logger.js')
 
+/**
+ * The scan command no longer calls process.exit with output queued: it SETS process.exitCode and
+ * returns (utils/exit.ts). Read the code the command chose and clear it so it cannot leak into the
+ * vitest worker's own exit status.
+ */
+function takeExitCode(): number | undefined {
+  const c = process.exitCode
+  process.exitCode = undefined
+  return c === undefined ? undefined : Number(c)
+}
+
 afterEach(() => {
+  process.exitCode = undefined
   vi.clearAllMocks()
 })
 
@@ -131,6 +143,7 @@ async function runProScan(extraArgs: string[]): Promise<{ exitCode: number | und
   let exitCode: number | undefined
   try {
     await cmd.parseAsync(['node', 'scan', '--pro', '--json', ...extraArgs])
+    exitCode = takeExitCode()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const m = msg.match(/__EXIT_(\d+)__/)
@@ -239,6 +252,7 @@ describe('platform-unavailable-20261018 — PLATFORM_UNAVAILABLE human + JSON ou
     let exitCode: number | undefined
     try {
       await scanCommand().parseAsync(['node', 'scan', '--pro', ...extraArgs])
+      exitCode = takeExitCode()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       const m = msg.match(/__EXIT_(\d+)__/)

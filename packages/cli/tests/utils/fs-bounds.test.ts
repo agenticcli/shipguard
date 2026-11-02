@@ -68,15 +68,37 @@ describe('readFiles — maxFileSizeBytes cap', () => {
 // ---------------------------------------------------------------------------
 
 describe('readFiles — binary file detection', () => {
-  it('skips a file containing a NUL byte and increments skippedBinary', async () => {
+  // Honest-coverage update (plan D2/D4): this test used to say "any NUL byte = skipped binary".
+  // That was the silent hole (one NUL beside a secret hid the whole file). It is now split in two.
+  it('SCANS a text file that contains a stray NUL byte (NUL becomes a space) and counts it', async () => {
     const dir = mkTemp()
-    // Create a binary file with NUL byte in first 8192 bytes
-    const binaryContent = Buffer.concat([
-      Buffer.from('some text '),
+    // NUL must stay at or under 1% of the file (plan D2), so the text around it is long enough.
+    const content = Buffer.concat([
+      Buffer.from('some text '.repeat(20)),
       Buffer.from([0x00]),  // NUL byte
       Buffer.from(' more text'),
     ])
-    writeFileSync(join(dir, 'binary.bin'), binaryContent)
+    writeFileSync(join(dir, 'binary.bin'), content)
+    writeFileSync(join(dir, 'text.ts'), 'const x = 1', 'utf-8')
+
+    const result = await readFiles(dir, ['**/*'], [], {})
+
+    expect(result.files.some(f => f.relativePath === 'text.ts')).toBe(true)
+    const nul = result.files.find(f => f.relativePath === 'binary.bin')
+    expect(nul).toBeDefined()
+    expect(nul!.content).toContain('some text   more text')
+    expect(nul!.content).not.toContain('\0')
+    expect(result.nulSubstituted).toBe(1)
+    expect(result.skippedBinary).toBe(0)
+  })
+
+  it('skips a REAL binary (magic bytes and mostly non-printable) and increments skippedBinary', async () => {
+    const dir = mkTemp()
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from(Array.from({ length: 256 }, (_, i) => (i % 2 === 0 ? 0x00 : 0x80 + (i % 64)))),
+    ])
+    writeFileSync(join(dir, 'binary.bin'), png)
     writeFileSync(join(dir, 'text.ts'), 'const x = 1', 'utf-8')
 
     const result = await readFiles(dir, ['**/*'], [], {})

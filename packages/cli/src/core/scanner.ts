@@ -1,20 +1,30 @@
-import { readFile, stat, realpath } from 'node:fs/promises'
+import { lstat, realpath } from 'node:fs/promises'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { loadPolicy } from './policy.js'
 import { computeRiskScore } from './risk-score.js'
 import { applyVerdict } from './verdict.js'
-import { RUNS_SUBDIR } from './report.js'
-import { isGitRepo, getChangedFiles } from './git.js'
-import { readFiles, compareScanPaths, DEFAULT_MAX_FILE_SIZE_BYTES, DEFAULT_MAX_TOTAL_BYTES, DEFAULT_MAX_FILES } from '../utils/fs.js'
+import { isGitRepo, getChangedFilesDetailed } from './git.js'
+import {
+  readFiles,
+  readCandidate,
+  capReached,
+  createReadState,
+  compareScanPaths,
+  MAX_SKIPPED_NAMES,
+  DEFAULT_MAX_FILE_SIZE_BYTES,
+  DEFAULT_MAX_TOTAL_BYTES,
+  DEFAULT_MAX_FILES,
+  type ReadFilesResult,
+} from '../utils/fs.js'
+import { buildIgnoreRules, classifyIgnored, isShipguardArtifactPath, selfArtifactIgnorePatterns } from './ignore.js'
 import { logger } from '../utils/logger.js'
 import { secretsCheck } from '../checks/secrets.js'
 import { authCheck } from '../checks/auth.js'
 import { databaseCheck } from '../checks/database.js'
 import { payments } from '../checks/payments.js'
 import { deploymentCheck } from '../checks/deployment.js'
-import type { FileInfo, Finding, Policy, ScanOptions, ScanResult, QualityGateRule, DegradeReason } from '@agenticcli/shared'
-import { HISTORY_PATH_ENV_VAR } from '@agenticcli/shared'
+import type { FileInfo, Finding, ScanOptions, ScanResult, QualityGateRule, DegradeReason, ScanCoverage } from '@agenticcli/shared'
 import { runProRulesWithDispatch, runProRules } from './pro-scanner.js'
 import { loadChecksumManifest } from './coderef-dispatch.js'
 import { applySuppressions, isLineSuppressed } from './suppression.js'
@@ -22,124 +32,34 @@ import { loadBundledRules } from './bundled-rules.js'
 import { dedupeLegacyAgainstCorpus } from './legacy-corpus-map.js'
 import { collapseSameIssueFindings } from './collapse-findings.js'
 import { redactFindingsEvidence } from './redact.js'
-import {
-  decodeUtf8Strict,
-  detectBinary,
-  stripBom,
-  normalizeNewlines,
-} from '@agenticcli/matcher-contract'
 
 const CHECK_MODULES = [secretsCheck, authCheck, databaseCheck, payments, deploymentCheck]
 
-const DEFAULT_IGNORE = [
-  'node_modules/**',
-  'dist/**',
-  'build/**',
-  '.next/**',
-  'coverage/**',
-  '.git/**',
-  // ShipGuard's own report output — never scan the tool's own artifacts
-  '.shipguard/**',
-]
+// Kept for callers/tests that import it from here; the implementation moved to core/ignore.ts so the
+// full scan and `--changed` share ONE ignore list.
+export { selfArtifactIgnorePatterns }
 
-/**
- * Ignore patterns for ShipGuard's OWN artifacts when the policy points them somewhere
- * other than the default `.shipguard/` directory.
- *
- * "Exclude `.shipguard/` from ShipGuard's own scan surface."
- * `.shipguard/**` was already excluded, but `report.output` and `history.path` are
- * user-configurable — set `report.output: reports/latest.md` and from the second scan
- * onward ShipGuard reads its own report and history back in. Verified before this fix:
- * a two-file project reported `filesScanned: 6` on its second run. Self-scan recursion is
- * a demonstrated hazard class (the test round's own gitleaks probe self-contaminated), and
- * today it only fails to produce phantom findings because report evidence happens to be
- * masked — one format change away from a finding ShipGuard reported about itself.
- *
- * Pure: (policy) -> patterns. No filesystem access.
- */
-export function selfArtifactIgnorePatterns(policy: Policy): string[] {
-  const patterns: string[] = []
-
-  const add = (p: string | undefined): void => {
-    if (!p) return
-    // Only project-relative paths can be matched against fast-glob's relative results;
-    // an absolute path is outside the scan root's pattern space anyway.
-    if (p.startsWith('/')) return
-    const rel = p.replace(/^\.\//, '')
-    if (!rel) return
-    patterns.push(rel)
-  }
-
-  const reportOutput = policy.report?.output
-  add(reportOutput)
-  if (reportOutput) {
-    // generateReport() writes a .json sibling next to the .md — exclude it too.
-    add(reportOutput.replace(/\.md$/, '.json'))
-    // ...and the whole per-run report directory (rec #8). Excluding a NAMED directory is
-    // what makes this tractable: run filenames are unpredictable run ids, so there is
-    // nothing else stable to match on, and without it every scan leaves two more files
-    // for the next scan to read.
-    const reportDir = dirname(reportOutput)
-    add(join(reportDir === '.' ? '' : reportDir, RUNS_SUBDIR, '**'))
-  }
-  add(policy.history?.path)
-  // The env override wins over the policy value (see history/path.ts), so honour it here too.
-  add(process.env[HISTORY_PATH_ENV_VAR])
-
-  return patterns
-}
-
-/**
- * Internal result that extends ScanResult with skip/truncation metadata.
- * These counts are used only by the human-output path in commands/scan.ts
- * and are NOT included in the frozen --json schema.
- */
+/** The scan result plus what was scanned, skipped and ignored (always present on a real scan). */
 export interface ScanResultWithMeta extends ScanResult {
-  /**
-   * Count of files skipped because they exceeded the per-file size cap.
-   * This is a DEGRADED condition: a skipped file
-   * was NOT scanned, so the scan is incomplete and must not report SAFE.
-   */
-  _skippedTooLarge?: number
-  /** Relative paths of the oversized-skipped files — used to NAME them in the warning. */
-  _skippedTooLargeFiles?: string[]
-  /** Files skipped due to binary content detection. NORMAL — not a degradation. */
-  _skippedBinary?: number
-  /**
-   * Relative paths of the binary-skipped files — used to NAME them in the human-output
-   * line (symlink reporting: this file's own docs already admitted binary skips happen,
-   * but never named which files, unlike every other skip category). Still NORMAL — not
-   * wired into degraded/degradedReasons; a binary file has no source to scan (see the
-   * comment on `degradedReasons` below for why this is deliberately excluded).
-   */
-  _skippedBinaryFiles?: string[]
-  /**
-   * Count of symlinks discovered but not followed (symlink reporting). Unlike
-   * skippedBinary this IS a degraded condition (see degradedReasons below) — kept here
-   * too so the human-output path can print the same warning shape as the other skip
-   * categories.
-   */
-  _skippedSymlinks?: number
-  /** Relative paths of the skipped symlinks — used to NAME them in the warning. */
-  _skippedSymlinkFiles?: string[]
-  /** true if collection was truncated (total bytes or file count cap hit). Degraded condition. */
-  _truncated?: boolean
+  coverage: ScanCoverage
 }
 
 /**
  * Content-addressed digest of everything the scan read.
  *
- * `sha256( for each file, in sorted path order: path + NUL + hex(sha256(content)) + LF )`.
+ * `sha256( for each reading, in sorted path order: path + NUL + hex(sha256(content)) + LF )`.
  *
  * Sorted path order (the same `compareScanPaths` ordering rec #7 established) makes it
  * reproducible; hashing per-file content rather than concatenating raw bytes keeps a
  * rename from being invisible and keeps file boundaries unambiguous.
  *
  * Note what it covers: the NORMALIZED content the checks actually ran against (BOM
- * stripped, CRLF folded to LF — see utils/fs.ts Gate 5), not the raw bytes on disk. That
- * is the honest thing to attest to, because it is what produced the findings.
+ * stripped, CRLF folded to LF, UTF-16 decoded, NUL replaced by a space), not the raw bytes on
+ * disk. A file with several plausible readings contributes one line per reading. That is the honest
+ * thing to attest to, because it is what produced the findings. NUL-bearing and UTF-16 files that
+ * used to be unread now enter the digest, so the digest of such trees differs from 0.8.1.
  *
- * Returns undefined when nothing was read — an empty digest would falsely imply "I looked
+ * Returns undefined when nothing was read - an empty digest would falsely imply "I looked
  * and there was nothing", which is not the same as "I read no files".
  */
 export function computeTreeDigest(files: FileInfo[]): string | undefined {
@@ -155,6 +75,71 @@ function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * A path with several plausible readings is checked once per reading. Drop the repeats that
+ * come from readings of the SAME file (same rule, file and line); findings of other files and
+ * `collapseSameIssueFindings` are untouched.
+ */
+function dedupeAcrossReadings(findings: Finding[], files: FileInfo[]): Finding[] {
+  const counts = new Map<string, number>()
+  for (const f of files) counts.set(f.relativePath, (counts.get(f.relativePath) ?? 0) + 1)
+  const multi = new Set([...counts].filter(([, n]) => n > 1).map(([p]) => p))
+  if (multi.size === 0) return findings
+  const seen = new Set<string>()
+  return findings.filter((f) => {
+    if (!f.file || !multi.has(f.file)) return true
+    const key = `${f.id}\0${f.file}\0${f.line ?? ''}\0${f.line === undefined ? `${f.title}\0${f.evidence ?? ''}` : ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+const sortedCapped = (names: string[]): string[] => [...names].sort(compareScanPaths).slice(0, MAX_SKIPPED_NAMES)
+
+function buildCoverage(
+  state: ReadFilesResult,
+  mode: 'full' | 'changed',
+  changed?: { listed: number; outsideScope: number },
+): ScanCoverage {
+  return {
+    discovered: state.discovered,
+    scanned: state.acceptedPaths,
+    skipped: {
+      binary: state.skippedBinary,
+      tooLarge: state.skippedTooLarge,
+      symlink: state.skippedSymlinks,
+      unknownBinary: state.skippedUnknownBinary,
+      invalidUtf8: state.invalidUtf8Files.length,
+      unreadable: state.unreadableFiles.length,
+      special: state.skippedSpecial,
+      binaryHeadOnly: state.skippedBinaryHeadOnly,
+    },
+    decoded: {
+      utf16: state.utf16Decoded,
+      nulSubstituted: state.nulSubstituted,
+      multiReading: state.multiReading,
+      asciiStrings: state.asciiStrings,
+      binaryStringsScanned: state.binaryStringsScanned,
+    },
+    truncated: state.truncated && state.truncatedBy ? { by: state.truncatedBy, notReached: state.notReached } : false,
+    ignoredByDefault: state.ignoredByDefault,
+    ignoredByUser: state.ignoredByUser,
+    selfArtifacts: state.selfArtifacts,
+    mode,
+    ...(changed ? { changed } : {}),
+    files: {
+      binary: sortedCapped(state.skippedBinaryFiles),
+      tooLarge: sortedCapped(state.skippedTooLargeFiles),
+      symlink: sortedCapped(state.skippedSymlinkFiles),
+      unknownBinary: sortedCapped(state.skippedUnknownBinaryFiles),
+      special: sortedCapped(state.skippedSpecialFiles),
+      nulSubstituted: sortedCapped(state.nulSubstitutedFiles),
+      selfArtifacts: sortedCapped(state.selfArtifactFiles),
+    },
+  }
+}
+
 export async function scan(
   options: ScanOptions,
   proRules?: QualityGateRule[],
@@ -163,14 +148,11 @@ export async function scan(
   const cwd = process.cwd()
   const policy = await loadPolicy(cwd)
 
-  const ignorePatterns = [
-    ...DEFAULT_IGNORE,
-    // Rec #6 — ShipGuard's own artifacts, wherever the policy put them.
-    ...selfArtifactIgnorePatterns(policy),
-    ...policy.ignore.paths,
-  ]
+  // ONE ignore list for both read paths: defaults, ShipGuard's own artifacts (wherever the policy put
+  // them) and policy.ignore.paths.
+  const ignoreRules = buildIgnoreRules(policy)
 
-  // Resolve limits from policy — merged with defaults in loadPolicy, but fall back to constants
+  // Resolve limits from policy - merged with defaults in loadPolicy, but fall back to constants
   // in case an older/minimal policy object is passed (e.g. from test mocks without limits).
   const limits = {
     maxFileSizeBytes: policy.limits?.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES,
@@ -178,173 +160,130 @@ export async function scan(
     maxFiles: policy.limits?.maxFiles ?? DEFAULT_MAX_FILES,
   }
 
-  let files: FileInfo[]
-  let skippedTooLarge = 0
-  const skippedTooLargeFiles: string[] = []
-  let skippedBinary = 0
-  const skippedBinaryFiles: string[] = []
-  let skippedSymlinks = 0
-  const skippedSymlinkFiles: string[] = []
-  let truncated = false
-  // Degraded-file accumulators for the --changed path (the normal path uses readFiles()
-  // which returns its own invalidUtf8Files/unreadableFiles that are merged below).
-  const changedInvalidUtf8: Array<{ relativePath: string; reason: string }> = []
-  const changedUnreadable: string[] = []
+  let state: ReadFilesResult
+  let mode: 'full' | 'changed' = 'full'
+  let changedInfo: { listed: number; outsideScope: number } | undefined
 
   if (options.changedOnly && isGitRepo(cwd)) {
-    // getChangedFiles() throws GitCommandError on a genuine git failure — it
-    // is intentionally NOT caught here. RCA (git.ts:45-47): the old
-    // implementation silently returned [] on ANY git error, so `--changed`
-    // would report "0 files scanned, SAFE" for a git failure indistinguishably
-    // from "genuinely nothing changed." Letting the throw propagate up to
-    // scan.ts's existing try/catch maps a real git failure to exit 3
-    // (RUNTIME_ERROR) with the git stderr in the message — fail loud, not safe.
-    const changedRelPaths = getChangedFiles(cwd)
-    if (changedRelPaths.length === 0) {
-      // Git ran successfully and genuinely found nothing changed — this is
-      // the OTHER branch of the fix: an explicit, distinguishable message
-      // for "0 files, and that's correct" vs a swallowed git failure.
-      logger.info('--changed: git ran successfully — 0 changed files to scan.')
+    mode = 'changed'
+    state = createReadState()
+    // getChangedFilesDetailed() throws GitCommandError on a genuine git failure - intentionally NOT
+    // caught here: a git failure must map to exit 3 (RUNTIME_ERROR), never to "0 files, SAFE".
+    const changed = getChangedFilesDetailed(cwd)
+    const listed = changed.paths.length + changed.unaddressable.length + changed.outsideScope
+    changedInfo = { listed, outsideScope: changed.outsideScope }
+
+    // The same ignore rules as the full scan, counted exactly per rule.
+    const defaultCounts = new Map<string, number>()
+    const candidates: string[] = []
+    for (const rp of changed.paths) {
+      const rule = classifyIgnored(rp, ignoreRules)
+      if (!rule && isShipguardArtifactPath(rp)) { state.selfArtifacts++; if (state.selfArtifactFiles.length < MAX_SKIPPED_NAMES) state.selfArtifactFiles.push(rp) }
+      else if (!rule) candidates.push(rp)
+      else if (rule.by === 'user') state.ignoredByUser++
+      else defaultCounts.set(rule.pattern, (defaultCounts.get(rule.pattern) ?? 0) + 1)
     }
-    // Filter out ignored patterns (simple prefix/suffix check against default ignores),
-    // including ShipGuard's own relocated artifacts (rec #6).
-    const changedIgnore = [...DEFAULT_IGNORE, ...selfArtifactIgnorePatterns(policy)]
-    const filteredPaths = changedRelPaths
-      .filter((rp) =>
-        !changedIgnore.some((pat) => {
-          const prefix = pat.replace('/**', '')
-          return rp.startsWith(prefix + '/') || rp === prefix
-        })
+    state.ignoredByDefault = [...defaultCounts].map(([pattern, files]) => ({ pattern, files }))
+    // Rec #7: sort BEFORE the cap; git's diff order is not a contract.
+    candidates.sort(compareScanPaths)
+
+    // A name that is not valid UTF-8 cannot be addressed safely: degraded, never aliased.
+    for (const display of changed.unaddressable) {
+      logger.warn(`[shipguard] Changed file name is not valid UTF-8 and cannot be addressed safely: ${display}`)
+      state.unreadableFiles.push(display)
+      state.unaddressableCount++
+    }
+    // Folders git warned about ("could not open directory"): their files are not in the listing, so
+    // the scan is incomplete. DEGRADED (UNREADABLE_FILE), counted, never silent.
+    for (const display of changed.unreadable ?? []) {
+      logger.warn(`[shipguard] git could not read ${display}; files under it are NOT scanned`)
+      state.unreadableFiles.push(display)
+    }
+    state.discovered = candidates.length + changed.unaddressable.length + (changed.unreadable ?? []).length
+
+    if (listed === 0) {
+      // Git ran successfully and genuinely found nothing changed.
+      logger.info('--changed: git ran successfully - 0 changed files to scan.')
+    }
+    if (candidates.length === 0 && !options.json) {
+      logger.warn(
+        '`--changed` scans only files that differ from git; on a clean checkout it scans nothing. ' +
+        'Run `shipguard scan` for the whole tree.',
       )
-      // Rec #7 — sort BEFORE the cap. git's diff order is not a contract, so an
-      // over-cap `--changed` run would otherwise scan a different subset run to run.
-      .sort(compareScanPaths)
+    }
 
-    files = []
-    let totalBytes = 0
-    const changedTotal = filteredPaths.length
-    let changedProcessed = 0
+    const canonicalCwd = await realpath(cwd).catch(() => cwd)
+    const cwdWithSep = canonicalCwd.endsWith('/') ? canonicalCwd : canonicalCwd + '/'
+    let processed = 0
 
-    for (const relPath of filteredPaths) {
-      // Stop collecting if cumulative caps are reached
-      if (files.length >= limits.maxFiles || totalBytes >= limits.maxTotalBytes) {
-        truncated = true
+    for (let i = 0; i < candidates.length; i++) {
+      const hit = capReached(state, limits)
+      if (hit) {
+        state.truncated = true
+        state.truncatedBy = hit
+        state.notReached = candidates.length - i
         break
       }
-
+      const relPath = candidates[i]
       const fullPath = join(cwd, relPath)
+      // Symlink / root-containment guard - matches the normal path's followSymbolicLinks:false.
+      // realpath() throws ENOENT for dangling symlinks (and files deleted since git listed them)
+      // -> accumulated as unreadable (degraded, never silently skipped).
+      // A symlink is never followed (privacy): same SYMLINK_SKIPPED as the full scan, not "unreadable".
+      let isLink = false
       try {
-        // Symlink / root-containment guard — matches the normal path's behaviour
-        // (readFiles uses followSymbolicLinks:false in fast-glob). The --changed
-        // path resolves a git-reported path with join(cwd,rel); a symlink in that
-        // path could escape the project root. We resolve the real path and verify
-        // it starts with cwd before reading.
-        //
-        // Note: realpath() throws ENOENT for dangling symlinks → caught below →
-        // accumulated as an unreadable file (intentionally degraded, not silently
-        // skipped), which is the correct conservative behaviour.
-        let resolvedPath: string
-        try {
-          resolvedPath = await realpath(fullPath)
-        } catch (realpathErr: unknown) {
-          // Dangling symlink or path-not-found: degrade loudly.
-          const detail = realpathErr instanceof Error ? realpathErr.message : String(realpathErr)
-          logger.warn(`[shipguard] Could not resolve path for changed file ${relPath}: ${detail}`)
-          changedUnreadable.push(relPath)
-          onProgress?.(++changedProcessed, changedTotal, relPath)
-          continue
-        }
-
-        // Containment check: resolved path must start with the canonical cwd.
-        // We compare against the canonicalised cwd (also realpath'd once at the top
-        // of the changed-path block so we don't call realpath(cwd) per file).
-        // If the resolved path escapes the root, refuse it — same policy as
-        // followSymbolicLinks:false in the normal path.
-        const canonicalCwd = await realpath(cwd).catch(() => cwd)
-        const cwdWithSep = canonicalCwd.endsWith('/') ? canonicalCwd : canonicalCwd + '/'
+        isLink = (await lstat(fullPath)).isSymbolicLink()
+      } catch {
+        isLink = false // gone since git listed it: the realpath step below reports it as unreadable
+      }
+      if (isLink) {
+        state.skippedSymlinks++
+        if (state.skippedSymlinkFiles.length < MAX_SKIPPED_NAMES) state.skippedSymlinkFiles.push(relPath)
+        onProgress?.(++processed, candidates.length, relPath)
+        continue
+      }
+      let resolvedPath: string | undefined
+      try {
+        resolvedPath = await realpath(fullPath)
+      } catch (realpathErr: unknown) {
+        const detail = realpathErr instanceof Error ? realpathErr.message : String(realpathErr)
+        logger.warn(`[shipguard] Could not resolve path for changed file ${relPath}: ${detail}`)
+        state.unreadableFiles.push(relPath)
+      }
+      if (resolvedPath !== undefined) {
         if (!resolvedPath.startsWith(cwdWithSep) && resolvedPath !== canonicalCwd) {
           logger.warn(
             `[shipguard] Refusing out-of-root path for changed file ${relPath}: ` +
             `resolved to ${resolvedPath} which is outside ${canonicalCwd}`,
           )
-          // Count as unreadable (degraded) so the scan is non-safe — just like
-          // encountering an out-of-root symlink on the normal path would be.
-          changedUnreadable.push(relPath)
-          onProgress?.(++changedProcessed, changedTotal, relPath)
-          continue
+          state.unreadableFiles.push(relPath)
+        } else {
+          await readCandidate(state, { readPath: resolvedPath, path: fullPath, rel: relPath }, limits.maxFileSizeBytes)
         }
-
-        // Gate 1: size cap — never allocate buffer for oversized files
-        const fileStat = await stat(resolvedPath)
-        if (fileStat.size > limits.maxFileSizeBytes) {
-          skippedTooLarge++
-          if (skippedTooLargeFiles.length < 50) {
-            skippedTooLargeFiles.push(relPath)
-          }
-          onProgress?.(++changedProcessed, changedTotal, relPath)
-          continue
-        }
-
-        // Gate 2: read as Buffer (bounded by maxFileSizeBytes)
-        const buffer = await readFile(resolvedPath)
-
-        // Gate 3: binary detection — scan the ENTIRE buffer using the contract's
-        // detectBinary (NUL-anywhere + density heuristic). The old code checked
-        // only the first 8192 bytes.
-        if (detectBinary(new Uint8Array(buffer))) {
-          skippedBinary++
-          onProgress?.(++changedProcessed, changedTotal, relPath)
-          continue
-        }
-
-        // Gate 4: strict UTF-8 decoding — NEVER use buffer.toString('utf-8').
-        // See fs.ts Gate 4 comment for full rationale.
-        const decoded = decodeUtf8Strict(new Uint8Array(buffer))
-        if (!decoded.ok) {
-          changedInvalidUtf8.push({ relativePath: relPath, reason: decoded.reason })
-          onProgress?.(++changedProcessed, changedTotal, relPath)
-          continue
-        }
-
-        // Gate 5: BOM + CRLF normalization — same as readFiles() Gate 5.
-        const content = normalizeNewlines(stripBom(decoded.text))
-
-        totalBytes += buffer.length
-        files.push({ path: fullPath, content, relativePath: relPath })
-      } catch (err: unknown) {
-        // Unreadable file — degrade loudly (not silently swallowed).
-        // Previously a bare catch{} at scanner.ts:131-133 silently skipped
-        // unreadable files. Now accumulated for degradation.
-        const detail = err instanceof Error ? err.message : String(err)
-        logger.warn(`[shipguard] Could not read changed file ${relPath}: ${detail}`)
-        changedUnreadable.push(relPath)
       }
-
-      onProgress?.(++changedProcessed, changedTotal, relPath)
+      onProgress?.(++processed, candidates.length, relPath)
     }
   } else {
     if (options.changedOnly && !isGitRepo(cwd)) {
-      logger.warn('--changed flag set but not a git repository — scanning all files')
+      logger.warn('--changed flag set but not a git repository - scanning all files')
     }
-    const readResult = await readFiles(cwd, ['**/*'], ignorePatterns, {
+    state = await readFiles(cwd, ['**/*'], [], {
       maxFileSizeBytes: limits.maxFileSizeBytes,
       maxTotalBytes: limits.maxTotalBytes,
       maxFiles: limits.maxFiles,
       onProgress,
+      ignoreRules,
     })
-    files = readResult.files
-    skippedTooLarge = readResult.skippedTooLarge
-    skippedTooLargeFiles.push(...readResult.skippedTooLargeFiles)
-    skippedBinary = readResult.skippedBinary
-    skippedBinaryFiles.push(...readResult.skippedBinaryFiles)
-    skippedSymlinks = readResult.skippedSymlinks
-    skippedSymlinkFiles.push(...readResult.skippedSymlinkFiles)
-    truncated = readResult.truncated
-    // Merge the new degraded-file accumulators from readFiles into the changed-path
-    // accumulators (both start empty for the normal path; only one set is non-empty).
-    changedInvalidUtf8.push(...readResult.invalidUtf8Files)
-    changedUnreadable.push(...readResult.unreadableFiles)
   }
+
+  const files = state.files
+  const skippedTooLarge = state.skippedTooLarge
+  const skippedTooLargeFiles = state.skippedTooLargeFiles
+  const skippedSymlinks = state.skippedSymlinks
+  const skippedSymlinkFiles = state.skippedSymlinkFiles
+  const truncated = state.truncated
+  const changedInvalidUtf8 = state.invalidUtf8Files
+  const changedUnreadable = state.unreadableFiles
 
   // Free-tier findings. Apply inline suppression  so
   // `// shipguard-ignore: <ruleId> -- <reason>` works on free findings too, not
@@ -438,6 +377,9 @@ export async function scan(
   // One issue = one finding. Several patterns of one rule (or several legacy secret patterns)
   // can match the same line; severity is additive in the risk score, so each extra match
   // would otherwise inflate the score and the verdict. See core/collapse-findings.ts.
+  // A path read under several plausible readings is checked once per reading: drop the repeats.
+  allFindings = dedupeAcrossReadings(allFindings, files)
+
   const collapsed = collapseSameIssueFindings(allFindings)
   for (const n of collapsed.notes) {
     logger.debug(
@@ -475,18 +417,19 @@ export async function scan(
     })
   }
 
-  if (truncated) {
+  if (truncated && state.truncatedBy) {
+    const capName = state.truncatedBy === 'maxFiles' ? `limits.maxFiles (${limits.maxFiles})` : `limits.maxTotalBytes (${limits.maxTotalBytes})`
     degradedReasons.push({
       code: 'OUTPUT_TRUNCATED',
-      detail: 'File count or total size ceiling was reached; collection stopped early — results are incomplete.',
+      detail:
+        `Collection stopped at ${capName}: ${state.notReached} file(s) were never reached. ` +
+        `Results are incomplete. Raise the limit in shipguard.policy.yml or narrow the scan with ignore.paths.`,
     })
   }
 
-  // Symlinks discovered but not followed (symlink reporting): followSymbolicLinks:false
-  //  means an entire
-  // subtree behind a symlinked directory — or a symlinked file — is never scanned. That
-  // is an INCOMPLETE-scan condition exactly like FILE_TOO_LARGE above, so it degrades
-  // the verdict the same way (never silently SAFE over a tree ShipGuard never opened).
+  // Symlinks discovered but not followed: followSymbolicLinks:false means an entire subtree behind
+  // a symlinked directory - or a symlinked file - is never scanned. That is an INCOMPLETE-scan
+  // condition exactly like FILE_TOO_LARGE above (never silently SAFE over a tree ShipGuard never opened).
   if (skippedSymlinks > 0) {
     const named = skippedSymlinkFiles.slice(0, 10).join(', ')
     const extra = skippedSymlinks > skippedSymlinkFiles.length || skippedSymlinkFiles.length > 10
@@ -505,64 +448,90 @@ export async function scan(
     })
   }
 
-  // Invalid-UTF-8 files: cannot scan without risking false-negatives (secrets
-  // straddling a boundary destroyed by replacement chars).
-  // Degrade loudly so the user knows the scan is incomplete.
+  // Invalid-UTF-8 files (and UTF-16 with a BOM that does not decode): cannot scan without risking
+  // false-negatives (secrets straddling a boundary destroyed by replacement chars).
   if (changedInvalidUtf8.length > 0) {
     const named = changedInvalidUtf8.slice(0, 10).map(f => f.relativePath).join(', ')
     const extra = changedInvalidUtf8.length > 10 ? ` (and ${changedInvalidUtf8.length - 10} more)` : ''
     degradedReasons.push({
       code: 'INVALID_UTF8',
-      detail: `${changedInvalidUtf8.length} file(s) contained invalid UTF-8 and were not scanned: ${named}${extra}`,
+      detail: `${changedInvalidUtf8.length} file(s) contained invalid UTF-8 (or UTF-16 with a BOM that does not decode) and were not scanned: ${named}${extra}`,
     })
   }
 
-  // Unreadable files: skipped due to I/O errors or permission issues.
-  // These are incomplete-scan conditions — NEVER safe.
+  // Unreadable files: I/O errors, permission issues, or a file NAME that is not valid UTF-8.
+  // These are incomplete-scan conditions - NEVER safe.
   if (changedUnreadable.length > 0) {
     const named = changedUnreadable.slice(0, 10).join(', ')
     const extra = changedUnreadable.length > 10 ? ` (and ${changedUnreadable.length - 10} more)` : ''
+    const badNames = state.unaddressableCount > 0
+      ? ` ${state.unaddressableCount} of them have a file name that is not valid UTF-8, cannot be addressed safely and were never read.`
+      : ''
     degradedReasons.push({
       code: 'UNREADABLE_FILE',
-      detail: `${changedUnreadable.length} file(s) could not be read and were not scanned: ${named}${extra}`,
+      detail: `${changedUnreadable.length} file(s) could not be read and were not scanned: ${named}${extra}.${badNames}`,
+    })
+  }
+
+  // Files with NUL or control data that no reading explains and that show no real-binary evidence.
+  if (state.skippedUnknownBinary > 0) {
+    const named = state.skippedUnknownBinaryFiles.slice(0, 10).join(', ')
+    const extra = state.skippedUnknownBinary > Math.min(10, state.skippedUnknownBinaryFiles.length) ? ' (and others)' : ''
+    degradedReasons.push({
+      code: 'UNSCANNED_UNKNOWN_BINARY',
+      detail:
+        `${state.skippedUnknownBinary} file(s) contain NUL or control data that no text reading explains and show no sign of a known binary format, so they were not scanned: ${named}${extra}. ` +
+        `If they are safe, add their paths to ignore.paths in shipguard.policy.yml.`,
+    })
+  }
+
+  // Nothing at all was scanned: never SAFE. Evaluated last so the detail can name every cause.
+  if (state.acceptedPaths === 0) {
+    const parts: string[] = []
+    const add = (n: number, label: string): void => {
+      if (n > 0) parts.push(`${n} ${label}`)
+    }
+    add(state.skippedBinary, 'binary')
+    add(skippedTooLarge, 'too large')
+    add(skippedSymlinks, 'symlink')
+    add(state.skippedUnknownBinary, 'unknown binary')
+    add(changedInvalidUtf8.length, 'invalid UTF-8')
+    add(changedUnreadable.length, 'unreadable')
+    add(state.skippedSpecial, 'special')
+    add(state.notReached, 'not reached')
+    degradedReasons.push({
+      code: 'NO_FILES_SCANNED',
+      detail:
+        `0 files were scanned (${state.discovered} candidate file(s)${parts.length > 0 ? `: ${parts.join(', ')}` : ''}, 0 readable). ` +
+        `A scan that read nothing cannot report that shipping is safe.`,
     })
   }
 
   const isDegraded = degradedReasons.length > 0 || undefined
 
+  const coverage = buildCoverage(state, mode, changedInfo)
+
   const result: ScanResultWithMeta = {
     findings: allFindings,
     riskScore,
-    filesScanned: files.length,
+    filesScanned: state.acceptedPaths,
     timestamp: new Date().toISOString(),
     policyUsed: policy.project.name,
-    // Degraded when ANY of: coderef version-skip, collection truncation, a file
-    // skipped for being too large, OR a symlink not followed (symlink reporting).
-    // The oversized-skip case  and the symlink-skip
-    // case both mean content was NOT scanned — the scan is incomplete, so it must
-    // NOT be reported SAFE. Binary skips (skippedBinary) are NORMAL and
-    // intentionally EXCLUDED — a binary file legitimately has no source to scan.
+    // Degraded when ANY of: coderef version-skip, truncation, an oversized file, a symlink not
+    // followed, an unreadable/invalid/unknown-binary file, OR nothing scanned at all. Real binaries
+    // (skipped.binary) are NORMAL and intentionally EXCLUDED: a real image has no source to scan.
     // scan.ts OR-merges this with its own pro-fetch-failure flag.
     treeDigest,
     degraded: isDegraded,
-    // Machine-readable WHY for each degrade source — safe to key on in agent logic.
+    // Machine-readable WHY for each degrade source - safe to key on in agent logic.
     // scan.ts OR-merges its own PRO_RULES_UNAVAILABLE entry after pro-fetch failure.
     degradedReasons: degradedReasons.length > 0 ? degradedReasons : undefined,
-    // Internal metadata for the human-output path — NOT included in --json output
-    _skippedTooLarge: skippedTooLarge,
-    _skippedTooLargeFiles: skippedTooLargeFiles,
-    _skippedBinary: skippedBinary,
-    _skippedBinaryFiles: skippedBinaryFiles,
-    _skippedSymlinks: skippedSymlinks,
-    _skippedSymlinkFiles: skippedSymlinkFiles,
-    _truncated: truncated,
+    coverage,
   }
 
-  // Stamp the fail-closed verdict . A direct `scan` caller
-  // tests, the future boundary harness — gets a correct, already-mirrored verdict
-  // without having to know the rule. commands/scan.ts re-applies this AFTER it
-  // OR-merges the pro-fetch degradation, which is the first point the FINAL
-  // `degraded` value is known; applyVerdict is idempotent, so both calls are safe.
+  // Stamp the fail-closed verdict. A direct `scan` caller gets a correct, already-mirrored verdict
+  // without having to know the rule. commands/scan.ts re-applies this AFTER it OR-merges the
+  // pro-fetch degradation; applyVerdict is idempotent, so both calls are safe.
   applyVerdict(result)
 
   return result

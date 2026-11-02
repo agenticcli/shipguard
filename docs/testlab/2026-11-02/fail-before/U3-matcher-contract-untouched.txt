@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 /home/dev/1mUSD/shipguard-public-wt-honest-coverage-20261102/packages/cli
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  14:46:55
+   Duration  464ms (transform 106ms, setup 100ms, import 34ms, tests 13ms, environment 0ms)
+

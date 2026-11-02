@@ -37,7 +37,7 @@ const CLI_VERSION =
     : (process.env.npm_package_version ?? '0.0.0-dev')
 
 /** The schemaVersion the `scan --json` payload currently reports. Keep in sync with scan.ts. */
-export const CURRENT_SCHEMA_VERSION = '5'
+export const CURRENT_SCHEMA_VERSION = '6'
 
 export interface LimitEntry {
   /** Effective value for THIS project (policy-merged), or null when not a number. */
@@ -145,6 +145,9 @@ export function buildSchemaContract(limits: {
       { code: 'INVALID_UTF8', meaning: 'One or more files were not valid UTF-8 and were skipped rather than mangled.' },
       { code: 'UNREADABLE_FILE', meaning: 'One or more files could not be read from disk.' },
       { code: 'COMPILE_FAILURE', meaning: 'A Pro rule bundle failed to compile; the whole bundle was refused rather than partly run.' },
+      { code: 'SYMLINK_SKIPPED', meaning: 'One or more symlinks were not followed (privacy) and were not scanned.' },
+      { code: 'UNSCANNED_UNKNOWN_BINARY', meaning: 'One or more files hold NUL or control data that no text reading explains and show no sign of a known binary format; they were not scanned. Add their paths to ignore.paths if they are safe.' },
+      { code: 'NO_FILES_SCANNED', meaning: 'Zero files were scanned (empty tree, everything ignored or binary, or --changed on a clean checkout). A scan that read nothing is never SAFE_TO_SHIP.' },
     ],
     limits: {
       maxFiles: {
@@ -174,9 +177,33 @@ export function buildSchemaContract(limits: {
       unanalyzableTypes: [
         {
           type: 'binary',
-          behavior: 'Skipped. A binary file has no source to scan.',
-          // Deliberately no degrade signal: a binary skip is normal, not incomplete coverage.
-          machineSignal: null,
+          behavior: 'Real binaries (known format AND mostly non-printable content) are skipped and counted. The file name and extension are never used. SQLite and TAR files are scanned through their ASCII strings.',
+          // Counted, not degraded, except when nothing at all was scanned (NO_FILES_SCANNED).
+          machineSignal: 'coverage.skipped.binary (no degrade); degradedReasons[].code === "NO_FILES_SCANNED" when nothing was scanned',
+          verifiedBy: null,
+        },
+        {
+          type: 'utf16',
+          behavior: 'Decoded and scanned (BOM, and BOM-less when the bytes fit UTF-16). Findings use code-unit columns of the decoded text.',
+          machineSignal: 'coverage.decoded.utf16',
+          verifiedBy: null,
+        },
+        {
+          type: 'nul-in-text',
+          behavior: 'A text file with a few stray NUL bytes is scanned with each NUL read as one space (lines and columns unchanged). A key split by a NUL byte is not matched.',
+          machineSignal: 'coverage.decoded.nulSubstituted',
+          verifiedBy: null,
+        },
+        {
+          type: 'unknown-binary',
+          behavior: 'NUL or control data that no reading explains and with no real-binary evidence: skipped and the scan is degraded.',
+          machineSignal: 'degradedReasons[].code === "UNSCANNED_UNKNOWN_BINARY"',
+          verifiedBy: null,
+        },
+        {
+          type: 'special',
+          behavior: 'FIFO, socket and device nodes hold no stored content: counted, not read, not degraded.',
+          machineSignal: 'coverage.skipped.special',
           verifiedBy: null,
         },
         {
@@ -188,7 +215,7 @@ export function buildSchemaContract(limits: {
         {
           type: 'symlink',
           behavior: 'Never followed. A symlink pointing out of the project root is refused.',
-          machineSignal: 'degradedReasons[].code === "UNREADABLE_FILE" when the path was reported as changed',
+          machineSignal: 'degradedReasons[].code === "SYMLINK_SKIPPED" (full scan); "UNREADABLE_FILE" when a changed path resolves outside the root',
           verifiedBy: null,
         },
         {
@@ -199,8 +226,8 @@ export function buildSchemaContract(limits: {
         },
         {
           type: 'ignored-by-default',
-          behavior: 'Not collected: node_modules, dist, build, .next, coverage, .git, lockfiles, images/archives/media, and ShipGuard’s own artifacts.',
-          machineSignal: null,
+          behavior: 'Not collected: node_modules, dist, build, .next, coverage, .git, vendor, tmp, out, lockfiles, *.log, *.min.js, *.map and ShipGuard’s own artifacts. Images and other media are NOT ignored: they are classified by content.',
+          machineSignal: 'coverage.ignoredByDefault (counts per rule); coverage.ignoredByUser',
           verifiedBy: null,
         },
       ],

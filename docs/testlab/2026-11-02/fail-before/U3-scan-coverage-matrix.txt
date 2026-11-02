@@ -1,0 +1,527 @@
+
+ RUN  v4.1.11 /home/dev/1mUSD/shipguard-public-wt-honest-coverage-20261102/packages/cli
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts (28 tests | 28 failed) 31454ms
+     × nul-next-to-key 1249ms
+     × utf16le-bom 1227ms
+     × utf16be-bom 951ms
+     × utf16le-no-bom 1065ms
+     × utf16be-no-bom 2736ms
+     × cjk-then-key-le 1395ms
+     × ambiguous-a1001-key-nul 1076ms
+     × cjk-then-key-be 1262ms
+     × cjk-utf8-magic-nul-key 939ms
+     × ascii-env-then-utf16le-append 1345ms
+     × bom-utf16le-then-ascii-append 1071ms
+     × magic-prefix-utf16le-key 1428ms
+     × spoof-mz-env 1307ms
+     × spoof-ustar-257 887ms
+     × spoof-png-named-text 938ms
+     × spoof-png-header-key-lines 845ms
+     × sqlite-with-key 771ms
+     × bom-lone-surrogate 1148ms
+     × bom-odd-length 1087ms
+     × bomless-be-all-cjk 1061ms
+     × utf32le 1424ms
+     × creds-bin-2pct-nul 1178ms
+     × dump-dat-2pct-nul 931ms
+     × real-binaries-only 1035ms
+     × real-binaries-plus-clean-js 1283ms
+     × a degrading row exits 0 without --strict (verdict-neutral exit code is kept) 579ms
+     × a directory whose files are all default-ignored: NO_FILES_SCANNED, DO_NOT_SHIP, --strict exit 1, plain exit 0 457ms
+     × --changed on a clean checkout: degraded, DO_NOT_SHIP, exit 1 with --strict, hint on stderr only 678ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 28 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > nul-next-to-key
+AssertionError: nul-next-to-key (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > utf16le-bom
+AssertionError: utf16le-bom (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > utf16be-bom
+AssertionError: utf16be-bom (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > utf16le-no-bom
+AssertionError: utf16le-no-bom (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > utf16be-no-bom
+AssertionError: utf16be-no-bom (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > cjk-then-key-le
+AssertionError: cjk-then-key-le (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > ambiguous-a1001-key-nul
+AssertionError: ambiguous-a1001-key-nul (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > cjk-then-key-be
+AssertionError: cjk-then-key-be (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > cjk-utf8-magic-nul-key
+AssertionError: cjk-utf8-magic-nul-key (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > ascii-env-then-utf16le-append
+AssertionError: ascii-env-then-utf16le-append (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > bom-utf16le-then-ascii-append
+AssertionError: bom-utf16le-then-ascii-append (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > magic-prefix-utf16le-key
+AssertionError: magic-prefix-utf16le-key (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > spoof-mz-env
+AssertionError: spoof-mz-env (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > spoof-ustar-257
+AssertionError: spoof-ustar-257 (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > spoof-png-named-text
+AssertionError: spoof-png-named-text (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > spoof-png-header-key-lines
+AssertionError: spoof-png-header-key-lines (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > sqlite-with-key
+AssertionError: sqlite-with-key (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > bom-lone-surrogate
+AssertionError: bom-lone-surrogate (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > bom-odd-length
+AssertionError: bom-odd-length (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > bomless-be-all-cjk
+AssertionError: bomless-be-all-cjk (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > utf32le
+AssertionError: utf32le (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > creds-bin-2pct-nul
+AssertionError: creds-bin-2pct-nul (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > dump-dat-2pct-nul
+AssertionError: dump-dat-2pct-nul (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > real-binaries-only
+AssertionError: real-binaries-only (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > real-binaries-plus-clean-js
+AssertionError: real-binaries-plus-clean-js (full)
+: expected '5' to be '6' // Object.is equality
+
+Expected: "6"
+Received: "5"
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:117:41
+    115|         expect(run.json, ctx).toBeDefined()
+    116|         const json = run.json!
+    117|         expect(json.schemaVersion, ctx).toBe('6')
+       |                                         ^
+    118|         expect(degradeCodes(json), ctx).toEqual(row.codes)
+    119|         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > coverage matrix: every row on BOTH read paths > a degrading row exits 0 without --strict (verdict-neutral exit code is kept)
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:144:32
+    142|     const run = await scanJson(mkTree({ [CFG]: Buffer.concat([bytes(0x…
+    143|     expect(run.code).toBe(0)
+    144|     expect(run.json!.degraded).toBe(true)
+       |                                ^
+    145|   })
+    146| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > B6: nothing was scanned is never SAFE > a directory whose files are all default-ignored: NO_FILES_SCANNED, DO_NOT_SHIP, --strict exit 1, plain exit 0
+AssertionError: expected [] to deeply equal [ 'NO_FILES_SCANNED' ]
+
+- Expected
++ Received
+
+- [
+-   "NO_FILES_SCANNED",
+- ]
++ []
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:152:39
+    150|     const dir = mkTree({ 'node_modules/p/i.js': 'x', 'package-lock.jso…
+    151|     const strict = await scanJson(dir, ['--strict'])
+    152|     expect(degradeCodes(strict.json)).toEqual(['NO_FILES_SCANNED'])
+       |                                       ^
+    153|     expect(strict.json!.recommendation).toBe('DO_NOT_SHIP')
+    154|     expect(strict.code).toBe(1)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/28]⎯
+
+ FAIL  tests/commands/scan-coverage-matrix.test.ts > B6: nothing was scanned is never SAFE > --changed on a clean checkout: degraded, DO_NOT_SHIP, exit 1 with --strict, hint on stderr only
+AssertionError: expected [] to deeply equal [ 'NO_FILES_SCANNED' ]
+
+- Expected
++ Received
+
+- [
+-   "NO_FILES_SCANNED",
+- ]
++ []
+
+ ❯ tests/commands/scan-coverage-matrix.test.ts:162:37
+    160|     execSync('git add . && git commit -q -m init', { cwd: dir })
+    161|     const json = await scanJson(dir, ['--changed', '--strict'])
+    162|     expect(degradeCodes(json.json)).toEqual(['NO_FILES_SCANNED'])
+       |                                     ^
+    163|     expect(json.json!.recommendation).toBe('DO_NOT_SHIP')
+    164|     expect(json.code).toBe(1)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/28]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  28 failed (28)
+   Start at  14:45:55
+   Duration  31.87s (transform 171ms, setup 101ms, import 111ms, tests 31.45s, environment 0ms)
+
