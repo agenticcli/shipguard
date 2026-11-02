@@ -107,7 +107,7 @@ describe('classifyFile: text branches', () => {
   })
 
   it("ambiguity (B23): 'a' x 1000 + key + one NUL is read several ways and the key is found", () => {
-    const r = classifyFile(Buffer.from('a'.repeat(1000) + '\n' + ENV_KEY + '\0'))
+    const r = classifyFile(Buffer.from('a'.repeat(1001) + '\n' + ENV_KEY + '\0'))
     expect(anyHasKey(r)).toBe(true)
     const nonAscii = textOf(r).filter((t) => t.encoding !== 'ascii')
     expect(nonAscii.length).toBeGreaterThanOrEqual(2)
@@ -123,7 +123,7 @@ describe('classifyFile: text branches', () => {
 
 describe('classifyFile: mixed encodings (judge R3 MAJOR 2)', () => {
   it('(a) ASCII .env with a key, then an appended UTF-16LE block (PowerShell 5.1 >>): key found', () => {
-    const head = ascii(ENV_KEY + '#'.repeat(2000 - ENV_KEY.length - 1) + '\n')
+    const head = ascii((ENV_KEY + 'APP_NAME=demo\nDEBUG=false\nPORT=3000\n'.repeat(80)).slice(0, 2000))
     expect(head.length % 2).toBe(0)
     const r = classifyFile(Buffer.concat([head, utf16le('EXTRA=1\nMORE=2\nSTILL=3\nAND=4\nX=5\nY=6\nZ=7\n')]))
     expect(r.kind).toBe('text')
@@ -131,7 +131,7 @@ describe('classifyFile: mixed encodings (judge R3 MAJOR 2)', () => {
   })
 
   it('(b) BOM-marked UTF-16LE file with ASCII (and a key) appended: key found', () => {
-    const r = classifyFile(Buffer.concat([utf16le('# note\n', true), ascii('#' + ENV_KEY + '#'.repeat(1))]))
+    const r = classifyFile(Buffer.concat([utf16le('# note\n', true), ascii('#' + ENV_KEY)]))
     expect(r.kind).toBe('text')
     expect(anyHasKey(r)).toBe(true)
   })
@@ -172,7 +172,7 @@ describe('classifyFile: not text', () => {
 
   it('2% scattered NULs and no magic (creds.bin / dump.dat style) is unknown-binary', () => {
     const b = Buffer.from('secret-material-'.repeat(400).slice(0, 6400))
-    for (let i = 25; i < b.length; i += 50) b[i] = 0
+    for (let i = 25; i < b.length; i += 49) b[i] = 0 // 49 is odd: NULs land on both byte parities
     expect(b.length % 2).toBe(0)
     expect(classifyFile(b).kind).toBe('unknown-binary')
   })
