@@ -120,6 +120,7 @@ function buildCoverage(
       nulSubstituted: state.nulSubstituted,
       multiReading: state.multiReading,
       asciiStrings: state.asciiStrings,
+      binaryStringsScanned: state.binaryStringsScanned,
     },
     truncated: state.truncated && state.truncatedBy ? { by: state.truncatedBy, notReached: state.notReached } : false,
     ignoredByDefault: state.ignoredByDefault,

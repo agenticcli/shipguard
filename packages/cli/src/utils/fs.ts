@@ -90,6 +90,8 @@ export interface ReadFilesResult {
   multiReading: number
   /** SQLite/TAR files scanned through their ASCII strings. */
   asciiStrings: number
+  /** Real binaries under the cap whose printable strings (runs of 8+) were scanned; still in skippedBinary. */
+  binaryStringsScanned: number
   /** true if collection was stopped early because maxTotalBytes or maxFiles was hit. DEGRADED. */
   truncated: boolean
   truncatedBy?: 'maxFiles' | 'maxTotalBytes'
@@ -123,7 +125,7 @@ export function createReadState(): ReadFilesResult {
     skippedSpecial: 0, skippedSpecialFiles: [],
     skippedSymlinks: 0, skippedSymlinkFiles: [],
     nulSubstituted: 0, nulSubstitutedFiles: [],
-    utf16Decoded: 0, multiReading: 0, asciiStrings: 0,
+    utf16Decoded: 0, multiReading: 0, asciiStrings: 0, binaryStringsScanned: 0,
     truncated: false, notReached: 0, discovered: 0,
     ignoredByDefault: [], ignoredByUser: 0,
     invalidUtf8Files: [], unreadableFiles: [], unaddressableCount: 0,
@@ -197,8 +199,14 @@ export async function readCandidate(state: ReadFilesResult, c: Candidate, maxFil
     const result = classifyFile(new Uint8Array(buffer))
     switch (result.kind) {
       case 'binary':
+        // Counted as a binary (not "scanned"), but its printable strings go through the rules too.
         state.skippedBinary++
         pushName(state.skippedBinaryFiles, c.rel)
+        if (result.strings) {
+          state.files.push({ path: c.path, content: result.strings.text, relativePath: c.rel })
+          state.binaryStringsScanned++
+          state.bytesRead += buffer.length
+        }
         return
       case 'unknown-binary':
         state.skippedUnknownBinary++

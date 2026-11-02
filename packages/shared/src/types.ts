@@ -266,6 +266,8 @@ export interface ScanCoverage {
     multiReading: number
     /** SQLite and TAR files scanned through a byte-wise ASCII reading of their strings. */
     asciiStrings: number
+    /** Magic-verified binaries (under the size cap) whose printable strings were also scanned. Still counted in skipped.binary. */
+    binaryStringsScanned: number
   }
   /** `false`, or which cap stopped collection and how many candidates were never reached. */
   truncated: false | { by: 'maxFiles' | 'maxTotalBytes'; notReached: number }

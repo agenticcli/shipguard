@@ -362,6 +362,7 @@ export function coverageSummaryLine(c: ScanCoverage): string {
   add(decoded, c.decoded.utf16, 'UTF-16')
   add(decoded, c.decoded.nulSubstituted, 'NUL-substituted')
   add(decoded, c.decoded.asciiStrings, 'strings-only')
+  add(decoded, c.decoded.binaryStringsScanned, 'binary strings')
   const ignored = c.ignoredByUser + c.ignoredByDefault.reduce((n, e) => n + (e.files ?? 0), 0)
   const parts = [`scanned ${c.scanned} of ${c.discovered} files`]
   if (skipped.length > 0) parts.push(`skipped: ${skipped.join(', ')}`)

@@ -17,7 +17,7 @@ describe('coverage in --json', () => {
     expect(json.coverage.skipped).toEqual({
       binary: 0, tooLarge: 0, symlink: 0, unknownBinary: 0, invalidUtf8: 0, unreadable: 0, special: 0, binaryHeadOnly: 0,
     })
-    expect(json.coverage.decoded).toEqual({ utf16: 0, nulSubstituted: 0, multiReading: 0, asciiStrings: 0 })
+    expect(json.coverage.decoded).toEqual({ utf16: 0, nulSubstituted: 0, multiReading: 0, asciiStrings: 0, binaryStringsScanned: 0 })
     expect(Object.keys(json).filter((k) => k.startsWith('_'))).toEqual([])
   })
 

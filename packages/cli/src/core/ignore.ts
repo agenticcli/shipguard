@@ -1,9 +1,3 @@
-import { dirname, join } from 'node:path'
-import { Minimatch } from 'minimatch'
-import type { Policy } from '@agenticcli/shared'
-import { HISTORY_PATH_ENV_VAR } from '@agenticcli/shared'
-import { RUNS_SUBDIR } from './report.js'
-
 /**
  * The ONE ignore list, shared by the full scan (fast-glob) and the `--changed` filter, so the two
  * can never drift apart again (before this, `--changed` used a shorter list and ignored
@@ -16,6 +10,12 @@ import { RUNS_SUBDIR } from './report.js'
  *
  * Whatever is ignored by this list is counted in `coverage.ignoredByDefault`, never silent.
  */
+import { dirname, join } from 'node:path'
+import { Minimatch } from 'minimatch'
+import type { Policy } from '@agenticcli/shared'
+import { HISTORY_PATH_ENV_VAR } from '@agenticcli/shared'
+import { RUNS_SUBDIR } from './report.js'
+
 export const DEFAULT_IGNORE = [
   'node_modules/**',
   'dist/**',

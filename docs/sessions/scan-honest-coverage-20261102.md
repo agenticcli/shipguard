@@ -52,3 +52,8 @@ Each change keeps the test and asserts the new honest behaviour. Full suite afte
 - B16 (EPIPE) passes on the pre-fix code (see BUG 2 section); it is a guard. The fix proof is B12/B13.
 - Not verified here: Node 20 and 22 for the probe self-test (only Node 24.22.1 on this box; CI matrix will cover).
 - Out of scope, tracked: `--changed` counts a deleted file as UNREADABLE_FILE (false degrade; consider `--diff-filter=d`); direct `process.exit` in `cli.ts`/`handlers.ts`/other commands (short output only).
+
+## After code review: binary strings reading (main decision)
+- Residual closed: PNG magic + 4000 NULs + a key, under the size cap, used to be SAFE with the key unread. Now `classifyFile` returns `{kind:'binary', strings}` and `fs.ts` feeds the strings (printable ASCII runs of 8+, one per line, line number = run index) through the normal rules. The file still counts once as `skipped.binary`; new counter `coverage.decoded.binaryStringsScanned` (in `decoded`, so the discovered/skipped invariant is untouched). Over-cap binaries are unchanged (head-only, accepted residual).
+- Tests `tests/commands/scan-binary-strings.test.ts`: (a) key found, full and `--changed`; (b) synthetic JPEG/PNG/PDF and real host jpg, pdf, png (under the cap, copied to a temp dir) give zero findings with the full rule set (no mp4 under the cap on this host; the repo has no committed image fixtures); (c) mutation: disabling the strings feed turns both (a) tests red (run and restored).
+- Plan line 336 reworded (no "deliberate attacker" reasoning). `ignore.ts` purpose comment moved to line 1. CHANGELOG and freeze test updated. The accepted-residual list above now reads: only the over-cap head-only case, and text in a below-cap binary that is not printable ASCII runs of 8+.

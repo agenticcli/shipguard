@@ -55,7 +55,7 @@ export interface Reading {
 
 export type ClassifyResult =
   | { kind: 'text'; texts: Reading[]; /** true when the only reading is the byte-wise ASCII one (SQLite, TAR). */ stringsOnly: boolean }
-  | { kind: 'binary' }
+  | { kind: 'binary'; /** Printable strings of a magic-verified binary read in full (under the size cap); absent when none. */ strings?: Reading }
   | { kind: 'unknown-binary' }
   | { kind: 'invalid-text'; encoding: 'utf8' | 'utf16'; reason: string }
 
@@ -267,6 +267,30 @@ function asciiReading(b: Uint8Array): Reading {
   return { encoding: 'ascii', text: finish(Buffer.from(out).toString('latin1')), nulSubstituted: false }
 }
 
+/** Shortest run of printable ASCII that counts as a string (like `strings -n 8`). */
+export const STRINGS_MIN_RUN = 8
+
+/**
+ * strings-style reading of a binary: runs of at least STRINGS_MIN_RUN printable ASCII bytes
+ * (0x20-0x7E), one run per line, so a reported line number is the run's index, not a file line.
+ * Null when there is no run.
+ */
+export function stringsReading(b: Uint8Array): Reading | null {
+  const runs: string[] = []
+  let start = -1
+  for (let i = 0; i <= b.length; i++) {
+    const printable = i < b.length && b[i] >= 0x20 && b[i] <= 0x7e
+    if (printable) {
+      if (start < 0) start = i
+    } else if (start >= 0) {
+      if (i - start >= STRINGS_MIN_RUN) runs.push(Buffer.from(b.subarray(start, i)).toString('latin1'))
+      start = -1
+    }
+  }
+  if (runs.length === 0) return null
+  return { encoding: 'ascii', text: runs.join('\n'), nulSubstituted: false }
+}
+
 function withAscii(readings: Reading[], b: Uint8Array): Reading[] {
   const a = asciiReading(b)
   return readings.some((r) => r.text === a.text) ? readings : [...readings, a]
@@ -308,7 +332,10 @@ export function classifyFile(buffer: Uint8Array): ClassifyResult {
     const magic = isRealBinary(buffer)
     if (magic) {
       if (STRINGS_READABLE.has(magic.name)) return { kind: 'text', texts: [asciiReading(buffer)], stringsOnly: true }
-      return { kind: 'binary' }
+      // The whole file is in memory (it is under the size cap), so also read its printable strings:
+      // a magic header must never hide a credential that sits in the same file.
+      const strings = stringsReading(buffer)
+      return strings ? { kind: 'binary', strings } : { kind: 'binary' }
     }
   }
 
