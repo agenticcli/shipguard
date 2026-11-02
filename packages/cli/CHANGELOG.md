@@ -1,5 +1,17 @@
 # @agenticcli/shipguard
 
+## Unreleased
+
+- Fixed: a scan can no longer say `SAFE_TO_SHIP` over files it did not read. UTF-16 files (with or without a byte-order mark) and text files with a stray NUL byte are now scanned (each NUL is read as a space, so line numbers do not move). Before, one NUL byte next to a secret hid the whole file.
+- Fixed: a scan that read nothing (an empty folder, only ignored or binary files, or `--changed` on a clean checkout) is now `degraded` with `NO_FILES_SCANNED`, so the verdict is `DO_NOT_SHIP` and `--strict` exits 1. Run `shipguard scan` for the whole tree.
+- Added: a new degrade code `UNSCANNED_UNKNOWN_BINARY` for NUL-heavy files with no sign of being a real binary. Add the path to `ignore.paths` to clear it. A file's name and extension are never used to decide.
+- Added: `coverage` in the `--json` output: discovered, scanned, skipped by reason, decoded as UTF-16, NUL-substituted, ignored by default rules, ignored by your `ignore.paths`, and the cap that truncated the scan. `schemaVersion` is now `6` (additive). Real binaries are counted, not degraded.
+- Known limit, counted but not scanned: SQLite files outside the ASCII reading, compressed archives (zip, gzip and similar), and string tables inside ELF, PE, class and WASM files. A secret split by an embedded NUL byte is also not matched.
+- Changed: `treeDigest` now differs for trees that contain NUL or UTF-16 files (they enter the digest now), and for `--changed` scans whose file names had odd whitespace.
+- Changed: `--changed` now uses exact file names (no trimming), honours `ignore.paths`, follows the same default ignore list as the full scan (changed `*.log`, `*.min.js`, `vendor/`, `tmp/` and `out/` files, which it used to scan, are now skipped and counted), reads the right file when run from a sub-folder, and degrades on a git file name that is not valid UTF-8.
+- Changed: images, PDFs, archives and other media are no longer dropped by file extension; they are read by content, so a text file named `x.png` is scanned.
+- Fixed: `shipguard scan --json --strict` no longer loses piped output. The CLI now sets the exit code and lets Node finish writing, instead of exiting with output still queued (a slow reader used to get cut JSON). A closed pipe (`| head`) keeps the scan's exit code.
+
 ## 0.8.1 — first public release with npm provenance (0.8.0 was tagged but never published: release workflow fix)
 
 - Fixed: npm trusted publishing in the release workflow, so 0.8.1 is published with provenance.

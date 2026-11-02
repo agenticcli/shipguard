@@ -12,7 +12,7 @@ shipguard scan — scan project for risks
 shipguard scan --changed — scan only changed files
 shipguard scan --strict — exit code 1 on high-risk findings
 shipguard scan --report — generate Markdown report
-shipguard scan --json — machine-readable output
+shipguard scan --json — machine-readable output (schemaVersion 6; the `coverage` object says how many files were discovered, scanned and skipped, and why)
 shipguard scan --check-regressions — exit code 1 if a previously-passing rule now fails
 shipguard history — show recent local scan history for this repo (read-only)
 
