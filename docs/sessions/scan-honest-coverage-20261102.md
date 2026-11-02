@@ -73,3 +73,8 @@ Each change keeps the test and asserts the new honest behaviour. Full suite afte
 - CI: the host-asset row of `scan-binary-strings.test.ts` (it ran `find /usr` four times) is opt-in with `SHIPGUARD_TEST_HOST_ASSETS=1`; the synthetic jpg/png/pdf zero-false-positive row always runs.
 - Behaviour to know: `--changed` follows git's ignore rules (like other changed-file tools: a gitignored file is never listed); the full scan still reads gitignored files.
 - C0 rerun on code head 7f92ceb4: docs/testlab/2026-11-02/C0-rerun-7f92ceb4.txt (99 e2e + 3 slow pass). Full suite 3562 passed, 8 skipped.
+
+## After CRG fail (chain 6b46271c)
+- Every git call now gets `LC_ALL=C` and `LANGUAGE=C`. During the changed-file listing ANY stderr line (not only `warning:` or `fatal:`, and not only English phrases) degrades the scan as `UNREADABLE_FILE`, so a translated or reworded git message cannot hide an unreadable folder. This is a superset of the requested rule on purpose: the fake-git test prints a German line that does not start with `warning:`.
+- `coverage.files.selfArtifacts` names the self-artifact paths (capped at 50, sorted). Under `--changed`, git hides `sub/.shipguard/` through `sub/.gitignore`, so only the `.gitignore` is named there.
+- Tests: `scan-changed-git-warnings.test.ts` (fake git on PATH: German warning degrades and git saw LC_ALL=C LANGUAGE=C; any `warning:` line degrades), `scan-self-artifacts-named.test.ts`. Full suite 3566 passed, 8 skipped.
