@@ -1,0 +1,56 @@
+# Mutation table (plan B.2 + QA rows) re-run by the QA agent on head b9c8bc39ec5bfef6d546a5433eaaefb9ce953031
+# (code identical to 703d0093; b9c8bc39 is docs-only). date 2026-11-02, node v24.22.1, pnpm 9.15.0 (nice -n 10).
+# One mutation at a time: exact-text edit of src (each find text must occur exactly once), `pnpm --filter
+# @agenticcli/shipguard build`, run the named test files, restore the original bytes, confirm `git diff --quiet`
+# (all 23 runs: restored clean; final rebuild of the unmutated head exit 0). "red" = tests failing under the mutation.
+
+| id   | mutation                                                   | red / run | result |
+|------|------------------------------------------------------------|-----------|--------|
+| M01  | full path uses the old detectBinary gate                   | 20 / 30   | KILLED (19 full-path matrix rows + B4 500-file full row) |
+| M02  | --changed uses the old gate                                | 20 / 30   | KILLED (19 changed-path matrix rows + B4 500-file changed row) |
+| M03  | magic consulted before detectBinary                        | 13 / 68   | KILLED (spoof-mz-env, spoof-ustar-257 + 11) |
+| M04  | extension decides binary                                   | 4 / 37    | KILLED (secret.png, creds.bin, dump.dat, B10 secret.png) |
+| M05  | NUL-to-space before UTF-16                                 | 18 / 68   | KILLED (cjk-then-key-le/-be + 16) |
+| M06  | drop printable-share gate (Gate 3)                         | 4 / 68    | KILLED (spoof-png-header-key-lines) |
+| M07  | remove NO_FILES_SCANNED                                    | 14 / 32   | KILLED (B4 both paths, B5, B6, both repeat-scan rows) |
+| M08  | trim() back in git.ts                                      | 2 / 20    | KILLED (B19) |
+| M09  | ignore.paths dropped from the --changed filter             | 1 / 23    | KILLED (B18 e2e) |
+| M10a | exit.ts bare process.exit                                  | 5 / 8     | KILLED (B12, bash pipe json+sarif, B13 json+sarif) |
+| M10b | exit.ts 10 s forced-exit timer, drained exit off           | 3 / 6     | KILLED (B13 json+sarif, B16) |
+| M11  | EPIPE handlers installed late (in setExitCode)             | 1 / 4     | KILLED (QA startup-handler test) |
+| M12  | printable share counts ASCII only                          | 2 / 68    | KILLED (cjk-utf8-magic-nul-key) |
+| M13a | single reading (first) instead of union                    | 7 / 69    | KILLED |
+| M13b | single reading (last) instead of union                     | 9 / 69    | KILLED |
+| M14  | head shortcut without the strict-UTF-8 test                | 6 / 84    | KILLED (PNG, JPEG, GZIP attack rows + text-head row) |
+| M15  | git paths not normalised to the repo root                  | 6 / 48    | KILLED (B22 + diff.relative=true variants) |
+| M16  | git names decoded as lossy UTF-8                           | 2 / 24    | KILLED (B19 FF row, changed+sibling folder row) |
+| M17  | classifyIgnored without the parent-folder test             | 4 / 23    | KILLED |
+| M18  | full path: no Buffer re-listing of U+FFFD FILE names       | 1 / 41    | KILLED (scan-default-ignore-coverage B19 full row). First run listed the wrong files (0/52); re-run with the B19 file |
+| M19  | no byte-wise ASCII reading                                 | 10 / 76   | KILLED |
+| M20  | binary strings reading off                                 | 6 / 14    | KILLED |
+| M21  | NEW, fix 1: folder re-listing from probe directory entries off | 1 / 32 | KILLED (scan-undecodable-dir-name "full: d\xFF/x.env alone") |
+| M22  | NEW, fix 2: selfArtifacts check off                        | 2 / 32    | KILLED (both scan-no-files-scanned-repeat rows) |
+
+Note: under M18 the folder row "full: d\xFF + d� sibling" now stays green: the 703d0093 folder re-listing
+also catches it. That is overlap between the two checks, not a gap. B19 (the file-name row) still kills M18.
+
+# Adversarial sweep on b9c8bc39 ("unread text gives SAFE"): three new gaps, red tests added
+- Folder named with LF / CR / U+2028 / U+2029 (root or nested) holding a key: full scan SAFE_TO_SHIP, --strict
+  exit 0, discovered omits it; --changed finds it. fast-glob 3.3.3 lists the folder entry in the probe pass but never
+  descends (its `**` regex `.` does not match line terminators); utils/fs.ts re-lists only U+FFFD folder names.
+  tests/commands/scan-linebreak-dir-name.test.ts (8 red, 2 guards green).
+- ShipGuard artifacts in a SUBFOLDER: `scan p/sub` writes sub/.gitignore + sub/.shipguard/{repo-id,history.db,
+  history.db.salt,reports/...}; then `scan p --strict` on a real-PNG-only folder reads those 8 files as scanned:
+  SAFE_TO_SHIP, exit 0 (with git + --changed: sub/.gitignore alone, SAFE, exit 0). selfArtifacts and `.shipguard/**`
+  are root-only. tests/commands/scan-self-artifacts-subfolder.test.ts (2 red).
+- Untracked folder chmod 000 holding a key, --changed: git warns "could not open directory", exits 0, omits it:
+  SAFE_TO_SHIP, exit 0. The full scan stops with exit 3 (fail closed; guard green).
+  tests/commands/scan-changed-unreadable-dir.test.ts (1 red, 1 guard green).
+- Held (no gap): symlinked folders in/out of root, symlink with a non-UTF-8 name, nested symlinks, symlink-only tree
+  (all degraded, both paths); non-UTF-8 folders nested, doubly nested, two folders with the same lossy name, alone
+  (all UNREADABLE_FILE); 26 valid odd names (glob characters, backslash, tab, combining mark, RLO) found; root
+  .gitignore `.shipguard/` + key line (LF, CR, U+2028, NUL, UTF-16LE): key found, never a self-artifact; user
+  .gitignore hiding .env: full scan finds the key (BR I5, .gitignore not honoured by design).
+- Design notes (not counted as gaps): --changed follows git's exclude rules, so a key in a gitignored untracked .env is
+  not read (SAFE when other files changed); a key in the root `.shipguard/` folder is default-ignored, disclosed in
+  ignoredByDefault (plan D5). In --changed, symlinks degrade as UNREADABLE_FILE, in full as SYMLINK_SKIPPED.

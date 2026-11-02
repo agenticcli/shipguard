@@ -1,0 +1,56 @@
+# C0 rehearsal (QA agent) on head b9c8bc39ec5bfef6d546a5433eaaefb9ce953031
+# date 2026-11-02T17:03:08Z  node v24.22.1  pnpm 9.15.0
+# tracked tree clean before build: yes
+## step 1: pnpm run build, then SHIPGUARD_PUBLISHED_BUILD=1 build:publish, then npm pack
+build exit: 0
+build:publish exit: 0
+npm pack exit: 0
+tarball: agenticcli-shipguard-0.8.1.tgz  sha256: 8e55c265db5023c5d5c19ad5f469c3f02fd610245bd96544b7c9457708eaa98b  bytes: 146058
+## step 2: npm install --ignore-scripts --offline into an empty temp dir
+npm install exit: 0
+installed --version: 0.8.1  packed package.json version: 0.8.1
+installed dist/cli.js sha256 == repo dist/cli.js sha256: yes
+published-build marker in installed cli: 0 match(es)
+## step 3: C0 rows against the INSTALLED binary (SHIPGUARD_CLI=<inst>/node_modules/@agenticcli/shipguard/dist/cli.js)
+### plan rows: B2-B6 B23 matrix, B4 500-file tree, B7, B8 limits + large assets, B10 B18 B19 B22, B12 pipe, B16 EPIPE, B20, binary strings
+ Test Files  9 passed (9)
+      Tests  68 passed (68)
+### QA rows (first QA round): never-safe-over-unread-key, bash pipe, undecodable folder, repeat NO_FILES_SCANNED, startup handlers
+ Test Files  5 passed (5)
+      Tests  16 passed (16)
+### QA rows (this re-check): line-break folder names, subfolder self-artifacts, unreadable folder under --changed
+     × changed: untracked locked/ (mode 000) holding a key: never SAFE_TO_SHIP, --strict exit is not 0 823ms
+     × full: scan p/sub first, then scan p (real PNG only): NO_FILES_SCANNED, DO_NOT_SHIP, --strict exit 1 1458ms
+     × changed: scan p/sub first, then scan p (real PNG only): NO_FILES_SCANNED, DO_NOT_SHIP, --strict exit 1 989ms
+     × full: root folder named with LF holding a key: key found or degraded, never SAFE_TO_SHIP, --strict exit 1 638ms
+     × full: nested folder named with LF holding a key: key found or degraded, never SAFE_TO_SHIP, --strict exit 1 570ms
+     × full: root folder named with CR holding a key: key found or degraded, never SAFE_TO_SHIP, --strict exit 1 624ms
+     × full: nested folder named with CR holding a key: key found or degraded, never SAFE_TO_SHIP, --strict exit 1 512ms
+     × full: root folder named with U+2028 holding a key: key found or degraded, never SAFE_TO_SHIP, --strict exit 1 471ms
+     × full: nested folder named with U+2028 holding a key: key found or degraded, never SAFE_TO_SHIP, --strict exit 1 457ms
+     × full: root folder named with U+2029 holding a key: key found or degraded, never SAFE_TO_SHIP, --strict exit 1 413ms
+     × full: nested folder named with U+2029 holding a key: key found or degraded, never SAFE_TO_SHIP, --strict exit 1 435ms
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  3 failed (3)
+      Tests  11 failed | 3 passed (14)
+### B13 slow lane (5.7 MB, 12 s hold, JSON + SARIF) and G8 shipped-tree self-scan
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+## step 3b: real host assets over 512 KiB (copied to a temp dir, never committed)
+  1234961 host0.gz
+  13 ok.js
+exit 0
+{"degraded":false,"rec":"SAFE_TO_SHIP","codes":[],"skipped":{"binary":1,"tooLarge":0,"symlink":0,"unknownBinary":0,"invalidUtf8":0,"unreadable":0,"special":0,"binaryHeadOnly":1},"scanned":1,"cliVersion":"0.8.1","schemaVersion":"6"}
+## step 3d: exit-code contract on the installed binary
+  missing path --json --strict: exit 2 (contract 2)
+  clean+real-binary tree, no flag: exit 0 (contract 0)
+  empty folder --strict run 1: exit 1 (contract 1, NO_FILES_SCANNED)
+  empty folder --strict run 2: exit 1 (contract 1, NO_FILES_SCANNED)
+  empty folder, no flag: exit 0 (contract 0)
+## step 4: restore the normal (non-publish) dist for later local runs
+rebuild exit: 0
+## notes (QA)
+- published-build check: the marker grep above counts 0 because tsup inlines the flag; diff of the installed dist/cli.js against the dev build: only 'var IS_PUBLISHED_BUILD = true' (dev: false). The installed binary is the publish build.
+- tarball sha256 differs from C0-rerun-703d0093.txt (9a16de6a...) by design: dist/cli-facts.json embeds generatedAt (this pack: 2026-11-02T17:03:17.843Z), so no two packs are byte-identical. Code 703d0093 == b9c8bc39 (git diff --stat 703d0093 b9c8bc39 -- packages scripts package.json pnpm-lock.yaml: empty).
+- step 3b found only one host asset over 520 KiB under /usr this run (a .gz); the plan's synthetic large-asset rows (camera JPEG, PDF, MP4 over 512 KiB) are in scan-limits-coverage.test.ts and passed above.
+- the 11 red rows are the QA checks added in this re-check: product gaps, red on the installed tarball exactly as on dist.
