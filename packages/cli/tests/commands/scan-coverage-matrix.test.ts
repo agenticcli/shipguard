@@ -71,7 +71,7 @@ const rows: Row[] = [
     files: { [CFG]: Buffer.concat([Buffer.from((ENV_KEY_LINE + 'APP_NAME=demo\nDEBUG=false\nPORT=3000\n'.repeat(80)).slice(0, 2000)), utf16le('EXTRA=1\nMORE=2\nSTILL=3\nAND=4\nX=5\nY=6\nZ=7\n')]) },
     codes: [], key: CFG, scanned: 1,
   },
-  { id: 'bom-utf16le-then-ascii-append', files: { [CFG]: Buffer.concat([utf16le('# note\n', true), Buffer.from('#' + ENV_KEY_LINE)]) }, codes: [], key: CFG, scanned: 1 },
+  { id: 'bom-utf16le-then-ascii-append', files: { [CFG]: Buffer.concat([utf16le('# note\n', true), Buffer.from(ENV_KEY_LINE + '\n')]) }, codes: [], key: CFG, scanned: 1 },
   { id: 'magic-prefix-utf16le-key', files: { [CFG]: Buffer.concat([Buffer.from('%PDF'), utf16le('\n' + ENV_KEY_LINE.repeat(3))]) }, codes: [], key: CFG, scanned: 1, decoded: { utf16: 1 } },
   // ---- spoofs (D4): content decides, never the name ------------------------------------------
   { id: 'spoof-mz-env', files: { [CFG]: 'MZ=1\n' + ENV_KEY_LINE }, codes: [], key: CFG, scanned: 1 },

@@ -1,5 +1,5 @@
 import { dirname, join } from 'node:path'
-import { minimatch } from 'minimatch'
+import { Minimatch } from 'minimatch'
 import type { Policy } from '@agenticcli/shared'
 import { HISTORY_PATH_ENV_VAR } from '@agenticcli/shared'
 import { RUNS_SUBDIR } from './report.js'
@@ -82,10 +82,13 @@ export interface IgnoreRule {
 
 /** Defaults and ShipGuard's own artifacts count as `default`; `policy.ignore.paths` counts as `user`. */
 export function buildIgnoreRules(policy: Policy): IgnoreRule[] {
+  const defaults = [...new Set([...DEFAULT_IGNORE, ...selfArtifactIgnorePatterns(policy)])]
+  const isDefault = new Set(defaults)
+  // The built-in policy lists some of the same patterns; those are defaults, not the user's choice.
+  const user = [...new Set(policy.ignore?.paths ?? [])].filter((p) => !isDefault.has(p))
   return [
-    ...DEFAULT_IGNORE.map((pattern): IgnoreRule => ({ pattern, by: 'default' })),
-    ...selfArtifactIgnorePatterns(policy).map((pattern): IgnoreRule => ({ pattern, by: 'default' })),
-    ...(policy.ignore?.paths ?? []).map((pattern): IgnoreRule => ({ pattern, by: 'user' })),
+    ...defaults.map((pattern): IgnoreRule => ({ pattern, by: 'default' })),
+    ...user.map((pattern): IgnoreRule => ({ pattern, by: 'user' })),
   ]
 }
 
@@ -109,10 +112,20 @@ export function classifyIgnored(relPath: string, rules: readonly IgnoreRule[]): 
   const prefixes: string[] = []
   for (let i = 1; i <= parts.length; i++) prefixes.push(parts.slice(0, i).join('/'))
   for (const rule of rules) {
-    const pattern = rule.pattern.replace(/^\.\//, '')
+    const matcher = compiled(rule.pattern)
     for (const candidate of prefixes) {
-      if (minimatch(candidate, pattern, { dot: true })) return rule
+      if (matcher.match(candidate)) return rule
     }
   }
   return null
+}
+
+const matcherCache = new Map<string, Minimatch>()
+function compiled(pattern: string): Minimatch {
+  let m = matcherCache.get(pattern)
+  if (!m) {
+    m = new Minimatch(pattern.replace(/^\.\//, ''), { dot: true })
+    matcherCache.set(pattern, m)
+  }
+  return m
 }

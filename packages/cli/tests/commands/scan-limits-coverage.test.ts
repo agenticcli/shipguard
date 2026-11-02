@@ -87,7 +87,7 @@ describe('head-read shortcut: real large assets are not a false degrade', () => 
     Buffer.concat([magic, Buffer.alloc(4096), Buffer.from(`\nAWS_ACCESS_KEY_ID=${KEY}\n`), Buffer.alloc(OVER, 0x20)])
   const attacks: Array<[string, Buffer]> = [
     ['PNG', mk(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))],
-    ['JPEG', mk(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))],
+    ['JPEG', mk(Buffer.from([0xff, 0xd8, 0xff]))],
     ['GZIP', mk(Buffer.from([0x1f, 0x8b, 0x08, 0x00]))],
   ]
   for (const [name, buf] of attacks) {

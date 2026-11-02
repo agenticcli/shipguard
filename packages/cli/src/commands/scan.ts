@@ -13,6 +13,7 @@ import {
   renderFindingsSummary,
   findingsByCategoryTable,
   coverageLine,
+  coverageSummaryLine,
   welcomeBanner,
   shouldShowProgress,
   renderProgressBar,
@@ -60,9 +61,10 @@ const CLI_VERSION =
  *       degraded/partial (e.g. a pro-rules fetch failure or an oversized file
  *       was skipped) — degradation is surfaced via `degraded`/`degradedReasons`
  *       in the JSON output, not by hijacking a different exit code.
- *   1 — BLOCKED. Opt-in hard gate: only when --strict is passed AND at least
- *       one blocking finding exists. This is the only condition that changes
- *       the exit code from the default 0 — everything else is informational.
+ *   1 — BLOCKED. Opt-in hard gates, nothing else moves the exit code off the
+ *       default 0: --strict (a blocking finding, an unfinished/degraded scan, or
+ *       a DO_NOT_SHIP verdict) and --check-regressions (a previously-passing rule
+ *       now fails). Everything else is informational.
  *   2 — CONFIG ERROR, strictly. Malformed policy file, unknown CLI option,
  *       non-project directory without --all, etc. Never reused for a
  *       degraded-but-completed scan (that is exit 0 + `degraded:true` in JSON).
@@ -257,7 +259,8 @@ Exit codes (verdict-neutral by default — ShipGuard informs, you choose the gat
      partial (see \`degraded\`/\`degradedReasons\` in --json output).
   1  Blocked — with --strict AND at least one of: a blocking finding, a scan
      that did not finish (\`degraded:true\` — an unfinished scan cannot clear
-     a hard gate), or an effective \`recommendation\` of DO_NOT_SHIP (suppressed
+     a hard gate: an oversized file, a symlink, an unreadable file, a truncated
+     scan, a file with unexplained binary data, or a scan that read NOTHING), or an effective \`recommendation\` of DO_NOT_SHIP (suppressed
      findings still count toward the risk score, so a scan can cross the
      DO_NOT_SHIP threshold with zero blocking findings — the exit code always
      agrees with the printed verdict). OR with --check-regressions AND at
@@ -664,20 +667,25 @@ async function runScan(ctx: {
   }
 
   // Extract internal metadata (human output only) before building the public result
-  const skippedTooLarge = result._skippedTooLarge ?? 0
-  const skippedTooLargeFiles = result._skippedTooLargeFiles ?? []
-  const skippedBinary = result._skippedBinary ?? 0
-  const skippedBinaryFiles = result._skippedBinaryFiles ?? []
-  const skippedSymlinks = result._skippedSymlinks ?? 0
-  const skippedSymlinkFiles = result._skippedSymlinkFiles ?? []
-  const truncatedByBounds = result._truncated ?? false
+  const coverage = result.coverage
+  const skippedTooLarge = coverage?.skipped.tooLarge ?? 0
+  const skippedTooLargeFiles = coverage?.files.tooLarge ?? []
+  const skippedBinary = coverage?.skipped.binary ?? 0
+  const skippedBinaryFiles = coverage?.files.binary ?? []
+  const skippedSymlinks = coverage?.skipped.symlink ?? 0
+  const skippedSymlinkFiles = coverage?.files.symlink ?? []
+  const skippedUnknownBinary = coverage?.skipped.unknownBinary ?? 0
+  const skippedUnknownBinaryFiles = coverage?.files.unknownBinary ?? []
+  const truncatedBy = coverage?.truncated || undefined
 
   // Populate new ScanResult fields
   // Bumped 4 → 5 (recommendations #1/#2/#8): the verdict is now fail-closed and the
   // duplicate `riskScore.recommendation` is a deprecated mirror; receipt fields
   // (`runId`, `treeDigest`, `cliVersion`) are additive — see the schema-freeze test's
   // own documented evolution procedure (tests/commands/scan-json-schema-freeze.test.ts).
-  result.schemaVersion = '5'
+  // Bumped 5 → 6: the additive `coverage` object (what was scanned, skipped and ignored) and the
+  // new degrade codes UNSCANNED_UNKNOWN_BINARY and NO_FILES_SCANNED.
+  result.schemaVersion = '6'
   result.scanIdReused = scanIdReused
   // OR-merge: preserve coderef version-skip degradation from scanner,
   // combined with the pro-fetch failure flag from this command layer.
@@ -746,16 +754,10 @@ async function runScan(ctx: {
     result.coverageChanged = historyOutcome.coverageChanged
   }
 
-  // Build the public JSON-safe result (strip internal _ fields from the frozen schema)
-  // The --json schema is a frozen contract — internal metadata must not appear in it.
+  // The public JSON result. The skip/truncation counts used to be private `_skipped*` fields that
+  // were deleted here, so the JSON never carried them. They now live in the public `coverage`
+  // object, so there is nothing left to strip.
   const publicResult = { ...result }
-  delete (publicResult as Record<string, unknown>)._skippedTooLarge
-  delete (publicResult as Record<string, unknown>)._skippedTooLargeFiles
-  delete (publicResult as Record<string, unknown>)._skippedBinary
-  delete (publicResult as Record<string, unknown>)._skippedBinaryFiles
-  delete (publicResult as Record<string, unknown>)._skippedSymlinks
-  delete (publicResult as Record<string, unknown>)._skippedSymlinkFiles
-  delete (publicResult as Record<string, unknown>)._truncated
 
   // -----------------------------------------------------------------------
   // Write the report BEFORE rendering (rec #4): the human panel embeds the report
@@ -840,6 +842,25 @@ async function runScan(ctx: {
       )
     }
 
+    // Files with NUL/control data that nothing explains and that show no sign of a known binary
+    // format: DEGRADED, named, with the fix.
+    if (skippedUnknownBinary > 0) {
+      const named = skippedUnknownBinaryFiles.slice(0, 10).join(', ')
+      const more = skippedUnknownBinary > Math.min(10, skippedUnknownBinaryFiles.length) ? ' (and others)' : ''
+      logger.warn(
+        `Scan INCOMPLETE: ${skippedUnknownBinary} file(s) with unexplained binary data (unknown binary) were NOT scanned: ${named}${more}`
+      )
+      logger.warn(
+        `If these files are safe, add their paths to \`ignore.paths\` in shipguard.policy.yml. Verdict is degraded — see \`degradedReasons\` in --json output.`
+      )
+    }
+
+    if (coverage && coverage.scanned === 0) {
+      logger.warn(
+        `Nothing was scanned (0 of ${coverage.discovered} candidate file(s) could be read). A scan that read nothing is DO_NOT_SHIP, never safe.`
+      )
+    }
+
     // Binary skips are NORMAL (no source to scan) — informational only, but named
     // (symlink reporting: this file's own docs already admitted binary skips happen,
     // never named which files, unlike every other skip category).
@@ -864,13 +885,16 @@ async function runScan(ctx: {
     }
 
     // Truncation warning — loud, actionable
-    if (truncatedByBounds) {
+    if (truncatedBy) {
       logger.warn(
-        `Scan was truncated: file count or total size limit was reached. ` +
-        `Results are INCOMPLETE — add a \`.shipguardignore\` or edit \`shipguard.policy.yml\` limits.`
+        `Scan was truncated at ${truncatedBy.by}: ${truncatedBy.notReached} file(s) were never reached. ` +
+        `Results are INCOMPLETE — raise the limit or narrow the scan with \`ignore.paths\` in \`shipguard.policy.yml\`.`
       )
       logger.warn(`Docs: ${goLink('docs')}`)
     }
+
+    // What was actually scanned, skipped and ignored — printed on EVERY run, clean or not.
+    if (coverage) console.log(coverageSummaryLine(coverage))
 
     // Coverage line — honest statement of what was checked
     console.log(coverageLine())
@@ -893,7 +917,7 @@ async function runScan(ctx: {
     console.log(verdictPanel(
       result,
       elapsedMs,
-      skippedTooLarge + skippedBinary + skippedSymlinks,
+      skippedTooLarge + skippedBinary + skippedSymlinks + skippedUnknownBinary,
       result.findings,
       scanOptions.strict,
       reportPaths,

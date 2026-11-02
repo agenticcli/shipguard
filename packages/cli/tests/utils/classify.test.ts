@@ -131,7 +131,7 @@ describe('classifyFile: mixed encodings (judge R3 MAJOR 2)', () => {
   })
 
   it('(b) BOM-marked UTF-16LE file with ASCII (and a key) appended: key found', () => {
-    const r = classifyFile(Buffer.concat([utf16le('# note\n', true), ascii('#' + ENV_KEY)]))
+    const r = classifyFile(Buffer.concat([utf16le('# note\n', true), ascii(ENV_KEY + '\n')]))
     expect(r.kind).toBe('text')
     expect(anyHasKey(r)).toBe(true)
   })

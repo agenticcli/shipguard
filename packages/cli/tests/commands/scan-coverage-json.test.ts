@@ -24,9 +24,9 @@ describe('coverage in --json', () => {
   it('names are sorted, project-relative and capped at 50 while the count stays exact', async () => {
     const files: FileMap = { 'ok.js': 'const ok = 1\n' }
     for (let i = 0; i < 60; i++) {
-      const b = noise(200, 77 + i)
-      b[0] = 0x41
-      b[1] = 0
+      // Text-looking bytes with NULs scattered on both parities: NUL-heavy, no magic, never UTF-16.
+      const b = Buffer.from(`row-${i}-`.padEnd(8, 'x').repeat(40))
+      for (let k = 5; k < b.length; k += 19) b[k] = 0
       files[`junk/n${String(i).padStart(2, '0')}.dat`] = b
     }
     const json = (await scanJson(mkTree(files))).json!
@@ -55,6 +55,8 @@ describe('coverage in --json', () => {
     const b = noise(200, 5)
     b[0] = 0x41
     b[1] = 0
+    b[2] = 0
+    b[3] = 0
     const mixed = await runCli(['scan', mkTree({ 'a.js': 'x\n', 'k.dat': b })])
     const text = mixed.stdout + mixed.stderr
     expect(text).toMatch(/Coverage: scanned 1 of 2 files/)
