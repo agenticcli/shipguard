@@ -129,3 +129,13 @@ function compiled(pattern: string): Minimatch {
   }
   return m
 }
+
+/**
+ * ShipGuard's own artifacts at ANY depth: `<folder>/.shipguard/...` (history store, reports, repo
+ * id). A scan of a sub-folder writes them there. They are never the project's content, so they are
+ * counted in `coverage.selfArtifacts` and never scanned, on both read paths. (A root `.shipguard/`
+ * is already a default ignore rule.)
+ */
+export function isShipguardArtifactPath(rel: string): boolean {
+  return rel.split('/').slice(0, -1).includes('.shipguard')
+}

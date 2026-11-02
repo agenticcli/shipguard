@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process'
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { decodeUtf8Strict } from '@agenticcli/matcher-contract'
 
 export function isGitRepo(dir: string): boolean {
@@ -42,23 +45,56 @@ export class GitCommandError extends Error {
   }
 }
 
-function runGit(dir: string, args: string[]): Buffer {
+function runGit(dir: string, args: string[], warnings?: string[]): Buffer {
   const command = `git ${args.join(' ')}`
+  // git can exit 0 and still say "warning: could not open directory 'x/': Permission denied" on
+  // stderr, leaving that folder out of the listing. When the caller asks for warnings, stderr goes to
+  // a private temp file (execFileSync returns stdout only) and is read back after the call.
+  let errDir: string | undefined
+  let errFd: number | undefined
+  if (warnings) {
+    try {
+      errDir = mkdtempSync(join(tmpdir(), 'sg-git-err-'))
+      errFd = openSync(join(errDir, 'stderr'), 'w')
+    } catch (err) {
+      // Cannot capture warnings: fail closed (the caller cannot prove git listed everything).
+      throw new GitCommandError(command, `cannot capture git warnings: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
   try {
     // Raw bytes: git file names are bytes, not necessarily valid UTF-8. They are decoded one by one
     // (strictly) by the caller; decoding the whole output lossily would alias different files.
-    return execFileSync('git', args, {
+    const out = execFileSync('git', args, {
       cwd: dir,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', errFd ?? 'pipe'],
     })
+    if (warnings && errDir) {
+      closeSync(errFd as number)
+      errFd = undefined
+      const text = readFileSync(join(errDir, 'stderr'), 'utf8')
+      for (const line of text.split('\n')) if (line.trim()) warnings.push(line.trim())
+    }
+    return out
   } catch (err: unknown) {
-    const stderr =
+    let stderr =
       err && typeof err === 'object' && 'stderr' in err
         ? String((err as { stderr?: unknown }).stderr ?? '')
         : err instanceof Error
           ? err.message
           : String(err)
+    if (!stderr && errDir) {
+      try {
+        stderr = readFileSync(join(errDir, 'stderr'), 'utf8')
+      } catch (readErr) {
+        stderr = `git stderr unreadable: ${readErr instanceof Error ? readErr.message : String(readErr)}`
+      }
+    }
     throw new GitCommandError(command, stderr)
+  } finally {
+    if (errFd !== undefined) {
+      try { closeSync(errFd) } catch (e) { void e /* already closed */ }
+    }
+    if (errDir) rmSync(errDir, { recursive: true, force: true })
   }
 }
 
@@ -69,6 +105,8 @@ export interface ChangedFiles {
   unaddressable: string[]
   /** Changed files that git reports outside the scan directory (not scanned, not degraded). */
   outsideScope: number
+  /** Folders (or other paths) git warned it could not read: their files are NOT in the listing. DEGRADED. */
+  unreadable: string[]
 }
 
 /** Split NUL-separated git output into raw entries; empty entries are dropped, nothing is trimmed. */
@@ -115,7 +153,15 @@ export function getChangedFilesDetailed(dir: string): ChangedFiles {
   }
 
   const stagedOutput = runGit(dir, ['-c', 'diff.relative=false', 'diff', '--cached', '--name-only', '-z'])
-  const untrackedOutput = runGit(dir, ['ls-files', '--others', '--exclude-standard', '--full-name', '-z'])
+  const gitWarnings: string[] = []
+  const untrackedOutput = runGit(dir, ['ls-files', '--others', '--exclude-standard', '--full-name', '-z'], gitWarnings)
+  // "warning: could not open directory 'locked/': Permission denied": git exits 0 and leaves the folder out.
+  const unreadable: string[] = []
+  for (const w of gitWarnings) {
+    if (/could not open|cannot open|unable to (open|read|access)|permission denied|failed to (open|read)/i.test(w)) {
+      unreadable.push(w.match(/'([^']+)'/)?.[1] ?? w)
+    }
+  }
   // Prefix of the scan directory inside the repository ("" at the root, "app/" below it).
   const prefix = Buffer.from(runGit(dir, ['rev-parse', '--show-prefix']).toString('latin1').replace(/\r?\n$/, ''), 'latin1')
 
@@ -138,7 +184,7 @@ export function getChangedFilesDetailed(dir: string): ChangedFiles {
       else unaddressable.push(rel.toString('utf8'))
     }
   }
-  return { paths, unaddressable, outsideScope }
+  return { paths, unaddressable, outsideScope, unreadable }
 }
 
 /** Convenience wrapper: the addressable changed paths only. */

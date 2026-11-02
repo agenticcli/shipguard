@@ -64,3 +64,11 @@ Each change keeps the test and asserts the new honest behaviour. Full suite afte
 - NEEDS A DECISION (not changed): ShipGuard writes a `.gitignore` INTO the user's scan root (and creates `.shipguard/repo-id`) as a side effect of a scan. A scan tool modifying the scanned project is surprising. Fix limited to coverage, per the brief.
 - M11 note: on Node 24 the B16 guard is blind (console.log's no-op error listener hides EPIPE), so QA's startup-handler test (`tests/commands/stream-error-handlers-at-startup.test.ts`) is what covers the startup EPIPE handlers (mutation M11).
 - Full suite 3547 passed, 7 skipped. C0 rerun on code head 703d0093: `docs/testlab/2026-11-02/C0-rerun-703d0093.txt` (84 e2e tests and 3 slow tests pass on the installed tarball).
+
+## After QA re-check (chain 83945016): class-level fixes
+- Seen but not entered folders: `readFiles` compares the objectMode directory entries with the folders that have entries under them. A folder with none is re-listed with its own fast-glob run (cwd = that folder), recursively, and its files join the scan; if that listing throws, the folder is `UNREADABLE_FILE` (degraded, counted). No character is special-cased (LF, CR, U+2028/2029 at any depth, and anything else fast-glob's matcher cannot enter). U+FFFD names still go through the bytes re-listing.
+- Own artifacts at any depth: any path with a `.shipguard` folder segment, and any `.gitignore` holding only the `.shipguard/` line, counts in `coverage.selfArtifacts` and is never scanned, on both paths (shared `isShipguardArtifactPath`, shared `readCandidate`).
+- `--changed` and unreadable folders: `git ls-files --others` exits 0 and prints "could not open directory" on stderr. The untracked listing now captures stderr (private temp file) and each such warning degrades the scan as `UNREADABLE_FILE` with the path.
+- Symlinks under `--changed` are `lstat`ed first and reported `SYMLINK_SKIPPED`, like the full scan.
+- CI: the host-asset row of `scan-binary-strings.test.ts` (it ran `find /usr` four times) is opt-in with `SHIPGUARD_TEST_HOST_ASSETS=1`; the synthetic jpg/png/pdf zero-false-positive row always runs.
+- Behaviour to know: `--changed` follows git's ignore rules (like other changed-file tools: a gitignored file is never listed); the full scan still reads gitignored files.

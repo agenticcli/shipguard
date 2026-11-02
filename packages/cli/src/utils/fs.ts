@@ -1,10 +1,10 @@
-import fg from 'fast-glob'
+import fg, { type Entry as FgEntry } from 'fast-glob'
 import { open, readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { FileInfo } from '@agenticcli/shared'
 import { decodeUtf8Strict } from '@agenticcli/matcher-contract'
 import { classifyFile, headLooksLikeRealBinary, HEAD_BYTES } from './classify.js'
-import { DEFAULT_IGNORE, classifyIgnored, isDirectoryRule, type IgnoreRule } from '../core/ignore.js'
+import { DEFAULT_IGNORE, classifyIgnored, isDirectoryRule, isShipguardArtifactPath, type IgnoreRule } from '../core/ignore.js'
 import { logger } from './logger.js'
 
 // ---------------------------------------------------------------------------
@@ -204,7 +204,7 @@ export async function readCandidate(state: ReadFilesResult, c: Candidate, maxFil
     }
 
     const buffer = await readFile(c.readPath)
-    if (c.rel === '.gitignore' && isShipguardOnlyGitignore(buffer)) {
+    if ((c.rel === '.gitignore' || c.rel.endsWith('/.gitignore')) && isShipguardOnlyGitignore(buffer)) {
       // ShipGuard wrote this itself (history store courtesy line). It is not the project's content:
       // do not count it as scanned, or the second scan of an empty folder would look scanned.
       state.selfArtifacts++
@@ -312,6 +312,58 @@ async function resolveUndecodableNames(
     if (!drop) kept.push(p)
   }
   return { kept, bad }
+}
+
+// ---------------------------------------------------------------------------
+// Folders fast-glob saw but did not enter
+// ---------------------------------------------------------------------------
+
+type ProbeEntry = Pick<FgEntry, 'path' | 'dirent'>
+
+/**
+ * Compare the directory entries fast-glob reported with the folders it actually descended into
+ * (a folder is "entered" when some other entry lies under it). A folder that was seen but not
+ * entered is re-listed directly with its own fast-glob run (cwd = the folder), recursively. If that
+ * listing throws, the folder is returned in `bad` (UNREADABLE_FILE, degraded). An empty folder lists
+ * nothing and costs nothing. Names holding U+FFFD are left to resolveUndecodableNames.
+ */
+async function recoverUnenteredDirs(
+  rootDir: string,
+  entries: ProbeEntry[],
+  patterns: string[],
+  isDefaultIgnored: (rel: string) => boolean,
+): Promise<{ entries: ProbeEntry[]; bad: string[] }> {
+  const out: ProbeEntry[] = []
+  const bad: string[] = []
+  const visit = async (base: string, list: ProbeEntry[]): Promise<void> => {
+    const parents = new Set<string>()
+    for (const e of list) {
+      const i = e.path.lastIndexOf('/')
+      if (i > 0) parents.add(e.path.slice(0, i))
+    }
+    for (const e of list) {
+      if (!e.dirent.isDirectory() || e.path.includes('�') || parents.has(e.path)) continue
+      const rel = base ? `${base}/${e.path}` : e.path
+      if (isDefaultIgnored(rel)) continue
+      let sub: FgEntry[]
+      try {
+        sub = (await fg(patterns, {
+          cwd: join(rootDir, rel), dot: true, absolute: false, onlyFiles: false, followSymbolicLinks: false, objectMode: true,
+        })) as FgEntry[]
+      } catch (err: unknown) {
+        logger.warn(`[shipguard] Could not list folder ${rel}: ${err instanceof Error ? err.message : String(err)}`)
+        bad.push(rel)
+        continue
+      }
+      const prefixed = sub
+        .map((s) => ({ path: `${rel}/${s.path}`, dirent: s.dirent }))
+        .filter((s) => !isDefaultIgnored(s.path))
+      out.push(...prefixed)
+      await visit(rel, sub)
+    }
+  }
+  await visit('', entries)
+  return { entries: out, bad }
 }
 
 // ---------------------------------------------------------------------------
@@ -423,14 +475,6 @@ export async function readFiles(
     followSymbolicLinks: false,
   })
 
-  const listed = listedAll.filter(notUserIgnored)
-
-  // Names that are not valid UTF-8 must never be read as a different file (see above).
-  const named = await resolveUndecodableNames(rootDir, [...new Set(listed)])
-  const filePaths = named.kept
-  // SORT BEFORE THE CAP. Must happen before the collection loop below.
-  filePaths.sort(compareScanPaths)
-
   // Symlinks and special files: what fast-glob's onlyFiles:true silently drops. This second pass
   // walks the identical pattern/ignore space with onlyFiles:false + objectMode:true so the dirent is
   // available. It reads no file content; its ONLY purpose is to NAME every entry the primary call
@@ -445,7 +489,24 @@ export async function readFiles(
     followSymbolicLinks: false,
     objectMode: true,
   })
-  const probeEntries = probeAll.filter((e) => notUserIgnored(e.path))
+  // Folders fast-glob SAW but never entered (a name its `**` matcher cannot match, for example a line
+  // break in it) would drop everything inside them. Re-list each one directly; one that cannot be
+  // listed is unreadable (degraded). Class-level: no character is special-cased.
+  const recovered = await recoverUnenteredDirs(rootDir, probeAll, patterns, (p) => classifyIgnored(p, defaultRules) !== null)
+  const extraFiles = recovered.entries.filter((e) => e.dirent.isFile()).map((e) => e.path)
+  const listedWithRecovered = [...listedAll, ...extraFiles]
+  const listedNoUser = listedWithRecovered.filter(notUserIgnored)
+  // ShipGuard's own artifacts at any depth (.shipguard/ history and reports) are never project content.
+  const listed = listedNoUser.filter((p) => !isShipguardArtifactPath(p))
+  const selfArtifactCount = listedNoUser.length - listed.length
+
+  // Names that are not valid UTF-8 must never be read as a different file (see above).
+  const named = await resolveUndecodableNames(rootDir, [...new Set(listed)])
+  const filePaths = named.kept
+  // SORT BEFORE THE CAP. Must happen before the collection loop below.
+  filePaths.sort(compareScanPaths)
+
+  const probeEntries = [...probeAll, ...recovered.entries].filter((e) => notUserIgnored(e.path) && !isShipguardArtifactPath(e.path))
   const state = createReadState()
   const symlinkPaths = probeEntries.filter((e) => e.dirent.isSymbolicLink()).map((e) => e.path).sort(compareScanPaths)
   const specialPaths = probeEntries
@@ -473,7 +534,7 @@ export async function readFiles(
   // so it is DEGRADED the same way as a bad file name (UNREADABLE_FILE; one entry per folder).
   const dirNames = probeEntries.filter((e) => e.dirent.isDirectory() && e.path.includes('�')).map((e) => e.path)
   const dirNamed = await resolveUndecodableNames(rootDir, [...new Set(dirNames)])
-  const badAll = [...new Set([...named.bad, ...dirNamed.bad])].sort(compareScanPaths)
+  const badAll = [...new Set([...named.bad, ...dirNamed.bad, ...recovered.bad])].sort(compareScanPaths)
 
   // File names that are not valid UTF-8: unreadable by exact path, so DEGRADED.
   for (const display of badAll) {
@@ -483,7 +544,8 @@ export async function readFiles(
 
   const counted = await countIgnored(rootDir, rules)
   state.ignoredByDefault = counted.ignoredByDefault
-  state.ignoredByUser = listedAll.length - listed.length
+  state.ignoredByUser = listedWithRecovered.length - listedNoUser.length
+  state.selfArtifacts += selfArtifactCount
 
   const total = filePaths.length
   state.discovered = total + state.skippedSymlinks + state.skippedSpecial + badAll.length

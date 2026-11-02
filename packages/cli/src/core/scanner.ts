@@ -1,4 +1,4 @@
-import { realpath } from 'node:fs/promises'
+import { lstat, realpath } from 'node:fs/promises'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { join } from 'node:path'
 import { loadPolicy } from './policy.js'
@@ -17,7 +17,7 @@ import {
   DEFAULT_MAX_FILES,
   type ReadFilesResult,
 } from '../utils/fs.js'
-import { buildIgnoreRules, classifyIgnored, selfArtifactIgnorePatterns } from './ignore.js'
+import { buildIgnoreRules, classifyIgnored, isShipguardArtifactPath, selfArtifactIgnorePatterns } from './ignore.js'
 import { logger } from '../utils/logger.js'
 import { secretsCheck } from '../checks/secrets.js'
 import { authCheck } from '../checks/auth.js'
@@ -177,7 +177,8 @@ export async function scan(
     const candidates: string[] = []
     for (const rp of changed.paths) {
       const rule = classifyIgnored(rp, ignoreRules)
-      if (!rule) candidates.push(rp)
+      if (!rule && isShipguardArtifactPath(rp)) state.selfArtifacts++
+      else if (!rule) candidates.push(rp)
       else if (rule.by === 'user') state.ignoredByUser++
       else defaultCounts.set(rule.pattern, (defaultCounts.get(rule.pattern) ?? 0) + 1)
     }
@@ -191,7 +192,13 @@ export async function scan(
       state.unreadableFiles.push(display)
       state.unaddressableCount++
     }
-    state.discovered = candidates.length + changed.unaddressable.length
+    // Folders git warned about ("could not open directory"): their files are not in the listing, so
+    // the scan is incomplete. DEGRADED (UNREADABLE_FILE), counted, never silent.
+    for (const display of changed.unreadable ?? []) {
+      logger.warn(`[shipguard] git could not read ${display}; files under it are NOT scanned`)
+      state.unreadableFiles.push(display)
+    }
+    state.discovered = candidates.length + changed.unaddressable.length + (changed.unreadable ?? []).length
 
     if (listed === 0) {
       // Git ran successfully and genuinely found nothing changed.
@@ -221,6 +228,19 @@ export async function scan(
       // Symlink / root-containment guard - matches the normal path's followSymbolicLinks:false.
       // realpath() throws ENOENT for dangling symlinks (and files deleted since git listed them)
       // -> accumulated as unreadable (degraded, never silently skipped).
+      // A symlink is never followed (privacy): same SYMLINK_SKIPPED as the full scan, not "unreadable".
+      let isLink = false
+      try {
+        isLink = (await lstat(fullPath)).isSymbolicLink()
+      } catch {
+        isLink = false // gone since git listed it: the realpath step below reports it as unreadable
+      }
+      if (isLink) {
+        state.skippedSymlinks++
+        if (state.skippedSymlinkFiles.length < MAX_SKIPPED_NAMES) state.skippedSymlinkFiles.push(relPath)
+        onProgress?.(++processed, candidates.length, relPath)
+        continue
+      }
       let resolvedPath: string | undefined
       try {
         resolvedPath = await realpath(fullPath)

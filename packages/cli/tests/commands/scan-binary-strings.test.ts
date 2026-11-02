@@ -58,7 +58,9 @@ describe('binary strings reading', () => {
     expect(r.json!.coverage.skipped.binary).toBe(3)
   })
 
-  it('(b) real host assets (jpg, pdf, mp4, png) give zero findings with the full rule set', async () => {
+  // Opt-in: it runs `find /usr` four times, which is too slow for CI runners. Enable with
+  // SHIPGUARD_TEST_HOST_ASSETS=1. The synthetic row above always runs.
+  it.skipIf(!process.env.SHIPGUARD_TEST_HOST_ASSETS)('(b) real host assets (jpg, pdf, mp4, png) give zero findings with the full rule set', async () => {
     const found: string[] = []
     for (const ext of ['jpg', 'pdf', 'mp4', 'png']) {
       try {

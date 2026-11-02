@@ -63,7 +63,7 @@ vi.mock('../../src/core/git.js', () => {
   return {
     isGitRepo: vi.fn(() => false),
     getChangedFiles,
-    getChangedFilesDetailed: vi.fn((dir: string) => ({ paths: getChangedFiles(dir), unaddressable: [] as string[], outsideScope: 0 })),
+    getChangedFilesDetailed: vi.fn((dir: string) => ({ paths: getChangedFiles(dir), unaddressable: [] as string[], outsideScope: 0, unreadable: [] as string[] })),
   }
 })
 
