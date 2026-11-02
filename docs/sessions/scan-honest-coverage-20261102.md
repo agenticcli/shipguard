@@ -21,3 +21,6 @@ Q1 default-ignored text files (`*.log`, `*.min.js`, `vendor/`); Q2 `--changed` w
 
 ## Not done
 No PR, no version bump, no tag, no publish.
+
+## Round 2 (after NO-GO from the Opus judge and Codex)
+Plan revised: magic bytes only for flagged, binary-dominant files and never by extension; no empty-diff exemption for `--changed`; `git -z` exact names plus one shared ignore helper; UTF-16 validated before NUL-to-space; bug 2 never calls `process.exit` with queued output (exitCode and return, EPIPE handler, handshake test); `--check-regressions` needs `--strict`; behavioural mutation matrix over both read paths; mandatory tarball rehearsal before publish. Map in plan section R.

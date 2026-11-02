@@ -2,6 +2,7 @@
 
 - Branch: `scan-honest-coverage-20261102`, off `agenticcli/shipguard@2bf3a7d` (public repo, npm 0.8.1).
 - Stakes: HIGH (a security control inside a release gate that ships to users). Route: plans judged (Opus, max 3 rounds) + one Codex review; build with code review; QA agent adds checks; an agent runs the test plan.
+- Revision: ROUND 2 (after round 1 NO-GO from the Opus judge and Codex). Section R at the end maps each round-2 decision to where it now sits.
 - Status: PLAN ONLY. No code is written by this document. No PR, no tag, no publish (a release is the owner's call).
 - Source-line form: `repo@commit:path:line`. `public` = `agenticcli/shipguard`. `archive` = `agenticcli/shipguard-archive`.
   - `public@2bf3a7d` is the base of this branch.
@@ -29,36 +30,43 @@
 - Fires when `filesScanned === 0`, whether discovered was 0 or all candidates were skipped. A tree of only real binaries is therefore degraded by this code alone, not by an "unscanned" code.
 
 ### D2. Files that contain NUL bytes but look like text
-- Choice: SCAN them, with each NUL byte replaced by one space (U+0020). Do not skip them. Count them in `coverage.scanned.nulSubstituted`. Not degraded, as long as the file passes the text-likeness test below. A NUL-bearing file that does NOT pass is skipped and DEGRADED with code `UNSCANNED_UNKNOWN_BINARY`.
-- Text-likeness test (all must hold): no known-binary magic bytes; NUL bytes are at most 1% of the file; after the substitution the bytes decode as strict UTF-8 (`decodeUtf8Strict`); control bytes other than TAB/LF/FF/CR are at most 5% of the first 32 KiB.
-- Why scan and not "skip and degrade": the B1 attack is "plant one NUL byte next to a secret". Skip-and-degrade gives `--strict` an exit 1 but a human sees "DO_NOT_SHIP, 0 findings" and no key; scanning finds the key (BR B1 control: the same key in a plain file gives 2 findings). A single-byte substitution keeps every line number and column unchanged, so findings point at the right place. A real secret cannot contain a NUL, so substitution cannot hide one that tooling would use.
-- Why not degrade the scanned file too: the file was read in full; no content is missing. Degrading it would put every stray-NUL `.env` into DO_NOT_SHIP and train users to ignore the flag. It is reported (count plus capped file names), so it is not silent.
-- Counterargument: a secret split by an embedded NUL could be missed (`AKIA<NUL>IOSF...`). Answer: that string is not a usable AWS key; and a tool that strips NULs before use is the case the fail-closed `UNSCANNED_UNKNOWN_BINARY` path does not cover. Accepted residual, recorded in section D.
-- Files that fail the test (NUL-heavy, no magic, no recognised extension) are skipped AND degraded: an unknown blob is the one case where we cannot tell text from binary, so we fail closed. The user clears it by adding the path to `ignore.paths` in `shipguard.policy.yml` (an explicit, visible choice, counted under `ignoredByUser`).
+- Where it sits in the classifier (see A1 for the full order): only reached for a file that `detectBinary` already flags, only AFTER a BOM check and the validated UTF-16 test of D3 have failed, and only AFTER the real-binary test of D4 has said "not a real binary".
+- Choice: SCAN it, each NUL byte replaced by one space (U+0020). Count it under `coverage.decoded.nulSubstituted`. Not degraded when it passes the test below. Fails the test => skipped AND degraded with `UNSCANNED_UNKNOWN_BINARY`.
+- Text-likeness test (all must hold): NUL bytes are at most 1% of the file; after substitution the bytes decode as strict UTF-8 (`decodeUtf8Strict`); control bytes other than TAB/LF/FF/CR are at most 5% of the first 32 KiB.
+- Why UTF-16 is tried first (round-2 fix): a UTF-16LE file of 10,000 CJK characters followed by an AWS key has almost no NULs in the ASCII-parity pattern, yet its NUL share can pass the 1% test; substituting NULs would turn the key into letters separated by spaces and hide it. So any validated UTF-16 candidate is decoded as UTF-16 first (D3); NUL-to-space is only for what is left.
+- Why scan and not "skip and degrade": the B1 attack is "plant one NUL byte next to a secret". Skip-and-degrade gives `--strict` an exit 1 but a human sees "DO_NOT_SHIP, 0 findings" and no key; scanning finds the key (BR B1 control: the same key in a plain file gives 2 findings). A single-byte substitution keeps every line number and column unchanged.
+- Why not degrade the scanned file too: the file was read in full; no content is missing. Degrading every stray-NUL `.env` would train users to ignore the flag. It is reported (count plus capped file names), so it is not silent.
+- Residual miss (documented, tested as test B17, see D): a secret split by an embedded NUL (`AKIA<NUL>IOSF...`) is not matched after substitution. That string is not a usable key for tooling that does not strip NULs; a tool that does strip them is the accepted residual.
+- Files that fail the test are skipped AND degraded. This includes every NUL-heavy blob with no real-binary evidence (`creds.bin`, `dump.dat` with 2% NUL padding): file NAME and EXTENSION are never used to decide (see D4). The user clears a legitimate unknown blob by adding its path to `ignore.paths` (explicit and counted under `ignoredByUser`).
 
 ### D3. UTF-16 (LE and BE)
-- With a BOM (`FF FE` = LE, `FE FF` = BE): decode and scan, always. `FF FE 00 00` (UTF-32LE) is NOT treated as UTF-16: it falls through to the triage and ends as `UNSCANNED_UNKNOWN_BINARY` (degraded), because decoding it as UTF-16 would be wrong.
-- Without a BOM: decode and scan when ALL hold: length is even and at least 4; in the first 32 KiB, for one byte parity the share of NUL bytes is at least 40% of that parity's positions and the other parity has at most 2% NULs (the ASCII-dominant UTF-16 signature: LE has NUL at odd offsets, BE at even offsets); the strict decode succeeds with no lone surrogates; the decoded text has at most 1% U+0000 and at most 5% other control characters.
-- Why detect BOM-less at all: PowerShell 5.1 `>` / `Out-File` and Windows tools write UTF-16LE with a BOM, but `iconv -t UTF-16LE`, some editors and some exporters write none. The heuristic is cheap and each guess is validated by a strict decode, so a wrong guess can only fall to the fail-closed path, never to a silent skip.
-- Why not guess further: BOM-less UTF-16 that is mostly non-ASCII (CJK) has no NUL signature; guessing it is a coin flip. It falls to D2's rule and ends as `UNSCANNED_UNKNOWN_BINARY` (degraded) unless it carries a known-binary magic. Fail closed, not silent.
-- BE is decoded by `Buffer.swap16()` then the same strict `utf-16le` `TextDecoder` (does not depend on a `utf-16be` decoder being present). The strict (`fatal:true`) flag depends on ICU exactly as the existing `decodeUtf8Strict` already does (normalize.ts:116-133); no new platform assumption.
-- Findings in a UTF-16 file report line and column in the DECODED text (characters), not byte offsets. `treeDigest` (scanner.ts:`computeTreeDigest`) hashes the decoded, normalized content, as it does for every file today (documented at scanner.ts:~110-125). Both are stated in the CHANGELOG.
+- Applies only to a file `detectBinary` flagged (it contains NULs or is control-dense). A file with no NUL and low control density never reaches this step: it goes straight to strict UTF-8 and a failed decode is degraded (`INVALID_UTF8`), exactly as today.
+- BOM present (`FF FE` = LE, `FE FF` = BE): decode as UTF-16 and scan. `FF FE 00 00` (UTF-32LE) is not UTF-16; it continues to the later steps and ends as `UNSCANNED_UNKNOWN_BINARY`. A BOM-marked file whose decode FAILS (lone surrogate, or odd byte length) is NOT retried as anything else: it is skipped and degraded (`INVALID_UTF8`, detail says "UTF-16 with BOM, invalid").
+- No BOM: a UTF-16 candidate is accepted only after a CONFIRMED strict decode of the WHOLE buffer (even length, no lone surrogates) AND a plausibility test on the decoded text (at most 1% U+0000, at most 5% other control characters, and at least 80% of code units inside a named list of text blocks: U+0009-000D, U+0020-007E, U+00A0-024F, U+0370-1FFF, U+2000-206F, U+3000-9FFF, U+AC00-D7AF, U+FF00-FFEF; uniformly random bytes land near 55% so they fail).
+  - Endianness: if one byte parity carries at least 40% NULs and the other at most 2% (ASCII-dominant signature; LE has NULs at odd offsets, BE at even), that parity decides LE or BE. Otherwise only LE is tried. BOM-less BE with no parity signature (for example all-CJK big-endian) is NOT guessed: it falls to the later steps and degrades. BE is decoded with `Buffer.swap16()` then the `utf-16le` decoder (cheap, tested in B1).
+- Order guarantee: validated UTF-16 candidates are decoded BEFORE the NUL-to-space path of D2 can be considered (round-2 fix; Codex case: 10,000 `汉` followed by `AKIAIOSFODNN7EXAMPLE` is a test row in B2 and in the matrix).
+- The strict flag depends on ICU exactly as the existing `decodeUtf8Strict` already does (normalize.ts:116-133); no new platform assumption.
+- Columns and offsets: findings in a UTF-16 file are reported in the DECODED text, counted in UTF-16 code units (JavaScript string indices; this is already how every file's columns are counted today). `treeDigest` hashes the decoded, normalized content as for every file (scanner.ts `computeTreeDigest`). NUL-bearing and UTF-16 files that used to be unread now enter the digest, so `treeDigest` for such trees changes between 0.8.1 and this version: stated in the CHANGELOG.
 
-### D4. Real binaries
-- Skipped, counted under `skipped.binary`, NOT degraded. Identified by magic bytes first, extension second:
-  - Magic (checked on the first 16 bytes): PNG `89 50 4E 47`, JPEG `FF D8 FF`, GIF `47 49 46 38`, WEBP (`RIFF....WEBP`), ICO `00 00 01 00`, PDF `25 50 44 46`, ZIP/JAR/DOCX `50 4B 03 04`, GZIP `1F 8B`, BZIP2 `42 5A 68`, XZ `FD 37 7A 58 5A 00`, 7z `37 7A BC AF 27 1C`, TAR (`ustar` at offset 257, needs 262 bytes), ELF `7F 45 4C 46`, Mach-O (`FE ED FA CE/CF`, `CE FA ED FE`, `CF FA ED FE`), PE `4D 5A`, WASM `00 61 73 6D`, SQLite `SQLite format 3`, WOFF `77 4F 46 46`, WOFF2 `77 4F 46 32`, TTF `00 01 00 00`, OTF `4F 54 54 4F`, MP4/MOV (`ftyp` at offset 4), Java class `CA FE BA BE`.
-  - Extension (only used when the file is NUL/density-binary AND does not pass the text-likeness test of D2/D3): `.png .jpg .jpeg .gif .webp .ico .pdf .zip .gz .tar .tgz .bz2 .xz .7z .mp4 .mov .mp3 .wav .woff .woff2 .ttf .otf .eot .wasm .node .so .dll .dylib .exe .class .jar .pyc .o .a .bin .dat .db .sqlite .sqlite3`.
-- Order inside the classifier (this order is the evasion defence): (1) magic match => binary; (2) BOM / D3 / D2 text tests => scan; (3) known extension => binary; (4) otherwise => `UNSCANNED_UNKNOWN_BINARY`. A text file renamed `secrets.png` is therefore scanned, not skipped.
-- Counterargument: the extension list is hand-made and will be incomplete. Answer: an unlisted binary format is not silent and not wrongly "safe": it degrades (step 4) and the user excludes it by path. We prefer a false degrade to a false SAFE in a release gate.
+### D4. Real binaries (round 2: content only, never the extension)
+- The rule: magic bytes count ONLY for a file that `detectBinary` already flags, and only when the file is also binary-dominant. A real binary is skipped, counted under `skipped.binary`, NOT degraded.
+  - Gate 1: `detectBinary` true (a NUL anywhere, or more than 30% control bytes in the first 32 KiB). A file with no NULs and low control density NEVER consults magic: it goes to strict UTF-8; a failed decode is degraded. So a `.env` that begins `MZ=1\nAWS_ACCESS_KEY_ID=...` (PE magic) is scanned as text; a text file with `ustar` at offset 257 is scanned as text.
+  - Gate 2: magic match on the head. List: PNG `89 50 4E 47`, JPEG `FF D8 FF`, GIF `47 49 46 38`, WEBP (`RIFF....WEBP`), ICO `00 00 01 00`, PDF `25 50 44 46`, ZIP/JAR/DOCX `50 4B 03 04`, GZIP `1F 8B`, BZIP2 `42 5A 68`, XZ `FD 37 7A 58 5A 00`, 7z `37 7A BC AF 27 1C`, TAR (`ustar` at offset 257), ELF `7F 45 4C 46`, Mach-O (`FE ED FA CE/CF`, `CE FA ED FE`, `CF FA ED FE`), PE `4D 5A`, WASM `00 61 73 6D`, SQLite `SQLite format 3`, WOFF `77 4F 46 46`, WOFF2 `77 4F 46 32`, TTF `00 01 00 00`, OTF `4F 54 54 4F`, MP4/MOV (`ftyp` at offset 4), Java class `CA FE BA BE`.
+  - Gate 3 (binary-dominant): printable share over the whole buffer (bytes 0x20-0x7E plus TAB/LF/FF/CR) is below 70%. Real compressed or machine-code data sits far below that. A PNG header followed by `KEY=` lines is mostly printable, fails this gate, and continues to the D3/D2 steps: it is scanned, or if its NUL share is above 1% it degrades. It is never silently skipped.
+- Extension is NEVER used. The old D4 step (3) "known extension => binary" is DELETED, together with the extension list. `creds.bin` or `dump.dat` with 2% NUL padding and no magic goes to `UNSCANNED_UNKNOWN_BINARY` (degraded); a text file named `secret.png` is read and scanned.
+- Head-read shortcut (size-cap files only): a file over `maxFileSizeBytes` is normally `FILE_TOO_LARGE` (degraded). The scanner may instead read the first 4,096 bytes and skip the full read ONLY when the head both matches a magic value AND looks binary (Gate 1 on the head and Gate 3 on the head). Such files count under `skipped.binary` and also under `coverage.skipped.binaryHeadOnly` so the weaker evidence is visible. Files at or under the cap always get the full-buffer test above (no shortcut). A head that fails either test => `FILE_TOO_LARGE` as today.
+  - Residual (documented in D): a file over 512 KiB with a real image header and a binary-looking first 4 KiB that hides text later is skipped as binary. Counted, not degraded.
+- Order of the whole classifier is in A1. Counterargument: no extension fallback means an unusual blob degrades the scan. Answer: a false degrade (visible, fixable with `ignore.paths`) is preferred to a false SAFE in a release gate.
 
 ### D5. Default-ignored files (BR I1, I2, I4)
 - Today `fs.ts:30-67` drops a fixed list with no signal: directories at the project root (`node_modules`, `dist`, `build`, `.next`, `coverage`, `.git`, `.cache`, `.turbo`, `.venv`, `venv`, `vendor`, `tmp`, `out`), lockfiles, and extensions (`*.log *.min.js *.map` plus media/binary extensions). `scanner.ts:34-42` carries a second, shorter list.
+- Main decision on Q1: these stay ignored by default and are counted in `coverage.ignoredByDefault`.
 - Choice:
-  1. Remove the media/binary EXTENSIONS from the ignore list (`*.png *.jpg *.jpeg *.gif *.webp *.ico *.pdf *.zip *.gz *.tar *.mp4 *.mov *.wasm *.node`). They are now discovered and classified by D4, so a text file named `x.png` is scanned (closes an evasion the ignore list opened) and real images are counted under `skipped.binary`. To avoid reading big images in full and avoid a `FILE_TOO_LARGE` degrade on a 3 MB logo: for a file whose extension is on the D4 list and whose size is over the cap, read only the first 262 bytes; magic match => `skipped.binary`; no magic => `FILE_TOO_LARGE` as today. For such a file at or under the cap, also read 262 bytes first and skip the full read on a magic match.
+  1. Remove the media/binary EXTENSIONS from the ignore list (`*.png *.jpg *.jpeg *.gif *.webp *.ico *.pdf *.zip *.gz *.tar *.mp4 *.mov *.wasm *.node`). They are now discovered and classified by content (D4), so a text file named `x.png` is scanned (closes an evasion the ignore list opened) and real images are counted under `skipped.binary`. Images over the size cap use the head-read shortcut of D4 (magic AND binary-looking head), so a 3 MB logo does not degrade the scan.
   2. KEEP ignoring the rest (dependency/build/VCS directories, lockfiles, `*.map`, `*.min.js`, `*.log`, `vendor tmp out .cache .venv venv`), but COUNT them: `coverage.ignoredByDefault` lists each rule that matched with a file count (rules that name a directory report `present:true` without enumerating it, so `node_modules` is never walked). Not degraded.
-  3. Do NOT change which paths are scanned beyond item 1. Whether `*.log`, `*.min.js`, `vendor/`, `tmp/`, `out/` should be scanned is a product decision (owner item 12 class, and `*.min.js` over 512 KiB would add `FILE_TOO_LARGE` degrades). Out of scope, listed as OPEN QUESTION Q1.
+  3. Do NOT change which paths are scanned beyond item 1. Whether `*.log`, `*.min.js`, `vendor/`, `tmp/`, `out/` should be scanned is a product decision (owner item 12 class, and `*.min.js` over 512 KiB would add `FILE_TOO_LARGE` degrades). Decided by main (Q1): stay ignored, counted.
 - Why not degrade: they are documented, deterministic exclusions the user can see in the counts; degrading them would make nearly every real project DO_NOT_SHIP (every repo has a lockfile).
-- Counterargument: `*.log` and `vendor/` can hold real secrets or first-party source, so "counted" is weaker than "scanned". Accepted for this branch; it moves silent to visible, and Q1 asks the owner to decide scan vs ignore.
+- Counterargument: `*.log` and `vendor/` can hold real secrets or first-party source, so "counted" is weaker than "scanned". Accepted for this branch (main decision Q1); it moves silent to visible.
 
 ### D6. Limits (BR L1, L3, L4)
 - Truncation by `maxFiles` or `maxTotalBytes` stays `degraded:true` with `OUTPUT_TRUNCATED`. Improve the payload: `coverage.truncated` = `{ by: "maxFiles" | "maxTotalBytes", notReached: N }` and the detail text names the cap and N. Today the text names neither (BR section 5).
@@ -95,20 +103,30 @@ Explicitly out of scope (listed under RISKS in the report, not fixed): `.gitigno
 All paths are in `public` (`agenticcli/shipguard`). Do the work in this order; one commit per step, each with its tests.
 
 ### A1. `packages/cli/src/utils/classify.ts` (NEW) - the single classifier
-- `classifyFile(buffer: Uint8Array, relativePath: string): ClassifyResult`, a pure function, no I/O. Result is a tagged union:
+- `classifyFile(buffer: Uint8Array): ClassifyResult`, a pure function, no I/O, and NO file name argument (the name and extension must not influence the result). Result is a tagged union:
   - `{ kind: 'text', text: string, encoding: 'utf8' | 'utf16le' | 'utf16be', nulSubstituted: boolean }`
   - `{ kind: 'binary' }` (real binary, D4, not degraded)
-  - `{ kind: 'unknown-binary' }` (degraded, D2/D3/D4 step 4)
-  - `{ kind: 'invalid-utf8', reason: string }` (existing `INVALID_UTF8` path, so the two read sites stay symmetric)
-- `hasBinaryMagic(head: Uint8Array): boolean` and the extension set live here. Constants for the thresholds (1%, 5%, 40%/2%, 32 KiB) are named and exported for tests.
+  - `{ kind: 'unknown-binary' }` (degraded)
+  - `{ kind: 'invalid-text', encoding: 'utf8' | 'utf16', reason: string }` (maps to the existing `INVALID_UTF8` code)
+- The exact order (round-2 decision; every branch is a test row in B1):
+  1. Empty => text.
+  2. `detectBinary` false (no NUL, low control density) => strict UTF-8 decode (`decodeUtf8Strict`); failure => `invalid-text`. Magic is NEVER consulted here.
+  3. `detectBinary` true, BOM `FF FE` (not followed by `00 00`) or `FE FF` => UTF-16 decode; failure => `invalid-text` (degraded). No other branch is tried.
+  4. `detectBinary` true, no BOM: validated BOM-less UTF-16 candidate (D3) => text.
+  5. Real binary (D4 gates 2 and 3: magic AND binary-dominant) => `binary`.
+  6. NUL-to-space text-likeness test (D2) => text with `nulSubstituted`.
+  7. Otherwise => `unknown-binary`.
+- Constants for thresholds (30%, 70%, 1%, 5%, 40%/2%, 80%, 32 KiB, 4,096-byte head) are named and exported for tests.
 - Reuses `detectBinary`, `decodeUtf8Strict`, `stripBom`, `normalizeNewlines` from `@agenticcli/matcher-contract`. It does NOT modify the matcher-contract (see A9).
-- Flow: empty => text; BOM check (utf8 strips later; FF FE not followed by 00 00 => utf16le; FE FF => utf16be); magic => binary; if `detectBinary` is false => strict UTF-8 as today; else triage in D4 order using D3 then D2 then extension.
-- Result text for every `text` kind goes through `stripBom` then `normalizeNewlines` exactly as Gate 5 does now.
+- Result text for every `text` kind goes through `stripBom` then `normalizeNewlines`, as Gate 5 does now.
 
 ### A2. `packages/cli/src/utils/fs.ts` and `packages/cli/src/core/scanner.ts` - use the classifier in both read paths
 - `fs.ts:323-343` (Gates 3-5 in `readFiles`) and `scanner.ts:294-312` (the `--changed` copy) are replaced by one call to `classifyFile`. Both paths then fill the same counters, so they cannot drift again.
 - `ReadFilesResult` (fs.ts:~76-160) gains: `skippedUnknownBinary: string[]` (capped names plus a true count), `skippedSpecial` (count and capped names), `nulSubstitutedFiles` (count and capped names), `utf16Decoded` (count), `notReached` (number), `truncatedBy?: 'maxFiles' | 'maxTotalBytes'`, `discovered` (number), `ignoredByDefault: Array<{ pattern: string; files?: number; present?: boolean }>`, `ignoredByUser` (count).
-- Head-read short-cut for D5.1 (known-binary extension files): open, read the first 262 bytes, magic match => binary without a full read.
+- Head-read shortcut: only for files over `maxFileSizeBytes`, exactly as D4 defines (first 4,096 bytes, magic AND binary-looking head). Implemented once, called from both paths.
+- ONE shared ignore helper (round-2 decision, new file `packages/cli/src/core/ignore.ts`): `buildIgnorePatterns(policy)` returns `[...DEFAULT_IGNORE (fs.ts), ...selfArtifactIgnorePatterns(policy), ...policy.ignore.paths]` and `classifyIgnored(relPath, patterns)` (uses `minimatch`, already a direct dependency of the CLI, with `{ dot: true }`) returns `null`, `{ by: 'default', pattern }` or `{ by: 'user', pattern }`. The full path passes the same pattern list to fast-glob (replacing the list built at `public@2bf3a7d:packages/cli/src/core/scanner.ts:166-170`); the `--changed` filter (replacing the prefix/equality check at `scanner.ts:209-219`, which today ignores `policy.ignore.paths`) calls `classifyIgnored`. Result: `ignore.paths` works under `--changed`, so the remedy printed for `UNSCANNED_UNKNOWN_BINARY` works on both paths. Test B18 pins that the two matchers agree on a corpus of paths (root-only `*.log`, `dir/**`, nested `node_modules`, dotfiles).
+- `--changed` git output (round-2 decision): `getChangedFiles` (`public@2bf3a7d:packages/cli/src/core/git.ts:100`) now runs the three git commands with `-z` (`diff --name-only -z`, `diff --cached --name-only -z`, `ls-files --others --exclude-standard -z`), splits on NUL and keeps every name EXACTLY: no `trim()`, only empty strings are dropped. A file named `secret.ts ` (trailing space) or a whitespace-only name is no longer aliased to a sibling or lost. `runGit` already returns the raw string (no trim of its own). With `-z` git also stops quoting non-ASCII names (`core.quotePath` does not apply), which fixes a second aliasing case. Test B19.
+- `--changed` empty diff (round-2 decision, REVERSES the earlier main decision): NO exemption. Zero scannable files gives `NO_FILES_SCANNED`, `degraded:true`, DO_NOT_SHIP, `--strict` exit 1. In non-JSON modes a stderr hint is printed: "`--changed` scans only files that differ from git; on a clean checkout it scans nothing. Run `shipguard scan` for the whole tree." (The hint goes to stderr so `--json` stdout stays pure; `json-stdout-purity` test is extended.) B6 asserts this.
 - `DEFAULT_IGNORE` (fs.ts:30-67): remove the 14 media/binary extension entries named in D5.1. Keep everything else. Add the `ignoredByDefault` counting pass: positive patterns are the remaining ignore entries that are NOT directory rules, with the directory rules excluded from the walk (`ignore`) so `node_modules` is not traversed; directory rules are reported with `present:true` after a single `stat`.
 - `scanner.ts:34-42` (the short list) is left as is (a subset of the fs.ts list).
 - Caps (fs.ts:293, scanner.ts:230): record `truncatedBy` and `notReached = total - processed` at the break.
@@ -131,17 +149,21 @@ coverage: {
     unknownBinary: number,       // degraded UNSCANNED_UNKNOWN_BINARY
     invalidUtf8: number,         // degraded INVALID_UTF8
     unreadable: number,          // degraded UNREADABLE_FILE
-    special: number              // FIFO/socket/device (not degraded)
+    special: number,             // FIFO/socket/device (not degraded)
+    binaryHeadOnly: number       // subset of `binary` decided from the head only (files over the size cap)
   },
   decoded: { utf16: number, nulSubstituted: number },
   truncated: false | { by: 'maxFiles' | 'maxTotalBytes', notReached: number },
   ignoredByDefault: Array<{ pattern: string, files?: number, present?: boolean }>,
-  ignoredByUser: number,
+  ignoredByUser: number,          // files matched by policy.ignore.paths (count)
+  mode: 'full' | 'changed',
+  changed?: { listed: number },   // --changed only: raw path count from git (-z), before ignore rules
   files: { binary: string[], tooLarge: string[], symlink: string[], unknownBinary: string[], special: string[], nulSubstituted: string[] }  // each capped at 50 names, sorted
 }
 ```
 - Why a nested object and not many top-level keys: one new top-level key (`coverage`) is the whole additive change for consumers; the freeze test allow-list (A6) gains one entry.
 - `filesScanned` keeps today's meaning (accepted files).
+- Coverage fields under `--changed` (round-2 decision): `mode:'changed'`; `changed.listed` = unique exact paths from git; `discovered` = `listed` minus the paths removed by the shared ignore helper (so the same invariant holds); `ignoredByDefault` and `ignoredByUser` are exact per-pattern file counts over the listed paths (full mode reports directory rules as `present:true`, changed mode can count exactly); a listed path that cannot be read or resolves outside the root counts under `skipped.unreadable`; `truncated` and `notReached` behave as in full mode. The two read paths call the same `classifyFile` and the same counter code, and test M (section B) asserts identical `coverage` and degrade codes for identical content.
 - Counts exclude nothing: `discovered = scanned + sum(skipped.*) + notReached` (invariant, asserted).
 - Paths in `coverage.files` are project-relative, as `skippedTooLargeFiles` already are. The telemetry payload is NOT extended (it must never carry paths or counts beyond today's fields; `public@2bf3a7d:packages/cli/src/commands/scan.ts` telemetry block).
 
@@ -157,18 +179,23 @@ coverage: {
     - `skipped.binary`, `skipped.special`, `decoded.utf16`, `decoded.nulSubstituted`, `ignoredByDefault` (not degraded) => never change the exit code.
     - Findings from a newly scanned UTF-16/NUL file count like any finding (blocking finding => exit 1 under `--strict`).
     - Exit 2 and 3 untouched.
+  - `--check-regressions` (round-2 decision): today `scan.ts:978` raises the exit code to 1 for a regression even WITHOUT `--strict`, which contradicts the documented contract (1 only with `--strict`). Change the condition to `opts.checkRegressions && scanOptions.strict && exitCode === EXIT_CODES.SAFE && regressions > 0`. Update the help text and the doc comment (scan.ts:50-122, the help block at ~:248) to say `--check-regressions` needs `--strict` to block. CHANGELOG note under "Changed". This is a behaviour change for anyone using `--check-regressions` alone as a gate: listed in D. Test B20.
   - Update the `Exit codes` help text in scan.ts (the `1  Blocked` bullet) and the doc comment at scan.ts:50-122 to list the new degraded cases.
   - `--sarif`: `toSarif(publicResult)` (scan.ts:~786) is unchanged; confirm in a test that `coverage` does not leak into SARIF.
 
 ### A5. BUG 2 port: `packages/cli/src/utils/exit.ts` (NEW) and `packages/cli/src/commands/scan.ts`
-- Source of truth to re-implement: `archive@8a55f4e:packages/cli/src/utils/exit.ts:1-37` (function `exitAfterFlush`: set `process.exitCode`, drain stdout and stderr with an empty write plus a 10 s unref'd timer, then `process.exit(code)`), and the two call sites `archive@8a55f4e:packages/cli/src/commands/scan.ts:370` (`return exitAfterFlush(exitCode)`) and `:993` (`await exitAfterFlush(exitCode)`), plus the import at `:27`.
-- Write `exit.ts` fresh in the public tree (do not cherry-pick: histories differ; `git merge-base` between the two repos does not exist). Differences to respect: the archive `scan.ts` has `runScan(ctx)` and a `checkScanPath` split; the public `scan.ts` keeps the whole action inline. Therefore the two edits in public are `scan.ts:367` (`return process.exit(exitCode)` becomes `return exitAfterFlush(exitCode)`) and `scan.ts:989` (`process.exit(exitCode)` becomes `await exitAfterFlush(exitCode)`), plus one import line. Re-read both functions end to end before editing.
-- Keep the catch in `drain()` logging at debug level (the archive version swallows with a comment only; the repo rule is "every catch logs"): `logger.debug('exit: stream already closed ...')`. The timeout fallback also logs a debug line.
-- Out of scope, listed under RISKS: `src/cli.ts:190,206,210,214` and `src/handlers.ts:27,38,44` also call `process.exit` directly; they print short messages (no large payload), so they cannot truncate a scan JSON. Not changed.
+- Reference (not copied): `archive@8a55f4e:packages/cli/src/utils/exit.ts:1-37` waits for a write callback then forces `process.exit` after a 10 s timer; call sites `archive@8a55f4e:packages/cli/src/commands/scan.ts:370` and `:993`. Round 1 showed that design STILL truncates: when the reader is slower than 10 s the forced exit discards queued stdout (Codex reproduction: 182,720 of 5,000,012 bytes, invalid JSON, exit 1).
+- New rule (round-2 decision): `process.exit` is NEVER called while stdout has queued data. The new `exit.ts` exports `setExitCode(code: number): void`:
+  1. `process.exitCode = code`.
+  2. Attach (once) `process.stdout.on('error', handler)`: for `EPIPE` (reader closed early, for example `| head -c 100`) log at debug and keep the computed exit code (no throw, no change to the code); any other error: log at warn and keep the code.
+  3. Return. Node then exits on its own once stdout has drained and the event loop is empty. There is NO timer and NO forced exit.
+- Call sites in public (`public@2bf3a7d:packages/cli/src/commands/scan.ts`): `exitWithError` (:352-367, `return process.exit(exitCode)`) and the final block (:988-990). Because `setExitCode` returns, every caller of `exitWithError` must stop executing: change the six call sites (:309, :327, :400, :553, :611, :658) to `return exitWithError(...)` (the code at :400-401 already has an unreachable-guard `return`), and the final block simply sets the code and falls off the end of the action. Re-read the whole action end to end before editing; existing tests that mock `process.exit` (for example `cli-exit-codes.test.ts`) are reviewed and updated to assert `process.exitCode`.
+- Lingering handles: if a late handle (network keep-alive from telemetry or Pro fetch) keeps the process alive after the drain, the tarball rehearsal (C0) measures time-to-exit. The only permitted fallback is calling `process.exit(code)` from inside an empty-write callback on stdout AND stderr when `writableLength === 0` (nothing queued, so nothing can be lost). Never from a timer. If needed, this is added in the same file with its own test (B14).
+- Out of scope, listed under RISKS: `src/cli.ts:190,206,210,214` and `src/handlers.ts:27,38,44` also call `process.exit` directly; they print short messages (no large payload).
 
 ### A6. Tests, docs and metadata
 - Tests: section B. Existing tests to UPDATE (they pin today's silent behaviour): `tests/commands/scan-json-schema-freeze.test.ts` (schemaVersion `'6'`, `coverage` in the optional allow-list as required, `_skipped*` still must not leak), `tests/commands/scan-degraded-on-skip.test.ts` and `tests/commands/scan-bounds.test.ts` (binary-skip expectations), `tests/commands/schema-contract.test.ts` (new codes, version), `tests/utils/fs.test.ts` and `tests/utils/fs-bounds.test.ts` (ReadFilesResult shape; the removed extension ignores).
-- `packages/cli/CHANGELOG.md`: add an "Unreleased" entry in the file's plain style (what changes for users: UTF-16 and NUL files scanned; scans that read nothing are no longer SAFE; JSON gains `coverage`, schemaVersion 6; `--strict --json` output no longer cut). NO version bump in `package.json`, NO tag (owner's call).
+- `packages/cli/CHANGELOG.md`: add an "Unreleased" entry in the file's plain style. Fixed/Changed items: UTF-16 and NUL files are scanned; scans that read nothing are no longer SAFE (including `--changed` on a clean checkout); JSON gains `coverage`, schemaVersion 6; `treeDigest` changes for trees that contain NUL or UTF-16 files (they now enter the digest) and for `--changed` scans whose paths had odd whitespace; `--strict --json` output is no longer cut; `--changed` now honours `ignore.paths` and exact file names; `--check-regressions` now exits 1 only together with `--strict` (BEHAVIOUR CHANGE); a key split by an embedded NUL byte is still not matched (known limit). NO version bump in `package.json`, NO tag (owner's call).
 - `packages/cli/README.md`, `packages/cli/docs/llms.txt`, `packages/cli/docs/placement-kit.md`: grep for "binary", "skipped", "schemaVersion", "degraded" and update the lines that describe skipping. `packages/cli/scripts/gen-cli-facts.mjs` output must stay consistent (release-gate G2b).
 - `docs/progress/scan-honest-coverage-20261102.md`: the progress entry, last commit (per the agent rules).
 
@@ -190,79 +217,137 @@ coverage: {
 
 ## B. TEST PLAN (checks before merge)
 
-Layout: Vitest under `packages/cli/tests/<domain>/`, existing conventions: unit tests in-process, e2e tests spawn `dist/cli.js` through `tests/helpers/spawn-cli.ts` with `vi.setConfig({ testTimeout: 30_000 })`. Each new test below is FAIL-BEFORE (run on the unmodified `origin/main` build, record the failure text) and PASS-AFTER. The agent running the plan records both runs in `docs/progress/scan-honest-coverage-20261102.md`. Telemetry is already forced off by `tests/setup/no-telemetry.ts`.
+Layout: Vitest under `packages/cli/tests/<domain>/`, existing conventions: unit tests in-process, e2e tests spawn the CLI through `tests/helpers/spawn-cli.ts` with `vi.setConfig({ testTimeout: 30_000 })`. The CLI path comes from one helper `cliPath()` (env `SHIPGUARD_CLI` if set, else `dist/cli.js`) so the same e2e files run against the packed tarball in C0. Telemetry is already forced off by `tests/setup/no-telemetry.ts`.
 
 Fixture rule: planted secrets are the public example values already used in this suite (`AKIAIOSFODNN7EXAMPLE`, the `-----BEGIN RSA PRIVATE KEY-----` marker). No real secrets.
 
-| # | File | What it proves | Fail-before (expected on `2bf3a7d`) |
-|---|---|---|---|
-| B1 | `tests/utils/classify.test.ts` (new, unit) | Table of buffers => result kind: empty; ASCII; UTF-8+BOM; UTF-16LE+BOM; UTF-16BE+BOM; BOM-less LE and BE ASCII text; BOM-less LE of random bytes (must NOT be text); UTF-32LE BOM => unknown-binary; one NUL in a 10 KB text; 2% NULs => unknown-binary; PNG/ZIP/ELF/WASM/PDF magic => binary; text content with `.png` name => text; PNG magic with `.js` name => binary; lone surrogate in UTF-16 => not text; odd length UTF-16 => not text; invalid UTF-8 => invalid-utf8. Also: NUL substitution keeps byte length, line count and column of a later match | Module missing: test file fails to import |
-| B2 | `tests/commands/scan-nul-utf16-coverage.test.ts` (new, e2e) | Fixtures (BR B1, B2, B3): (a) key + one NUL byte; (b) UTF-16LE with BOM; (c) UTF-16BE with BOM; (d) UTF-16LE no BOM; (e) UTF-16BE no BOM. Each: the planted key is FOUND (>=1 finding with the right `file` and a line number equal to the line in the decoded text), `filesScanned` 1, `coverage.scanned` 1, `coverage.decoded.utf16` or `.nulSubstituted` 1, exit 0 without and with `--strict` per its findings (blocking finding => `--strict` exit 1) | `SAFE_TO_SHIP`, 0 findings, `filesScanned` 0 (BR B1-B3) |
-| B3 | same file | UTF-16 non-ASCII BOM-less (CJK text) => skipped, `degraded:true`, code `UNSCANNED_UNKNOWN_BINARY`, `recommendation` `DO_NOT_SHIP`, `--strict` exit 1, no-strict exit 0 | `degraded:false`, SAFE |
-| B4 | `tests/commands/scan-all-binary-tree.test.ts` (new, e2e) | BR B4: tree of 500 files each with a NUL and no magic and no known extension (unknown binary): 0 scanned, `degraded:true`, codes include `NO_FILES_SCANNED` and `UNSCANNED_UNKNOWN_BINARY`, never `SAFE_TO_SHIP`, `coverage.discovered` 500, `coverage.skipped.unknownBinary` 500, invariant holds, `--strict` exit 1 | 0 scanned, `SAFE_TO_SHIP`, `degraded:false` |
-| B5 | same file | REAL-binary-only tree: fixtures with real magic bytes (a valid 1x1 PNG, a ZIP, a gzip stream, an ELF header, a WOFF2 header; all tiny, generated in the test from literal bytes), `package.json` NOT present (use `--all`): `coverage.skipped.binary` = N, `scanned` 0, `degraded:true` with ONLY `NO_FILES_SCANNED` (no unknown-binary code), `DO_NOT_SHIP`. Companion: the same tree plus one clean `.js` => `degraded` absent/false, `SAFE_TO_SHIP`, `skipped.binary` = N, `--strict` exit 0 (real binaries alone never degrade) | scanned 0, `SAFE_TO_SHIP` |
-| B6 | same file | Empty directory with `--all` and a dir with only ignored files: `NO_FILES_SCANNED`, DO_NOT_SHIP. `--changed` in a git repo with zero changed files: `NO_FILES_SCANNED` too (see Q2). Exit code stays 0 without `--strict` | SAFE |
-| B7 | `tests/commands/scan-coverage-json.test.ts` (new, e2e) | JSON always has `coverage` (also on a normal clean scan) with the invariant `discovered = scanned + sum(skipped) + notReached`; `schemaVersion` `'6'`; no `_skipped*`/`_truncated` keys; `coverage.files` names are sorted, capped at 50, project-relative; SARIF output has no `coverage`; human output prints the Coverage line on a clean scan and names each skip category; `--quiet` output unchanged apart from existing wording | `coverage` absent |
-| B8 | `tests/utils/fs-bounds.test.ts` (extend) + `tests/commands/scan-bounds.test.ts` (extend) | Limit truncation: set low `limits.maxFiles` via policy (e.g. 10 with 25 files) => `degraded:true`, `OUTPUT_TRUNCATED`, `coverage.truncated = { by: 'maxFiles', notReached: 15 }`, detail names the cap; same for `maxTotalBytes`; exactly-at-cap (10 of 10) NOT truncated; `--changed` path has the same behaviour; a `maxFileSizeBytes` over-cap file => `FILE_TOO_LARGE` and `skipped.tooLarge` 1; 6000-file-style mixed tree scaled down (60 files, 20 NUL-unknown) proves binary does not use the file cap and is counted (BR L4) | no `coverage`, truncation detail without cap/count |
-| B9 | `tests/commands/matcher-contract-untouched.test.ts` (new) | `git diff --name-only origin/main -- packages/matcher-contract` is empty (skipped outside a git checkout with `origin/main`), and `matcher-contract` `normalize` test file still passes | n/a (guard test; fails only if someone edits the contract) |
-| B10 | `tests/commands/scan-default-ignore-coverage.test.ts` (new, e2e) | BR I1/I2/I4: tree with `x.min.js`, `debug.log`, root `vendor/a.js`, `package-lock.json`, `y.map` => `ignoredByDefault` lists each matching rule with counts, `node_modules` reported `present:true` and NOT walked (a 10,000-file `node_modules` fixture does not slow the scan: assert wall time < 5 s); not degraded. Media-extension change: a text file named `secret.png` containing the key => FOUND; a real PNG named `logo.png` => `skipped.binary` 1; a >512 KiB real-magic `big.png` => `skipped.binary`, NOT `FILE_TOO_LARGE`; a >512 KiB text file named `big.png` (no magic) => `FILE_TOO_LARGE` | all silently dropped; `secret.png` not found |
-| B11 | `tests/utils/fs-special-files.test.ts` (new; skip on win32) | BR S4: a FIFO (`mkfifo` via `child_process`) => `skipped.special` 1, no hang (wall < 5 s), not degraded. S10 test-only: mock `readFile` to throw ENOENT for one file => `UNREADABLE_FILE`, `degraded:true` | FIFO silent: no count |
-| B12 | `tests/commands/strict-json-pipe-truncation.test.ts` (new, e2e, Linux only: reads `/proc`) | BUG 2, fast lane. Re-implement the archive test's design (`archive@8a55f4e:packages/cli/tests/commands/strict-json-pipe-truncation.test.ts`): 25 files with the three example secrets so the JSON is above one pipe buffer (65,536 B); the child's stdout goes into a kernel pipe whose reader does not start until the child has reached its exit point (gate file + CPU-idle poll), so the reader cannot win the race. Asserts: `--strict` exit 1; stdout is valid JSON; same `findings.length` as the non-strict run; precondition: payload > 65,536 B | stdout cut (65,536 B class), `JSON.parse` throws |
-| B13 | `tests/slow/strict-json-5mb.slow.test.ts` (new, slow lane, run with `VITEST_SLOW=1 pnpm --filter @agenticcli/shipguard test:slow`) | BUG 2 at scale (BR O1/O2): 3000 files x 2 findings => about 5.1 MB JSON (BR measured 5,157,758 B). Pipe-gated reader as in B12. Asserts stdout > 5,000,000 B, valid JSON, `findings.length` equals the non-strict run, exit 1. Also `--json --strict --quiet`-free variant and a `--sarif --strict` variant of the same fixture (SARIF goes through the same `console.log` then exit) | stdout cut at 65,536 or 69,632 B (BR O2, BUG 2 lab note), invalid JSON |
-| B14 | `tests/utils/exit.test.ts` (new, unit) | `exitAfterFlush` sets `process.exitCode` before waiting, resolves after a stream's empty-write callback, does not hang on a destroyed stream (logs at debug), and gives up after the timeout (fake timers) | module missing |
-| B15 | existing suites | `pnpm run build && pnpm run lint && pnpm test` (matcher-contract + cli) all green; `tests/slow` green; `scripts/release-gate.sh` in dry run (`RELEASE_GATE_DRY_RUN=1`) green incl. G8 | n/a |
+Test types (round-2 labelling): **R** = fail-before regression: it must FAIL on the unmodified `origin/main` build (`2bf3a7d`) and pass after; the failing output is recorded in the progress entry. **G** = guard: passes before and after, protects an invariant (it is never counted as proof of a fix). **D** = documentation test: pins a known limit.
 
-Run discipline (from the repo rules): build `dist/` before any e2e test (`pnpm run build`), run the e2e files one at a time on this shared box, and keep aggregate CPU under the caps in the session rules. B13 is the heaviest (about 15 s per spawn in BR).
+### B.1 The test table
 
-Fail-before protocol: on a clean checkout of `origin/main` build `dist`, run B2-B13 against it and keep the failing output in the progress entry. Then run on the branch. A test that cannot fail on the old code is rejected in code review.
+| # | Type | File | What it proves | Fail-before (expected on `2bf3a7d`) |
+|---|---|---|---|---|
+| B1 | R | `tests/utils/classify.test.ts` (new, unit) | One row per branch of the A1 order. Text: empty; ASCII; UTF-8+BOM; UTF-16LE+BOM; UTF-16BE+BOM; BOM-less LE ASCII; BOM-less BE ASCII; BOM-less LE CJK followed by a key (10,000 `汉` + `AKIAIOSFODNN7EXAMPLE`: decoded text CONTAINS the key); one NUL in 10 KB text => nul-substituted, same length, same line/column for a later match. Not text: BOM-less random even-length bytes; BOM-marked with a lone surrogate => invalid-text; BOM-marked odd length => invalid-text; UTF-32LE BOM => unknown-binary; 2% NULs and no magic => unknown-binary. Real binary (magic AND binary-dominant): PNG, ZIP, gzip, ELF, WASM, PDF, WOFF2. SPOOFS (must NOT be binary): `MZ=1\nAWS_ACCESS_KEY_ID=...` as a no-NUL `.env` => text (magic never consulted); a text file with `ustar` at offset 257 => text; a PNG header followed by `KEY=` lines => text or unknown-binary, never binary; `creds.bin`/`dump.dat` content (random text with 2% NUL padding, no magic) => unknown-binary. `classifyFile` takes no file name (a type test proves it) | module missing |
+| B2 | R | `tests/commands/scan-coverage-matrix.test.ts` (new, e2e; see B.2) | Rows: NUL+key; UTF-16LE+BOM; UTF-16BE+BOM; BOM-less LE ASCII; BOM-less BE ASCII; CJK-then-key (Codex case). Each: key FOUND with the right `file` and line, `filesScanned` 1, `coverage.scanned` 1, `coverage.decoded.utf16` or `.nulSubstituted` 1, a blocking finding => `--strict` exit 1; on BOTH read paths | `SAFE_TO_SHIP`, 0 findings, scanned 0 (BR B1-B3) |
+| B3 | R | same matrix | Degrading rows: BOM-marked UTF-16 with lone surrogate; BOM-marked odd length; BOM-less BE all-CJK; UTF-32LE: `degraded:true`, correct code (`INVALID_UTF8` for BOM-marked failures, `UNSCANNED_UNKNOWN_BINARY` for the rest), `DO_NOT_SHIP`, `--strict` exit 1, no-strict exit 0; both read paths | `degraded:false`, SAFE |
+| B4 | R | same matrix + `tests/commands/scan-all-binary-tree.test.ts` (500-file tree) | BR B4: 500 NUL-heavy files with no magic: 0 scanned, `degraded:true`, codes `NO_FILES_SCANNED` + `UNSCANNED_UNKNOWN_BINARY`, never `SAFE_TO_SHIP`, `coverage.discovered` 500, invariant holds, `--strict` exit 1. Plus spoof rows (round 2): MZ-prefixed `.env` found, `ustar`-at-257 text found, PNG header + `KEY=` lines found-or-degraded, `creds.bin` and `dump.dat` (2% NUL padding) degraded; both read paths | scanned 0, SAFE (spoof rows: `.png`-named text never read) |
+| B5 | R | same matrix | REAL-binary-only tree (valid 1x1 PNG, ZIP, gzip, ELF header, WOFF2 header, built from literal bytes; `--all`): `skipped.binary` = N, scanned 0, `degraded:true` with ONLY `NO_FILES_SCANNED` (no unknown-binary code), `DO_NOT_SHIP`. Companion: same tree plus one clean `.js` => not degraded, `SAFE_TO_SHIP`, `skipped.binary` = N, `--strict` exit 0. Both read paths | scanned 0, `SAFE_TO_SHIP` |
+| B6 | R | same matrix | Empty directory with `--all`: `NO_FILES_SCANNED`. Dir with only ignored files: same. `--changed` in a git repo with an EMPTY diff: `NO_FILES_SCANNED`, `degraded:true`, DO_NOT_SHIP, `--strict` exit 1, exit 0 without `--strict`, and the stderr hint about clean checkouts is printed (human mode) and absent from `--json` stdout. No exemption | SAFE |
+| B7 | R | `tests/commands/scan-coverage-json.test.ts` (new, e2e) | JSON always has `coverage` (also on a clean scan) with the invariant `discovered = scanned + sum(skipped except binaryHeadOnly) + notReached`; `schemaVersion` `'6'`; no `_skipped*`/`_truncated` keys; `coverage.files` sorted, capped at 50, project-relative; `--changed` has `mode:'changed'` and `changed.listed`; SARIF has no `coverage`; human output prints the Coverage line on a clean scan and names each skip category | `coverage` absent |
+| B8 | R | `tests/utils/fs-bounds.test.ts` + `tests/commands/scan-bounds.test.ts` (extend) | Limit truncation: low `limits.maxFiles` via policy (10 of 25) => `degraded:true`, `OUTPUT_TRUNCATED`, `coverage.truncated = { by:'maxFiles', notReached:15 }`, detail names the cap; same for `maxTotalBytes`; exactly-at-cap NOT truncated; the same through `--changed`; over-size file => `FILE_TOO_LARGE`, `skipped.tooLarge` 1; image over the cap with real header and binary head => `skipped.binary` + `binaryHeadOnly`, NOT degraded; a text file over the cap with a PNG header and text head => `FILE_TOO_LARGE`; mixed tree (60 files, 20 unknown-binary) proves binary does not use the file cap and is counted (BR L4) | no `coverage`; truncation detail without cap/count |
+| B9 | G | `tests/commands/matcher-contract-untouched.test.ts` (new) | `git diff --name-only origin/main -- packages/matcher-contract` is empty (skipped outside a checkout with `origin/main`) | passes before; fails only if someone edits the contract |
+| B10 | R | `tests/commands/scan-default-ignore-coverage.test.ts` (new, e2e) | BR I1/I2/I4: `x.min.js`, `debug.log`, root `vendor/a.js`, `package-lock.json`, `y.map` => `ignoredByDefault` lists each rule with counts; `node_modules` reported `present:true` and NOT walked (a 10,000-file fixture, wall time < 5 s); not degraded. `ignore.paths` entries => `ignoredByUser` counts. Media extension change: text `secret.png` containing the key => FOUND; a real PNG `logo.png` => `skipped.binary` | silently dropped; `secret.png` not found |
+| B11 | R (FIFO) / G (ENOENT) | `tests/utils/fs-special-files.test.ts` (new; skip on win32) | FIFO (`mkfifo`) => `skipped.special` 1, wall < 5 s, not degraded (R). Mock `readFile` throwing ENOENT => `UNREADABLE_FILE`, degraded (G: already true today) | FIFO: no count |
+| B12 | R | `tests/commands/strict-json-pipe-truncation.test.ts` (new, e2e, Linux) | BUG 2, fast lane. Handshake design in B.3. 25 files => JSON above 65,536 B. `--strict`: exit 1; stdout valid JSON; same `findings.length` as the non-strict run; the probe reports `queuedBytes > 0` at the exit point (else the test is invalid and fails) | stdout cut at the pipe size, `JSON.parse` throws; MUST ALSO FAIL when `exit.ts` is reverted to a bare `process.exit` (mutation check, B.4) |
+| B13 | R | `tests/slow/strict-json-5mb.slow.test.ts` (new, slow lane) | BUG 2 at scale: 3000 files x 2 findings => about 5.1 MB JSON. Same handshake. The reader is held back a further 12 s AFTER the handshake (so a 10 s forced-exit timer would fail), then released: stdout > 5,000,000 B, valid JSON, `findings.length` equal to the non-strict run, exit 1. Variants: `--sarif --strict`; `| head -c 100` (see B16) | cut at 65,536 / 69,632 / 182,720 B, invalid JSON |
+| B14 | R | `tests/utils/exit.test.ts` (new, unit) | `setExitCode` sets `process.exitCode`, never calls `process.exit` (spy), has no timer (fake timers: nothing scheduled), installs the stdout error handler once | module missing |
+| B15 | G | existing suites | `pnpm run build && pnpm run lint && pnpm test` (matcher-contract + cli) green; `tests/slow` green; `RELEASE_GATE_DRY_RUN=1 scripts/release-gate.sh` green incl. G8 | n/a |
+| B16 | R | `tests/commands/strict-json-epipe.test.ts` (new, e2e) | `scan --json --strict <fixture> \| head -c 100` through bash: CLI exit code (via `PIPESTATUS[0]`) is 1 (blocking findings), stderr has no unhandled `EPIPE` stack, no hang (< 10 s). Non-strict variant exits 0 | uncaught EPIPE error / exit 3 or crash |
+| B17 | D | `tests/utils/classify.test.ts` (row) | A key split by an embedded NUL (`AKIA\0IOSFODNN7EXAMPLE`) in an otherwise text file: classified text with `nulSubstituted`, NOT degraded, the key NOT found. Documents the residual in D2/D | n/a (documents the limit) |
+| B18 | G/R | `tests/core/ignore.test.ts` (new, unit) | The shared helper's `classifyIgnored` agrees with fast-glob's `ignore` on a corpus (root-only `*.log`, `dir/**`, nested `node_modules`, dotfiles, `policy.ignore.paths` globs). R part: `--changed` e2e with a path in `ignore.paths` is ignored and counted in `ignoredByUser` | `--changed` ignores `ignore.paths` today? No: it scans the file |
+| B19 | R | `tests/core/git.test.ts` (extend) | `getChangedFiles` with `-z`: file named `secret.ts ` (trailing space) AND a clean sibling `secret.ts`: both listed separately, exact; whitespace-only name kept; non-ASCII name unquoted; renamed/untracked/staged all present | trim aliases `secret.ts ` to `secret.ts`; whitespace-only name dropped |
+| B20 | R | `tests/commands/check-regressions-exit.test.ts` (new, e2e) | With an injected regression: `--check-regressions` alone exits 0; with `--strict` exits 1; help text matches | exits 1 without `--strict` |
 
-A mutation check by the QA agent: revert one piece at a time (NUL substitution, BOM-less detection, `NO_FILES_SCANNED`, `exitAfterFlush`) and confirm exactly the matching tests go red.
+### B.2 Behavioural mutation matrix (both read paths)
 
-## C. VERIFICATION PLAN (checks after release, on the built npm tarball)
+- One parametrised file, `tests/commands/scan-coverage-matrix.test.ts`. A single fixtures table (id, files, expected coverage, expected degrade codes, expected findings). Each row runs TWICE: (full) `scan <dir>` and (changed) the same files created untracked inside a fresh git repo and scanned with `--changed`. The test asserts the expectations AND that `coverage` (apart from `mode`/`changed`) and `degradedReasons[].code` are IDENTICAL between the two runs. A reverted classifier in only one path therefore turns that path's rows red.
+- Mutations the QA agent applies one at a time on the finished branch (each must turn exactly the named rows red; the table is stored in the progress entry):
+
+| Mutation | Rows that must go red |
+|---|---|
+| fs.ts calls the old `detectBinary` gate (revert A2 in the full path only) | all full-path rows of B2, B3, B4 |
+| scanner.ts `--changed` keeps the old gate (revert in the changed path only) | all changed-path rows of B2, B3, B4, B5 |
+| magic consulted before `detectBinary` | MZ-prefixed `.env`, `ustar`-at-257 rows |
+| extension used to decide binary | `secret.png` row, `creds.bin`/`dump.dat` rows |
+| NUL-to-space before UTF-16 | CJK-then-key row |
+| drop printable-share gate (Gate 3) | PNG-header-plus-`KEY=` row |
+| remove `NO_FILES_SCANNED` | B4, B5, B6 rows |
+| `trim()` back in git.ts | B19 |
+| `policy.ignore.paths` removed from the changed filter | B18 e2e |
+| `exit.ts` back to `process.exit` / timer | B12, B13, B16 |
+| `--check-regressions` without strict | B20 |
+
+### B.3 Pipe test handshake (B12, B13)
+
+- Probe file (test-only, never shipped): `tests/helpers/exit-probe.mjs`, preloaded with `node --import <abs path> dist/cli.js ...`. It (a) wraps `process.stdout.write` and records the queued byte count (`process.stdout.writableLength`) after each call, (b) defines a setter on `process.exitCode` and wraps `process.exit`, and on whichever is reached first writes ONE line to stderr: `EXIT_POINT code=<n> queued=<bytes>`.
+- The test holds the read end of the stdout pipe PAUSED (not reading). It releases (resumes reading) only after it has read the `EXIT_POINT` line from stderr: an explicit handshake that the CLI has produced its whole output and decided its exit, with `queued > 0`. CPU idleness is NOT used anywhere.
+- On the old code the CLI calls `process.exit` at that point and the data still queued is lost: the reader gets a cut payload, `JSON.parse` throws, the test fails. On the new code the CLI only sets `process.exitCode`; the reader then drains it all and the process exits by itself with the right code.
+- The test asserts: `queued > 0` at the handshake, complete valid JSON, exit code, and (B13) that the process was still alive 12 s after the handshake (a timer-based forced exit would already have fired).
+
+### B.4 Run discipline
+
+Build `dist/` first (`pnpm run build`), run the e2e files one at a time on this shared box, keep aggregate CPU under the session caps. B13 is the heaviest (about 15 s per spawn in BR, plus the 12 s hold).
+
+Fail-before protocol: on a clean checkout of `origin/main` build `dist`, run every R test against it and keep the failing output in the progress entry. A test that cannot fail on the old code is rejected in code review. G and D tests are labelled and not counted as fix proof.
+
+## C. VERIFICATION PLAN
+
+### C0. MANDATORY rehearsal before the owner publishes (on the `build:publish` tarball)
+
+This is a gate for the release recommendation: if any step fails, the plan's report to the owner is "do not publish".
+
+1. Build exactly as the release does: `pnpm run build` then `SHIPGUARD_PUBLISHED_BUILD=1 pnpm --filter @agenticcli/shipguard build:publish` (the `build:publish` script, `public@2bf3a7d:packages/cli/package.json:19`), then `npm pack` in `packages/cli` into a new empty directory. No publish, no tag.
+2. Install the `.tgz` into a second empty temp dir with `npm install --ignore-scripts <tgz>`; confirm `shipguard --version` equals the packed `package.json` version.
+3. Run these tests against the INSTALLED binary (set `SHIPGUARD_CLI=<temp>/node_modules/.bin/shipguard`; the e2e files use `cliPath()`): B2 (NUL, UTF-16 LE/BE with BOM, BOM-less, CJK-then-key), B4 (500-file tree, plus the four spoof cases and `creds.bin`/`dump.dat`), B12 (fast pipe test), B13 (5 MB pipe test with the 12 s hold), B16 (EPIPE), B6 (empty diff), and the real-binary-only tree of B5. The pipe tests need the probe file; it is preloaded from the repo test directory, the CLI itself is the packed one.
+4. Record command, output size and exit code per step in the progress entry (fixture keys are public examples).
+5. Run the G8 shipped-tree self-scan on the packed tree: `--strict` exit 0.
+
+### C1. After the owner publishes (on the registry tarball)
 
 Run only after the owner publishes. Nothing here publishes or tags anything.
 
-1. Fetch the exact tarball from the registry: `npm pack @agenticcli/shipguard@<released version>` into a new empty temp dir (treat as untrusted data). Record the sha512 `integrity` from `npm view @agenticcli/shipguard@<version> dist.integrity` and confirm it equals the packed file; confirm provenance with `npm audit signatures` on the install. (Pre-release rehearsal: `pnpm --filter @agenticcli/shipguard build:publish && npm pack` in `packages/cli`, same steps against the local `.tgz`.)
-2. Install into a second empty temp dir: `npm install --ignore-scripts ./shipguard-*.tgz`; run `npx shipguard --version` and compare to the tarball's `package.json`.
-3. With `SHIPGUARD_TELEMETRY=0`, run the installed binary (not the repo build) against generated fixtures (reuse the generators in `agenticcli/agenticcli:tests/test-lab/boundary/lib` and `bin`, outputs to a new dir):
-   - NUL + key; UTF-16LE+BOM; UTF-16BE+BOM; UTF-16LE no BOM (BR B1-B3): key found, not SAFE.
-   - 500 NUL-unknown files (BR B4): `degraded:true`, `NO_FILES_SCANNED`, DO_NOT_SHIP.
-   - Real-binary-only tree: DO_NOT_SHIP with `NO_FILES_SCANNED` only; the same plus one clean file: SAFE with `skipped.binary` > 0.
-   - 5001 files and the 520 x 512 KiB total-bytes case is slow (BR: 20 min): run only 5001 files; assert `coverage.truncated.by === 'maxFiles'`, `notReached: 1`.
-   - 3000 files x 2 findings: `scan --json --strict | wc -c` > 5,000,000 and `| node -e 'JSON.parse(...)'` succeeds, exit code via `PIPESTATUS`, repeated 5 times (the cut point moved between runs in the lab).
-   - Each JSON has `schemaVersion` `'6'`, `coverage` with the invariant, and `cliVersion` equal to the installed version.
+1. `npm pack @agenticcli/shipguard@<released version>` into a new empty temp dir (untrusted data). Record `npm view @agenticcli/shipguard@<version> dist.integrity` and confirm it equals the packed file; confirm provenance with `npm audit signatures` after install.
+2. Install into another empty temp dir: `npm install --ignore-scripts ./shipguard-*.tgz`; `npx shipguard --version` equals the tarball's `package.json`.
+3. With `SHIPGUARD_TELEMETRY=0`, repeat the C0 step-3 set against the installed registry binary, plus fixtures from `agenticcli/agenticcli:tests/test-lab/boundary/lib` and `bin` (outputs to a new dir):
+   - 5001 files: `coverage.truncated.by === 'maxFiles'`, `notReached: 1`. (The 520 x 512 KiB total-bytes case takes about 20 min in BR; run once only if time allows.)
+   - 3000 files x 2 findings: `scan --json --strict | wc -c` above 5,000,000 and the output parses; exit code via `PIPESTATUS`; repeated 5 times (the cut point moved between runs in the lab).
+   - Every JSON has `schemaVersion` `'6'`, `coverage` with the invariant, and `cliVersion` equal to the installed version.
    - `shipguard schema --json` lists `NO_FILES_SCANNED` and `UNSCANNED_UNKNOWN_BINARY`.
-4. Exit codes on the installed binary: no flag 0 for every degraded fixture; `--strict` 1 for the degraded ones and for a blocking-finding fixture; 0 for the clean + real-binary fixture; 2 for a missing path; 3 for the 10,000-deep tree (BR S7, unchanged).
-5. Regression sweep: re-run the BR "works" rows (B6 BOM-8, B7 CRLF, B8 zero-byte, B9 UTF-8, S8 long path) and confirm results unchanged.
-6. Hook check: `shipguard hook` installs the gate; on a temp git repo with one clean file the hook passes; on an all-binary repo it blocks (documented behaviour change).
-7. Record command, output size and exit code for each (no secret values; the fixture keys are public examples). Failure of any check = tell the owner and recommend deprecating the version; no automatic action.
+4. Exit codes on the installed binary: no flag 0 for every degraded fixture; `--strict` 1 for degraded ones and for a blocking-finding fixture; 0 for the clean + real-binary fixture; 2 for a missing path; 3 for the 10,000-deep tree (BR S7, unchanged); `--check-regressions` alone 0.
+5. Regression sweep of the BR "works" rows (BOM-8, CRLF, zero-byte, UTF-8, long path): unchanged.
+6. Hook check: `shipguard hook` installs the gate; on a temp git repo with one clean file it passes; on an all-binary repo it blocks (documented behaviour change).
+7. Failure of any check = tell the owner and recommend deprecating the version; no automatic action.
 
 ## D. Counterarguments and risks
 
 - More degraded results for users. Cases that turn non-safe: empty or media-only repos (`NO_FILES_SCANNED`); NUL-heavy unknown files (`UNSCANNED_UNKNOWN_BINARY`). Installed hooks run `shipguard scan --json --strict` (`public@2bf3a7d:packages/cli/src/core/hook-templates.ts:30`), so a repo containing, say, a `.bin` blob not on the extension list would now be blocked at the merge boundary until the user excludes the path. This is the intended fail-closed behaviour, but it is user-visible: the CHANGELOG and the error text must say how to fix it (`ignore.paths`).
-  - Mitigation: the known-extension list in D4 covers common cases; the detail text names the files.
+  - Mitigation: there is no extension fallback (round 2), so an unusual blob degrades; the detail text names the files and says to add them to `ignore.paths`, which now works on both read paths.
 - A repo with no text files at all (rare for code) gets DO_NOT_SHIP. Intended (brief item 5).
 - JSON consumers see a new top-level `coverage` object and `schemaVersion` `'6'`. Strict-schema consumers or those pinning `'5'` can break; the freeze test and CHANGELOG state it. Alternative rejected: keep `'5'` and add the field (the bump is the repo's own documented evolution procedure, `scan-json-schema-freeze.test.ts` header).
 - Two new `degradedReasons` codes; the contract says consumers must tolerate unknown codes, but a consumer that hard-fails on unknown codes will break.
 - NUL substitution is a heuristic. Residual: a secret deliberately split by NUL bytes inside a file that passes the text-likeness test could be missed. Defence: the thresholds (1% NUL, 5% control) keep obfuscation-heavy files on the fail-closed path.
 - BOM-less UTF-16 detection can misclassify; every guess is validated by strict decode, and failures fall to degraded, never silent.
-- Removing media extensions from the default ignore list adds reads: a repo with many large images pays the 262-byte head read each; images over 512 KiB without a magic match now become `FILE_TOO_LARGE` instead of being ignored. Mitigated by magic-first.
+- Removing media extensions from the default ignore list adds reads: images at or under 512 KiB are now read in full; images over 512 KiB use the 4 KiB head check, and a large file without real-binary evidence now becomes `FILE_TOO_LARGE` instead of being ignored.
+- Head-only residual: a file over 512 KiB whose first 4 KiB is a genuine image/binary header can hide text later and still be skipped as binary (counted in `binaryHeadOnly`, not degraded). Also, a polyglot padded with high-entropy junk below the cap can look binary-dominant (printable share under 70%) and be skipped. Both need a deliberate attacker with write access to the repo; accepted, disclosed in the counts.
+- `--check-regressions` behaviour change: today it exits 1 on a regression even without `--strict`; after this branch it needs `--strict` (the documented contract). Anyone using it alone as a gate stops being blocked. CHANGELOG states it.
+- `--changed` with an empty diff is now degraded and `--strict` exits 1 (no exemption). A CI job that runs `--changed --strict` on commits touching only ignored/doc-less paths will be blocked; the stderr hint explains it.
+- `--changed` now honours `policy.ignore.paths` (it did not before): files a user listed there stop being scanned under `--changed`. This is the documented meaning of the setting.
+- A key split by an embedded NUL is not matched (B17 documents this).
+- Bug 2: with no forced exit, a reader that never reads keeps the CLI alive (standard pipe back-pressure). Accepted; the alternative is truncated JSON. A late open handle could delay exit; C0 measures time-to-exit and the only allowed fallback is exit from inside an empty-write callback when nothing is queued.
 - `ignoredByDefault` counting adds one more glob pass; bounded by excluding directory rules from the walk. B10 pins the cost.
-- UTF-16 findings carry character offsets, and `treeDigest` for such a file hashes the decoded text (not raw bytes), so two byte-different encodings of the same text digest alike. Documented.
+- UTF-16 findings carry UTF-16 code-unit columns of the decoded text, and `treeDigest` for such a file hashes the decoded text (not raw bytes), so two byte-different encodings of the same text digest alike. Documented.
 - The 5 MB pipe tests are slow (about 15 s per spawn in the lab); they live in the slow lane and the release gate, not the default CI run. The default CI run keeps B12 (above 64 KiB). Risk: a regression between 64 KiB and 5 MB is only caught by the slow lane; the release gate must run it (G8 area) and the QA agent runs it before merge.
-- Graceful exit adds up to 10 s to a `--strict` run if the reader never reads (timer backstop). Accepted: a gate that hangs on a stuck reader is better than silently truncated JSON.
 - Lab numbers (BR) were taken at archive `0f66db3` / cli 0.8.0; this tree is `2bf3a7d` / 0.8.1. Treated as hypotheses until the fail-before runs.
 - Not in scope (tracked, not fixed): `.gitignore` not honoured (BR I5); no scan timeout (BR O3); nested ignore asymmetry (BR I3); `.shipguardignore` missing (BR I6); `src/cli.ts` and `src/handlers.ts` direct `process.exit` calls (short output only); `--pro` untested in the lab (BR O10).
 
-## E. Open questions (not settled from the code)
+## E. Decisions from main and open questions
 
-- Q1. Should `*.log`, `*.min.js`, `vendor/`, `tmp/`, `out/` stay ignored (this plan: yes, counted)? Scanning them is a product and performance decision (min.js often exceeds the 512 KiB cap and would add `FILE_TOO_LARGE` degrades). Owner call.
-- Q2. `--changed` with zero changed files: this plan applies the brief literally (`NO_FILES_SCANNED`, DO_NOT_SHIP, `--strict` exit 1). `--changed` is not used by the installed hook (`--json --strict` only), but a CI user running `--changed --strict` on an empty diff would be blocked. Alternative: exempt the git-confirmed zero-diff case. Needs a decision before build.
-- Q3. Schema version bump to `'6'` vs additive-only `'5'`: this plan bumps (repo precedent). Confirm.
-- Q4. Extension list in D4: confirm it, or accept it as a living list.
+Main-session decisions (2026-11-02, round 2; they replace the round-1 "Main-session decisions" section):
 
-## Main-session decisions (2026-11-02; the owner delegated these calls)
-- Q1: `*.log`, `*.min.js`, `vendor/`, `tmp/` and `out/` stay ignored by default. They are counted in `coverage` under an `ignored` reason, never silently. Reason: scanners commonly default-ignore these paths, and the counts make the ignore visible.
-- Q2: `--changed` with a git-confirmed empty diff is EXEMPT from `NO_FILES_SCANNED` and is not degraded. Reason: commit hooks on doc-only or empty commits must not block. A non-empty diff where every path is skipped or binary still degrades. Add tests for both sides.
-- Q3: bump schemaVersion 5 to 6. Reason: the verdict semantics change, even though the new fields are additive.
-- Q4: the known-binary list is accepted as drafted, subject to the plan judge. It must be identified by magic bytes, never by extension alone.
+- Q1: `*.log`, `*.min.js`, `vendor/`, `tmp/`, `out/` stay ignored by default and are counted in `coverage.ignoredByDefault` (never silently).
+- Q2 (REVERSED, main was wrong in round 1): no empty-diff exemption. `--changed` with an empty diff is `NO_FILES_SCANNED`, degraded, DO_NOT_SHIP; B6 asserts it; a stderr hint explains it.
+- Q3: `schemaVersion` 5 to 6.
+- Q4 (changed): no extension list. Magic bytes count only for a file that `detectBinary` flags AND that is binary-dominant (D4).
+- Open for the judges: none that block the build. Residual risks are in D.
+
+## R. Round-2 map: where each decision now sits
+
+1. Magic only when `detectBinary` is true; no-NUL files always strict UTF-8; head shortcut needs magic AND binary look; no extension; NUL-heavy no-magic => `UNSCANNED_UNKNOWN_BINARY`; spoof tests: D4, D2, A1 (order), A2 (shortcut), B1, B4, matrix mutations.
+2. Q2 reversed, no exemption, stderr hint: E, A2 (last bullet), B6, D.
+3. `-z` git output with no trim, shared ignore helper including `policy.ignore.paths`, `--changed` coverage fields: A2 (git and ignore bullets), A3 (coverage under `--changed`), B18, B19, B7.
+4. UTF-16 before NUL-to-space, CJK-then-key, BOM-marked failure degraded, UTF-16 code-unit columns, BOM-less BE only with the parity signature: D3, D2, A1, B1, B2, B3.
+5. Bug 2: no `process.exit` with queued data, `process.exitCode` and return, no 10 s timer, EPIPE handler, explicit handshake test that fails on reverted code: A5, B.3, B12, B13, B14, B16.
+6. `--check-regressions` needs `--strict`, CHANGELOG, risk: A4, A6, B20, D.
+7. Mutation matrix over both read paths, R/G/D labels, NUL-split residual row, treeDigest CHANGELOG note: B.1 (types), B.2, B17, A6, D3.
+8. Mandatory rehearsal on the `build:publish` tarball (B2, B4, B12, B13, spoofs): C0.
+9. One field name pair, `ignoredByDefault` / `ignoredByUser`, used in D5, A2, A3, B7, B10, B18, E.
