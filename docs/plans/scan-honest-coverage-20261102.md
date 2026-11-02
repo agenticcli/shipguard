@@ -260,3 +260,9 @@ Run only after the owner publishes. Nothing here publishes or tags anything.
 - Q2. `--changed` with zero changed files: this plan applies the brief literally (`NO_FILES_SCANNED`, DO_NOT_SHIP, `--strict` exit 1). `--changed` is not used by the installed hook (`--json --strict` only), but a CI user running `--changed --strict` on an empty diff would be blocked. Alternative: exempt the git-confirmed zero-diff case. Needs a decision before build.
 - Q3. Schema version bump to `'6'` vs additive-only `'5'`: this plan bumps (repo precedent). Confirm.
 - Q4. Extension list in D4: confirm it, or accept it as a living list.
+
+## Main-session decisions (2026-11-02; the owner delegated these calls)
+- Q1: `*.log`, `*.min.js`, `vendor/`, `tmp/` and `out/` stay ignored by default. They are counted in `coverage` under an `ignored` reason, never silently. Reason: scanners commonly default-ignore these paths, and the counts make the ignore visible.
+- Q2: `--changed` with a git-confirmed empty diff is EXEMPT from `NO_FILES_SCANNED` and is not degraded. Reason: commit hooks on doc-only or empty commits must not block. A non-empty diff where every path is skipped or binary still degrades. Add tests for both sides.
+- Q3: bump schemaVersion 5 to 6. Reason: the verdict semantics change, even though the new fields are additive.
+- Q4: the known-binary list is accepted as drafted, subject to the plan judge. It must be identified by magic bytes, never by extension alone.
