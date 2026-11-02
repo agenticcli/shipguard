@@ -117,6 +117,7 @@ async function captureStdout(args: string[]): Promise<{ stdout: string; exitCode
 }
 
 afterEach(() => {
+  process.exitCode = undefined // the command only SETS it (utils/exit.ts); never leak into the worker exit status
   vi.clearAllMocks()
   vi.mocked(mockScan).mockResolvedValue(makeScanResult())
   for (const dir of tempDirs.splice(0)) {
@@ -218,8 +219,10 @@ describe('--quiet flag', () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
 
       const cmd = scanCommand()
-      await cmd.parseAsync(['node', 'scan', '--quiet', '--strict']).catch(() => {})
-      expect(exitSpy).toHaveBeenCalledWith(1)
+      await cmd.parseAsync(['node', 'scan', '--quiet', '--strict'])
+      // The command sets process.exitCode and returns; it never calls process.exit with output queued.
+      expect(process.exitCode).toBe(1)
+      expect(exitSpy).not.toHaveBeenCalled()
     } finally {
       process.chdir(originalCwd)
     }

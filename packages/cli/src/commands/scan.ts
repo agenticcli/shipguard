@@ -26,6 +26,7 @@ import { recordScanHistory, resolveScanId } from '../core/history/index.js'
 import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
 import { sendTelemetry } from '../core/telemetry.js'
+import { setExitCode } from '../utils/exit.js'
 import type { TelemetryVerdict } from '../core/telemetry.js'
 // Type-only import — deliberately NOT a value import. pro-scanner.ts (re2js, matcher-contract,
 // coderef-dispatch, etc.) is dynamically imported ONLY inside the `if (opts.pro)` branch below to
@@ -309,7 +310,7 @@ ${LEARN_MORE}`)
           if (machineOutput) {
             console.log(JSON.stringify({ error: pathProblem.message, code: pathProblem.code }))
           }
-          await exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
+          return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
         }
       }
 
@@ -327,7 +328,7 @@ ${LEARN_MORE}`)
         if (!machineOutput) {
           console.log(`\n${LEARN_MORE}`)
         }
-        await exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
+        return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
       }
 
       // Change working directory to the resolved scan root so scanner uses it as cwd
@@ -349,7 +350,7 @@ ${LEARN_MORE}`)
 /**
  * The ONE exit path for every scan error (config 2 / runtime 3): sends a single telemetry ping with
  * verdict "error" (all opt-outs honoured inside sendTelemetry; it never rejects), awaited so the hard
- * exit cannot drop it, then exits. Keep every error exit going through here - a source-guard test
+ * exit cannot drop it, then sets the exit code and returns (callers must `return` it). Keep every error exit going through here - a source-guard test
  * fails on a bare process.exit(CONFIG_ERROR|RUNTIME_ERROR) in this file.
  */
 async function exitWithError(
@@ -357,7 +358,7 @@ async function exitWithError(
   startTime: number,
   projectDir: string,
   policy?: unknown,
-): Promise<never> {
+): Promise<void> {
   try {
     await sendTelemetry(
       { cliVersion: CLI_VERSION, verdict: 'error', durationMs: Date.now() - startTime },
@@ -367,7 +368,9 @@ async function exitWithError(
     // sendTelemetry never rejects; belt and braces so telemetry can never change the exit code.
     logger.debug(`telemetry: error ping skipped (ignored): ${err instanceof Error ? err.message : String(err)}`)
   }
-  return process.exit(exitCode)
+  // Set the code and return: never process.exit() while output may be queued (utils/exit.ts).
+  // Every caller must `return exitWithError(...)` so nothing runs after the error.
+  setExitCode(exitCode)
 }
 
 /** Why an explicit scan path cannot be scanned, or null when it is an existing directory. */
@@ -400,8 +403,7 @@ async function runScan(ctx: {
     policy = await loadPolicy(cwd)
   } catch (error) {
     logger.error(`Config error: ${error instanceof Error ? error.message : error}`)
-    await exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, cwd)
-    return  // Unreachable in production; guards against mocked process.exit in tests
+    return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, cwd)
   }
 
   // -----------------------------------------------------------------------------------
@@ -553,7 +555,7 @@ async function runScan(ctx: {
         } else {
           console.log(JSON.stringify({ error: errMsg, code: 'NO_RULES_APPLIED' }))
         }
-        await exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
+        return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
       }
 
       // ---------------------------------------------------------------------
@@ -611,7 +613,7 @@ async function runScan(ctx: {
             ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
           }))
         }
-        await exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
+        return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
       }
     }
   }
@@ -1010,6 +1012,6 @@ async function runScan(ctx: {
   await telemetryDone
 
   if (exitCode !== EXIT_CODES.SAFE) {
-    process.exit(exitCode)
+    setExitCode(exitCode)
   }
 }

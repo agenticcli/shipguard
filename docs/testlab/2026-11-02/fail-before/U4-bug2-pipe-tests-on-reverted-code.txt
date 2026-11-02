@@ -1,0 +1,53 @@
+# BUG 2 pipe tests run against the code with scan.ts and cli.ts reverted to the pre-fix (bare process.exit) state. Expected: FAIL.
+# date: 2026-11-02T15:18:04Z
+ RUN  v4.1.11 /home/dev/1mUSD/shipguard-public-wt-honest-coverage-20261102/packages/cli
+ ❯ tests/commands/strict-json-pipe-truncation.test.ts (1 test | 1 failed) 2194ms
+     × delivers the whole JSON document and exits 1 after the reader releases the pipe 2188ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  tests/commands/strict-json-pipe-truncation.test.ts > strict JSON over a held pipe (B12) > delivers the whole JSON document and exits 1 after the reader releases the pipe
+AssertionError: expected 219264 to be greater than 300000
+ ❯ tests/commands/strict-json-pipe-truncation.test.ts:36:31
+     34|     expect(run.exitPoint!.code).toBe(1)
+     35|
+     36|     expect(run.stdout.length).toBeGreaterThan(300_000)
+       |                               ^
+     37|     const parsed = JSON.parse(run.stdout.toString('utf-8'))
+     38|     expect(parsed.findings.length).toBe(expectedFindings)
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 3 passed (4)
+   Start at  15:18:05
+   Duration  4.69s (transform 215ms, setup 109ms, import 285ms, tests 6.50s, environment 0ms)
+ RUN  v4.1.11 /home/dev/1mUSD/shipguard-public-wt-honest-coverage-20261102/packages/cli
+ ❯ tests/slow/strict-json-5mb.slow.test.ts (2 tests | 2 failed) 10723ms
+     × --json --strict: whole document after a 12 s hold, exit 1 7304ms
+     × --sarif --strict: whole document after the hold, exit 1 3372ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  tests/slow/strict-json-5mb.slow.test.ts > strict JSON, 5 MB, slow reader (B13) > --json --strict: whole document after a 12 s hold, exit 1
+AssertionError: expected 0 to be greater than or equal to 11800
+ ❯ tests/slow/strict-json-5mb.slow.test.ts:37:24
+     35|     expect(run.exitPoint, `no EXIT_POINT; stderr: ${run.stderr.slice(0…
+     36|     expect(run.exitPoint!.queued).toBeGreaterThan(0)
+     37|     expect(run.heldMs).toBeGreaterThanOrEqual(HOLD_MS - 200)
+       |                        ^
+     38|     // A forced exit on a timer would have ended the process during th…
+     39|     expect(run.aliveAfterHold).toBe(true)
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+ FAIL  tests/slow/strict-json-5mb.slow.test.ts > strict JSON, 5 MB, slow reader (B13) > --sarif --strict: whole document after the hold, exit 1
+AssertionError: expected false to be true // Object.is equality
+- Expected
++ Received
+- true
++ false
+ ❯ tests/slow/strict-json-5mb.slow.test.ts:56:32
+     54|     expect(run.exitPoint).toBeDefined()
+     55|     expect(run.exitPoint!.queued).toBeGreaterThan(0)
+     56|     expect(run.aliveAfterHold).toBe(true)
+       |                                ^
+     57|     const sarif = JSON.parse(run.stdout.toString('utf-8'))
+     58|     expect(Array.isArray(sarif.runs)).toBe(true)
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  15:18:11
+   Duration  11.15s (transform 172ms, setup 93ms, import 167ms, tests 10.72s, environment 0ms)

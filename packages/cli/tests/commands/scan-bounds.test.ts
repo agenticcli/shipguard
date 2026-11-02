@@ -89,6 +89,7 @@ const { scanCommand } = await import('../../src/commands/scan.js')
 const { logger } = await import('../../src/utils/logger.js')
 
 afterEach(() => {
+  process.exitCode = undefined // the command only SETS it (utils/exit.ts); never leak into the worker exit status
   vi.clearAllMocks()
   // Reset the scan mock to default non-degraded result after each test
   vi.mocked(mockScan).mockResolvedValue(makeScanResult())
@@ -120,10 +121,10 @@ describe('scan scope guard', () => {
     process.chdir(dir)
     try {
       const cmd = scanCommand()
-      await expect(
-        cmd.parseAsync(['node', 'scan'])
-      ).rejects.toThrow('process.exit(2)')
-      expect(exitSpy).toHaveBeenCalledWith(2)
+      await cmd.parseAsync(['node', 'scan'])
+      // The command sets process.exitCode and returns (it never calls process.exit with output queued).
+      expect(process.exitCode).toBe(2)
+      expect(exitSpy).not.toHaveBeenCalled()
     } finally {
       process.chdir(originalCwd)
     }
@@ -141,7 +142,8 @@ describe('scan scope guard', () => {
     process.chdir(dir)
     try {
       const cmd = scanCommand()
-      await expect(cmd.parseAsync(['node', 'scan'])).rejects.toThrow('process.exit')
+      await cmd.parseAsync(['node', 'scan'])
+      expect(process.exitCode).toBe(2)
       // Should have logged an error message mentioning the issue
       const errorCalls = vi.mocked(logger.error).mock.calls
       const hasRefusalMessage = errorCalls.some(
