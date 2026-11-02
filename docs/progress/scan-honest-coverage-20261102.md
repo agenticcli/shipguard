@@ -9,3 +9,4 @@
 - 2026-11-02 after QA: non-UTF-8 folder names degrade (UNREADABLE_FILE); ShipGuard's own .gitignore counted in coverage.selfArtifacts, never scanned; 3 red QA rows now pass; full suite 3547 passed, 7 skipped; C0 rerun C0-rerun-703d0093.txt. Open decision: scans write .gitignore into the scan root.
 - 2026-11-02 after QA re-check: unentered folders re-listed (class fix), own artifacts at any depth, git unreadable-folder warnings, changed-path symlinks, CI host-asset test opt-in; full suite 3562 passed, 8 skipped; C0-rerun-7f92ceb4.
 - 2026-11-02 after CRG: LC_ALL=C for all git calls, any stderr line in changed listing degrades, selfArtifacts named in coverage; full suite 3566 passed, 8 skipped.
+- 2026-11-02 progress: CRG fix done (see session doc); head recorded in report.
