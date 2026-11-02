@@ -137,7 +137,7 @@ describe('--json stdout purity under --pro degrade ', () => {
     expect(() => JSON.parse(stdout)).not.toThrow()
     const parsed = JSON.parse(stdout)
     expect(parsed).toHaveProperty('findings')
-    expect(parsed).toHaveProperty('schemaVersion', '5')
+    expect(parsed).toHaveProperty('schemaVersion', '6')
     expect(parsed.degraded).toBe(true)
 
     expect(stderr).toMatch(/degrading to free scan/i)

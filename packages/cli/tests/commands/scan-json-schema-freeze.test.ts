@@ -8,7 +8,7 @@
  * This test FAILS if:
  *   - a NEW top-level key appears that is not in the allow-list (added field),
  *   - a REQUIRED key disappears (removed/renamed field),
- *   - schemaVersion is not exactly '5',
+ *   - schemaVersion is not exactly '6',
  *   - the internal `_skipped*` / `_truncated` metadata leaks into --json,
  *   - a Finding or riskScore key set drifts.
  *
@@ -58,6 +58,8 @@ const REQUIRED_TOP_LEVEL = [
   // and about which bytes. Always populated on a real scan — see core/verdict.ts + scanner.ts.
   'runId',
   'cliVersion',
+  // Honest coverage (schemaVersion 5 → 6): what was discovered, scanned and skipped, always present.
+  'coverage',
 ] as const
 
 /** Additional OPTIONAL top-level keys allowed (present only with --pro or on degraded scans). */
@@ -163,9 +165,26 @@ beforeAll(() => {
 }, 120_000)
 
 describe('--json ScanResult schema freeze ', () => {
-  it('schemaVersion is exactly "5" (bumped for CLI recommendations #1/#2/#8 — see core/verdict.ts)', async () => {
+  it('schemaVersion is exactly "6" (5 → 6: additive top-level `coverage`; 4 → 5 was CLI recommendations #1/#2/#8)', async () => {
     const result = (await scanJson(mkFixtureWithFinding()))
-    expect(result.schemaVersion).toBe('5')
+    expect(result.schemaVersion).toBe('6')
+  })
+
+  it('coverage has the exact frozen key set (including decoded.multiReading)', async () => {
+    const result = (await scanJson(mkFixtureWithFinding()))
+    const cov = result.coverage as Record<string, Record<string, unknown>>
+    // `changed` is present only with --changed; every other key is always there on a full scan.
+    expect(Object.keys(cov).sort()).toEqual(
+      ['decoded', 'discovered', 'files', 'ignoredByDefault', 'ignoredByUser', 'mode', 'scanned', 'skipped', 'truncated'].sort(),
+    )
+    expect(Object.keys(cov.skipped).sort()).toEqual(
+      ['binary', 'binaryHeadOnly', 'invalidUtf8', 'special', 'symlink', 'tooLarge', 'unknownBinary', 'unreadable'].sort(),
+    )
+    expect(Object.keys(cov.decoded).sort()).toEqual(['asciiStrings', 'multiReading', 'nulSubstituted', 'utf16'])
+    expect(Object.keys(cov.files).sort()).toEqual(
+      ['binary', 'nulSubstituted', 'special', 'symlink', 'tooLarge', 'unknownBinary'].sort(),
+    )
+    expect(cov.mode).toBe('full')
   })
 
   it('all required top-level keys are present', async () => {

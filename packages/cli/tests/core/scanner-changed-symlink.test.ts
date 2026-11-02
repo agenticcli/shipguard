@@ -19,10 +19,15 @@ import { tmpdir } from 'node:os'
 // Mocks — must be hoisted before any import of scanner
 // ---------------------------------------------------------------------------
 
-vi.mock('../../src/core/git.js', () => ({
-  isGitRepo: vi.fn(() => true),
-  getChangedFiles: vi.fn(() => []),
-}))
+// scan() now calls getChangedFilesDetailed; derive it from the getChangedFiles mock (see scanner.test.ts).
+vi.mock('../../src/core/git.js', () => {
+  const getChangedFiles = vi.fn((_dir: string): string[] => [])
+  return {
+    isGitRepo: vi.fn(() => true),
+    getChangedFiles,
+    getChangedFilesDetailed: vi.fn((dir: string) => ({ paths: getChangedFiles(dir), unaddressable: [] as string[], outsideScope: 0 })),
+  }
+})
 
 // Dynamic import after mocks are set up
 const { scan } = await import('../../src/core/scanner.js')

@@ -141,13 +141,32 @@ describe('scan degrades on oversized-file skip', () => {
     tempDirs.push(dir)
     writeFileSync(join(dir, 'package.json'), '{"name":"fixture"}', 'utf-8')
     writeFileSync(join(dir, 'ok.js'), 'const z = 3\n', 'utf-8')
-    // Small binary file (contains NUL) — under the size cap, skipped as binary.
-    writeFileSync(join(dir, 'data.bin'), Buffer.from([0x00, 0x01, 0x02, 0x00, 0x03]))
+    // Honest-coverage update: the control file must be a REAL binary (PNG magic AND mostly
+    // non-printable). The old 5-byte NUL blob has no real-binary evidence, so it now degrades
+    // (see the next test). A real binary is skipped, counted, and does not degrade.
+    writeFileSync(join(dir, 'data.bin'), Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from(Array.from({ length: 256 }, (_, i) => (i % 2 === 0 ? 0x00 : 0x80 + (i % 64)))),
+    ]))
 
     const { code, stdout } = runCli(['scan', dir, '--json'])
     const parsed = JSON.parse(stdout)
     // Binary skip alone must NOT degrade and must NOT bump the exit code.
     expect(parsed.degraded).toBeFalsy()
+    expect(parsed.coverage.skipped.binary).toBe(1)
     expect(code).toBe(0)
+  })
+
+  it('a tiny NUL blob with no real-binary evidence DEGRADES (was a silent skip before)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'shipguard-unknown-binary-'))
+    tempDirs.push(dir)
+    writeFileSync(join(dir, 'ok.js'), 'const z = 3\n', 'utf-8')
+    writeFileSync(join(dir, 'data.bin'), Buffer.from([0x00, 0x01, 0x02, 0x00, 0x03]))
+
+    const { code, stdout } = runCli(['scan', dir, '--json'])
+    const parsed = JSON.parse(stdout)
+    expect(parsed.degraded).toBe(true)
+    expect(parsed.degradedReasons.map((r: { code: string }) => r.code)).toContain('UNSCANNED_UNKNOWN_BINARY')
+    expect(code).toBe(0) // verdict-neutral exit code without --strict
   })
 })
