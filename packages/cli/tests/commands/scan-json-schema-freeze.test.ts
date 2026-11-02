@@ -175,7 +175,7 @@ describe('--json ScanResult schema freeze ', () => {
     const cov = result.coverage as Record<string, Record<string, unknown>>
     // `changed` is present only with --changed; every other key is always there on a full scan.
     expect(Object.keys(cov).sort()).toEqual(
-      ['decoded', 'discovered', 'files', 'ignoredByDefault', 'ignoredByUser', 'mode', 'scanned', 'skipped', 'truncated'].sort(),
+      ['decoded', 'discovered', 'files', 'ignoredByDefault', 'ignoredByUser', 'mode', 'scanned', 'selfArtifacts', 'skipped', 'truncated'].sort(),
     )
     expect(Object.keys(cov.skipped).sort()).toEqual(
       ['binary', 'binaryHeadOnly', 'invalidUtf8', 'special', 'symlink', 'tooLarge', 'unknownBinary', 'unreadable'].sort(),

@@ -275,6 +275,8 @@ export interface ScanCoverage {
   ignoredByDefault: Array<{ pattern: string; files?: number; present?: boolean }>
   /** Files matched by `ignore.paths` in the policy. */
   ignoredByUser: number
+  /** ShipGuard's own artifacts found in the scan folder (the `.gitignore` it writes holding only `.shipguard/`). Never scanned, never in `discovered`, so they cannot make an empty scan look scanned. */
+  selfArtifacts: number
   mode: 'full' | 'changed'
   /** `--changed` only. `listed` = every path git reported; `outsideScope` = those outside the scan folder. */
   changed?: { listed: number; outsideScope: number }

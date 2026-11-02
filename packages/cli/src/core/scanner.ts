@@ -125,6 +125,7 @@ function buildCoverage(
     truncated: state.truncated && state.truncatedBy ? { by: state.truncatedBy, notReached: state.notReached } : false,
     ignoredByDefault: state.ignoredByDefault,
     ignoredByUser: state.ignoredByUser,
+    selfArtifacts: state.selfArtifacts,
     mode,
     ...(changed ? { changed } : {}),
     files: {

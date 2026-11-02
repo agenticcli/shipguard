@@ -92,6 +92,8 @@ export interface ReadFilesResult {
   asciiStrings: number
   /** Real binaries under the cap whose printable strings (runs of 8+) were scanned; still in skippedBinary. */
   binaryStringsScanned: number
+  /** ShipGuard's own artifacts (the root .gitignore holding only its `.shipguard/` line). Not scanned, not in `discovered`. */
+  selfArtifacts: number
   /** true if collection was stopped early because maxTotalBytes or maxFiles was hit. DEGRADED. */
   truncated: boolean
   truncatedBy?: 'maxFiles' | 'maxTotalBytes'
@@ -125,7 +127,7 @@ export function createReadState(): ReadFilesResult {
     skippedSpecial: 0, skippedSpecialFiles: [],
     skippedSymlinks: 0, skippedSymlinkFiles: [],
     nulSubstituted: 0, nulSubstitutedFiles: [],
-    utf16Decoded: 0, multiReading: 0, asciiStrings: 0, binaryStringsScanned: 0,
+    utf16Decoded: 0, multiReading: 0, asciiStrings: 0, binaryStringsScanned: 0, selfArtifacts: 0,
     truncated: false, notReached: 0, discovered: 0,
     ignoredByDefault: [], ignoredByUser: 0,
     invalidUtf8Files: [], unreadableFiles: [], unaddressableCount: 0,
@@ -176,6 +178,12 @@ export function capReached(
  * and the `--changed` scan cannot drift apart again (plan A2). Never throws: a read failure is
  * recorded under unreadableFiles (DEGRADED, never silently skipped).
  */
+/** True when a root .gitignore holds only the line(s) ShipGuard's history store adds (`.shipguard/`). */
+function isShipguardOnlyGitignore(buffer: Buffer): boolean {
+  const lines = buffer.toString('utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0)
+  return lines.length > 0 && lines.every((l) => l === '.shipguard/' || l === '.shipguard')
+}
+
 export async function readCandidate(state: ReadFilesResult, c: Candidate, maxFileSizeBytes: number): Promise<void> {
   try {
     // Size cap first: never allocate a buffer for an oversized file.
@@ -196,6 +204,13 @@ export async function readCandidate(state: ReadFilesResult, c: Candidate, maxFil
     }
 
     const buffer = await readFile(c.readPath)
+    if (c.rel === '.gitignore' && isShipguardOnlyGitignore(buffer)) {
+      // ShipGuard wrote this itself (history store courtesy line). It is not the project's content:
+      // do not count it as scanned, or the second scan of an empty folder would look scanned.
+      state.selfArtifacts++
+      state.discovered = Math.max(0, state.discovered - 1)
+      return
+    }
     const result = classifyFile(new Uint8Array(buffer))
     switch (result.kind) {
       case 'binary':
@@ -451,8 +466,17 @@ export async function readFiles(
     )
   }
 
+  // FOLDER names that are not valid UTF-8: fast-glob cannot open `d\xFF/` (its lossy path `d<U+FFFD>`
+  // does not exist), so no file under it was listed and the file-level check above never ran. The
+  // directory entries of this pass do carry the lossy name: re-list their parents as bytes. A folder
+  // whose real name is not valid UTF-8 is unreadable (its contents are unreachable by exact path),
+  // so it is DEGRADED the same way as a bad file name (UNREADABLE_FILE; one entry per folder).
+  const dirNames = probeEntries.filter((e) => e.dirent.isDirectory() && e.path.includes('�')).map((e) => e.path)
+  const dirNamed = await resolveUndecodableNames(rootDir, [...new Set(dirNames)])
+  const badAll = [...new Set([...named.bad, ...dirNamed.bad])].sort(compareScanPaths)
+
   // File names that are not valid UTF-8: unreadable by exact path, so DEGRADED.
-  for (const display of named.bad) {
+  for (const display of badAll) {
     state.unreadableFiles.push(display)
     state.unaddressableCount++
   }
@@ -462,7 +486,7 @@ export async function readFiles(
   state.ignoredByUser = listedAll.length - listed.length
 
   const total = filePaths.length
-  state.discovered = total + state.skippedSymlinks + state.skippedSpecial + named.bad.length
+  state.discovered = total + state.skippedSymlinks + state.skippedSpecial + badAll.length
   let processed = 0
 
   for (let i = 0; i < filePaths.length; i++) {
