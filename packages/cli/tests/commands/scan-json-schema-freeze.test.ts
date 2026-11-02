@@ -182,7 +182,7 @@ describe('--json ScanResult schema freeze ', () => {
     )
     expect(Object.keys(cov.decoded).sort()).toEqual(['asciiStrings', 'binaryStringsScanned', 'multiReading', 'nulSubstituted', 'utf16'])
     expect(Object.keys(cov.files).sort()).toEqual(
-      ['binary', 'nulSubstituted', 'special', 'symlink', 'tooLarge', 'unknownBinary'].sort(),
+      ['binary', 'nulSubstituted', 'selfArtifacts', 'special', 'symlink', 'tooLarge', 'unknownBinary'].sort(),
     )
     expect(cov.mode).toBe('full')
   })

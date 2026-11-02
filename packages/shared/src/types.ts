@@ -288,6 +288,7 @@ export interface ScanCoverage {
     unknownBinary: string[]
     special: string[]
     nulSubstituted: string[]
+    selfArtifacts: string[]
   }
 }
 

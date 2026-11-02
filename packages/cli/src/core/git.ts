@@ -4,9 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { decodeUtf8Strict } from '@agenticcli/matcher-contract'
 
+// Untranslated, parseable git output: a translated warning must never hide an unreadable folder.
+const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', LANGUAGE: 'C' }
+
 export function isGitRepo(dir: string): boolean {
   try {
-    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir, stdio: 'pipe' })
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir, stdio: 'pipe', env: GIT_ENV })
     return true
   } catch {
     return false
@@ -67,6 +70,7 @@ function runGit(dir: string, args: string[], warnings?: string[]): Buffer {
     const out = execFileSync('git', args, {
       cwd: dir,
       stdio: ['pipe', 'pipe', errFd ?? 'pipe'],
+      env: GIT_ENV,
     })
     if (warnings && errDir) {
       closeSync(errFd as number)
@@ -155,13 +159,11 @@ export function getChangedFilesDetailed(dir: string): ChangedFiles {
   const stagedOutput = runGit(dir, ['-c', 'diff.relative=false', 'diff', '--cached', '--name-only', '-z'])
   const gitWarnings: string[] = []
   const untrackedOutput = runGit(dir, ['ls-files', '--others', '--exclude-standard', '--full-name', '-z'], gitWarnings)
-  // "warning: could not open directory 'locked/': Permission denied": git exits 0 and leaves the folder out.
-  const unreadable: string[] = []
-  for (const w of gitWarnings) {
-    if (/could not open|cannot open|unable to (open|read|access)|permission denied|failed to (open|read)/i.test(w)) {
-      unreadable.push(w.match(/'([^']+)'/)?.[1] ?? w)
-    }
-  }
+  // git can exit 0 and still leave a folder out ("warning: could not open directory 'locked/':
+  // Permission denied"). Fail closed: ANY stderr line during this listing (warning:, fatal:, or text in
+  // another language or wording) means the listing may be incomplete, so it degrades the scan. git runs
+  // with LC_ALL=C so the lines are English, but the check does not depend on the words.
+  const unreadable: string[] = gitWarnings.map((w) => w.match(/'([^']+)'/)?.[1] ?? w)
   // Prefix of the scan directory inside the repository ("" at the root, "app/" below it).
   const prefix = Buffer.from(runGit(dir, ['rev-parse', '--show-prefix']).toString('latin1').replace(/\r?\n$/, ''), 'latin1')
 

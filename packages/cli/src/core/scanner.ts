@@ -135,6 +135,7 @@ function buildCoverage(
       unknownBinary: sortedCapped(state.skippedUnknownBinaryFiles),
       special: sortedCapped(state.skippedSpecialFiles),
       nulSubstituted: sortedCapped(state.nulSubstitutedFiles),
+      selfArtifacts: sortedCapped(state.selfArtifactFiles),
     },
   }
 }
@@ -177,7 +178,7 @@ export async function scan(
     const candidates: string[] = []
     for (const rp of changed.paths) {
       const rule = classifyIgnored(rp, ignoreRules)
-      if (!rule && isShipguardArtifactPath(rp)) state.selfArtifacts++
+      if (!rule && isShipguardArtifactPath(rp)) { state.selfArtifacts++; if (state.selfArtifactFiles.length < MAX_SKIPPED_NAMES) state.selfArtifactFiles.push(rp) }
       else if (!rule) candidates.push(rp)
       else if (rule.by === 'user') state.ignoredByUser++
       else defaultCounts.set(rule.pattern, (defaultCounts.get(rule.pattern) ?? 0) + 1)

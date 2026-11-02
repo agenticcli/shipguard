@@ -94,6 +94,7 @@ export interface ReadFilesResult {
   binaryStringsScanned: number
   /** ShipGuard's own artifacts (the root .gitignore holding only its `.shipguard/` line). Not scanned, not in `discovered`. */
   selfArtifacts: number
+  selfArtifactFiles: string[]
   /** true if collection was stopped early because maxTotalBytes or maxFiles was hit. DEGRADED. */
   truncated: boolean
   truncatedBy?: 'maxFiles' | 'maxTotalBytes'
@@ -127,7 +128,7 @@ export function createReadState(): ReadFilesResult {
     skippedSpecial: 0, skippedSpecialFiles: [],
     skippedSymlinks: 0, skippedSymlinkFiles: [],
     nulSubstituted: 0, nulSubstitutedFiles: [],
-    utf16Decoded: 0, multiReading: 0, asciiStrings: 0, binaryStringsScanned: 0, selfArtifacts: 0,
+    utf16Decoded: 0, multiReading: 0, asciiStrings: 0, binaryStringsScanned: 0, selfArtifacts: 0, selfArtifactFiles: [],
     truncated: false, notReached: 0, discovered: 0,
     ignoredByDefault: [], ignoredByUser: 0,
     invalidUtf8Files: [], unreadableFiles: [], unaddressableCount: 0,
@@ -208,6 +209,7 @@ export async function readCandidate(state: ReadFilesResult, c: Candidate, maxFil
       // ShipGuard wrote this itself (history store courtesy line). It is not the project's content:
       // do not count it as scanned, or the second scan of an empty folder would look scanned.
       state.selfArtifacts++
+      pushName(state.selfArtifactFiles, c.rel)
       state.discovered = Math.max(0, state.discovered - 1)
       return
     }
@@ -546,6 +548,7 @@ export async function readFiles(
   state.ignoredByDefault = counted.ignoredByDefault
   state.ignoredByUser = listedWithRecovered.length - listedNoUser.length
   state.selfArtifacts += selfArtifactCount
+  for (const p of listedNoUser) if (isShipguardArtifactPath(p)) pushName(state.selfArtifactFiles, p)
 
   const total = filePaths.length
   state.discovered = total + state.skippedSymlinks + state.skippedSpecial + badAll.length
