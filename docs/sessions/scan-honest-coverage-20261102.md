@@ -24,3 +24,4 @@ No PR, no version bump, no tag, no publish.
 
 ## Round 2 (after NO-GO from the Opus judge and Codex)
 Plan revised: magic bytes only for flagged, binary-dominant files and never by extension; no empty-diff exemption for `--changed`; `git -z` exact names plus one shared ignore helper; UTF-16 validated before NUL-to-space; bug 2 never calls `process.exit` with queued output (exitCode and return, EPIPE handler, handshake test); `--check-regressions` needs `--strict`; behavioural mutation matrix over both read paths; mandatory tarball rehearsal before publish. Map in plan section R.
+Round 3 (final): plan revised again; see plan section R3. Decisions: check-regressions kept as is, EPIPE handlers at startup, probe without touching exitCode, ambiguity union, UTF-8-aware Gate 3, strict-UTF-8 head shortcut, nested-root and Buffer filename handling.
