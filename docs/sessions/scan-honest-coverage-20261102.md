@@ -72,3 +72,4 @@ Each change keeps the test and asserts the new honest behaviour. Full suite afte
 - Symlinks under `--changed` are `lstat`ed first and reported `SYMLINK_SKIPPED`, like the full scan.
 - CI: the host-asset row of `scan-binary-strings.test.ts` (it ran `find /usr` four times) is opt-in with `SHIPGUARD_TEST_HOST_ASSETS=1`; the synthetic jpg/png/pdf zero-false-positive row always runs.
 - Behaviour to know: `--changed` follows git's ignore rules (like other changed-file tools: a gitignored file is never listed); the full scan still reads gitignored files.
+- C0 rerun on code head 7f92ceb4: docs/testlab/2026-11-02/C0-rerun-7f92ceb4.txt (99 e2e + 3 slow pass). Full suite 3562 passed, 8 skipped.
