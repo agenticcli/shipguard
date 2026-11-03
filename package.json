@@ -1,7 +1,7 @@
 {
   "name": "shipguard-public",
   "private": true,
-  "description": "ShipGuard CLI \u2014 public monorepo (CLI + shared types)",
+  "description": "ShipGuard CLI — public monorepo (CLI + shared types)",
   "scripts": {
     "build": "pnpm --filter @agenticcli/shared build && pnpm --filter @agenticcli/matcher-contract build && pnpm --filter @agenticcli/shipguard build",
     "pretest": "pnpm run build",

@@ -14,10 +14,10 @@
 //    into per-rule flag fields.  Mixing them would make the runtimeId
 //    algorithm ambiguous.
 //
-// 3. RE2JS_VERSION = "2.9.1" (exact, not a semver range).
+// 3. RE2JS_VERSION = "2.8.3" (exact, not a semver range).
 //    Ground truth: npm registry + GitHub tags verified 2026-06-25.
 //    1.4.0 is deprecated ("Accidental publish of breaking changes").
-//    Do NOT loosen to "^2.9.1" — the runtimeId algorithm requires
+//    Do NOT loosen to "^2.8.3" — the runtimeId algorithm requires
 //    an exact version to produce a stable frozen hash.
 //
 // 4. SUPPORTED_NODE_VERSIONS = ["20", "22"] — explicit list of tested versions.
@@ -53,7 +53,7 @@
  * Do NOT add re2js as a package dependency here (Phase D only).
  * This constant is metadata only.
  */
-export const RE2JS_VERSION = '2.9.1' as const
+export const RE2JS_VERSION = '2.8.3' as const
 
 /**
  * Explicit list of Node.js major versions tested against this package.
@@ -138,7 +138,7 @@ export interface EngineMeta {
    *
    * - For `"native"`: the Node.js version string (e.g. `"v20.11.0"`) from
    *   `process.version` at the time the runtimeId was frozen.
-   * - For `"re2js"`: `RE2JS_VERSION` (`"2.9.1"`) — pinned exact npm version.
+   * - For `"re2js"`: `RE2JS_VERSION` (`"2.8.3"`) — pinned exact npm version.
    */
   version: string
 
@@ -177,7 +177,7 @@ export function makeNativeEngineMeta(nodeVersion: string): EngineMeta {
 /**
  * Produce an `EngineMeta` for the re2js-v1 adapter (Phase D).
  *
- * Uses `RE2JS_VERSION` ("2.9.1") as the exact pinned version.
+ * Uses `RE2JS_VERSION` ("2.8.3") as the exact pinned version.
  * LOOKBEHINDS defaults to false for v1 (I3 — confirmed off).
  *
  * @param lookbehinds - Whether to enable lookbehind support (default: false).
