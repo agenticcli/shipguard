@@ -156,7 +156,9 @@ jobs:
             *[!0-9a-f]*|"") echo "::error::bad expected sha256"; exit 1 ;;
           esac
           test "${#EXPECTED_SHA256}" = 64 || { echo "::error::bad expected sha256 length"; exit 1; }
-          test "$(ls | wc -l)" = 2 || { echo "::error::artifact must hold exactly the tarball and its .sha256"; ls; exit 1; }
+          # exact file set, dotfiles included (a planted .npmrc would be read by npm publish)
+          test "$(ls -A | LC_ALL=C sort)" = "$(printf '%s\n%s' "$TARBALL" "$TARBALL.sha256" | LC_ALL=C sort)" \
+            || { echo "::error::artifact must hold exactly the tarball and its .sha256"; ls -A; exit 1; }
           echo "$EXPECTED_SHA256  $TARBALL" | sha256sum --check --strict -
           sha256sum --check --strict "$TARBALL.sha256"
           ver="$(tar -xzOf "$TARBALL" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")"
@@ -174,4 +176,4 @@ jobs:
             *)   tag=latest ;;
           esac
           unset NODE_AUTH_TOKEN
-          npm publish "./$TARBALL" --provenance --access public --tag "$tag"
+          npm publish "./$TARBALL" --provenance --access public --tag "$tag" --ignore-scripts --registry=https://registry.npmjs.org/
