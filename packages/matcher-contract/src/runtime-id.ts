@@ -20,7 +20,7 @@
 //
 // This module exposes ONLY the algorithm.  The frozen concrete values are:
 //   - NATIVE_V1_RUNTIME_ID: frozen in Phase B.1 (uses native-RegExp adapter)
-//   - RE2JS_V1_RUNTIME_ID: frozen in Phase D.1 (uses re2js@2.8.3 adapter)
+//   - RE2JS_V1_RUNTIME_ID: frozen in Phase D.1 (uses re2js@2.9.1 adapter)
 //
 // Phase B.1 imports this function, computes the hash with the real
 // adapterImplHash and buildLock, and records the frozen constant.  Phase C.2
@@ -106,7 +106,7 @@ export interface MatcherRuntimeIdInput {
    * `engineMeta.options` maps to `engineOptions` in the preimage.
    * `engineMeta.engine` is intentionally NOT in the preimage — it is
    * implied by `engineVersion` (e.g. a native version is a Node version
-   * string; a re2js version is the npm package version "2.8.3").
+   * string; a re2js version is the npm package version "2.9.1").
    *
    * Note: this differs from the matcher spec preimage in that the matcher spec
    * shows `engineVersion` and `engineOptions` as top-level fields.  This
@@ -171,7 +171,7 @@ interface RuntimeIdPreimage {
  * ## What this does NOT contain
  *
  * - `engineMeta.engine` is NOT in the preimage.  The engine discriminant is
- *   implied by the version string (a Node version vs. "2.8.3") — including it
+ *   implied by the version string (a Node version vs. "2.9.1") — including it
  *   would double-count the engine information.
  *
  * - No timestamp, no nonce.  The runtimeId must be REPRODUCIBLE across
