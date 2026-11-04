@@ -1,48 +1,62 @@
 # ShipGuard
 
-**CLI-first release gate for AI-built apps.**
+**A release gate for AI-built apps. Run one command before you ship.**
 
-ShipGuard catches secrets, auth gaps, and deployment issues before they ship — deterministic, fast, and **your code never leaves your machine**.
+[![npm version](https://img.shields.io/npm/v/@agenticcli/shipguard)](https://www.npmjs.com/package/@agenticcli/shipguard)
+[![License: Elastic-2.0](https://img.shields.io/badge/License-Elastic--2.0-blue.svg)](LICENSE)
 
-[![npm](https://img.shields.io/npm/v/@agenticcli/shipguard)](https://www.npmjs.com/package/@agenticcli/shipguard)
-[![License: Elastic-2.0](https://img.shields.io/badge/License-Elastic--2.0-blue.svg)](https://www.elastic.co/licensing/elastic-license)
+ShipGuard is a command-line tool from AgenticCLI. It checks your project for leaked secrets, unprotected routes, risky database migrations, unverified payment webhooks and unsafe deploy settings. It runs on your machine, gives the same answer every time, and your code never leaves your computer. Learn more on the [ShipGuard product page](https://agenticcli.dev/shipguard).
 
----
+It is built for people who ship real apps with AI coding agents (Claude Code, Codex CLI, Cursor) and want a fast, predictable check before code goes live. It gives a verdict and a list of findings; you decide what blocks a release.
 
-## Why ShipGuard?
-
-AI coding tools (Cursor, Copilot, Claude Code) write production code fast — sometimes too fast. ShipGuard is the last safety check before you push: a deterministic, regex-based scanner that catches the failure classes AI agents introduce most often.
-
-- **Your code never leaves your machine.** 100% local scan — no file content, no paths, no secrets are ever sent to a server.
-- **Zero install required.** `npx @agenticcli/shipguard scan` — works in CI with no setup.
-- **Source-available under the Elastic License 2.0.** The source is public so you can audit exactly what runs in your repo. It is not an OSI-approved open-source license.
-- **Pro rules** add deeper AI-targeted checks, served encrypted and verified via Ed25519 signature.
-
----
-
-## Quick start
+## Quickstart (30 seconds)
 
 ```bash
-# Zero-install scan (no login required)
 npx @agenticcli/shipguard scan
-
-# Install globally
-npm install -g @agenticcli/shipguard
-
-# Scan current project — verdict is in the JSON `recommendation` field
-shipguard scan
-
-# CI hard gate — exit 1 if blocking findings exist (opt-in)
-shipguard scan --strict
-
-# Machine-readable output for agents
-shipguard scan --json
-
-# Sign in to scan against the full current rule corpus
-# (offline scans use the bundled subset and need no account)
-shipguard login
-shipguard scan --pro
 ```
+
+No install and no account. You get a list of findings and a verdict: `SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`.
+
+```bash
+npm install -g @agenticcli/shipguard   # optional: install globally
+shipguard scan --json                  # machine-readable output for agents and scripts
+shipguard scan --strict                # exit 1 if the scan blocks (opt-in hard gate)
+shipguard hook --target ci             # write a GitHub Actions workflow for you
+```
+
+## What it checks
+
+Five check groups run locally and are bundled in the CLI:
+
+- **Secrets**: committed `.env` files, and keys such as Stripe, AWS, OpenAI, Anthropic, GitHub and Google, private key blocks, database URLs with passwords, and secrets exposed through `NEXT_PUBLIC_` variables.
+- **Auth**: unprotected routes and missing middleware.
+- **Database**: destructive SQL in migrations.
+- **Payments**: missing Stripe and Razorpay webhook verification.
+- **Deployment**: risky config such as open CORS, debug mode and exposed environment values.
+
+ShipGuard is a release gate, not a code reviewer and not a general security scanner. Its checks are plain pattern rules (no AI model in the loop), so results are repeatable.
+
+## Use it in CI
+
+Add this step to a GitHub Actions job. It scans the whole checkout and fails the job when ShipGuard blocks:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: actions/setup-node@v4
+  with:
+    node-version: 20
+- run: npx --yes @agenticcli/shipguard scan --json --strict
+```
+
+`shipguard hook --target ci` writes this workflow for you. `shipguard hook` also installs a git hook, and `shipguard hook --target claude` adds a Claude Code hook. Full guides are in the [ShipGuard docs](https://agenticcli.dev/docs).
+
+## Free and Pro
+
+Local scans are free and unlimited, with no account. Signing in unlocks cloud scans with the full, current rule set (`shipguard login`, then `shipguard scan --pro`); see [plans and pricing](https://agenticcli.dev/pricing).
+
+## Privacy
+
+Scans run 100% on your machine. No file contents, paths or secrets are sent to a server. A small anonymous usage ping (version, verdict, duration, CI flag) is sent unless you turn it off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0` or `DO_NOT_TRACK=1`.
 
 ---
 
@@ -68,13 +82,14 @@ Want to just read the verdict? Use `shipguard scan --json` and check `recommenda
 
 ## License
 
-[Elastic License 2.0](LICENSE) — free to use commercially; you may not offer ShipGuard as a hosted/managed service or resell it. See [agenticcli.dev/pricing](https://agenticcli.dev/pricing?utm_source=github_readme&utm_medium=repo&utm_campaign=shipguard_evergreen&utm_content=license) for Pro.
+[Elastic License 2.0](LICENSE) — free to use commercially; you may not offer ShipGuard as a hosted/managed service or resell it. See the [pricing page](https://agenticcli.dev/pricing) for Pro.
 
 ---
 
 ## Links
 
-- Site: [agenticcli.dev](https://agenticcli.dev/?utm_source=github_readme&utm_medium=repo&utm_campaign=shipguard_evergreen&utm_content=site)
-- Docs: [agenticcli.dev/docs](https://agenticcli.dev/docs?utm_source=github_readme&utm_medium=repo&utm_campaign=shipguard_evergreen&utm_content=docs)
-- Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing?utm_source=github_readme&utm_medium=repo&utm_campaign=shipguard_evergreen&utm_content=pricing)
+- Product page: [ShipGuard release gate](https://agenticcli.dev/shipguard)
+- Company site: [AgenticCLI](https://agenticcli.dev/)
+- Docs: [agenticcli.dev/docs](https://agenticcli.dev/docs)
+- Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing)
 - Issues: [github.com/agenticcli/shipguard/issues](https://github.com/agenticcli/shipguard/issues)
