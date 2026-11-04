@@ -6,8 +6,8 @@ abstract: "ShipGuard is a command-line release gate for AI-built apps. It checks
 authors:
   - name: "AgenticCLI"
     website: "https://agenticcli.dev"
-version: 0.9.0
-date-released: 2026-11-02
+version: 0.10.0-rc.0
+date-released: 2026-11-04
 license: Elastic-2.0
 url: "https://agenticcli.dev/shipguard"
 repository-code: "https://github.com/agenticcli/shipguard"
