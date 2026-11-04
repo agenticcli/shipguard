@@ -11,6 +11,7 @@
  *   verdict        — "safe" | "review" | "blocked" | "error"
  *   durationBucket — "lt1s" | "1to5s" | "5to30s" | "gt30s"
  *   ci             — boolean, from well-known CI environment variables being present
+ *   traffic        — OPTIONAL, "test" | "internal" from SHIPGUARD_TRAFFIC (dev builds default to "test"); omitted otherwise
  *
  * The install id is pseudonymous, not anonymous: random, never derived from the machine, user or repo,
  * never created or sent in CI, never linked to a ShipGuard account, sent only to the telemetry endpoint.
@@ -93,6 +94,18 @@ import {
   userConfigUnreadable,
 } from './telemetry-config.js'
 
+export type TrafficClass = 'test' | 'internal'
+
+/**
+ * Optional `traffic` wire key. SHIPGUARD_TRAFFIC=test|internal (exactly; anything else is ignored and
+ * nothing is sent). A dev/probe build defaults to 'test'. Never read from anywhere but the environment.
+ */
+export function resolveTraffic(env: NodeJS.ProcessEnv, published: boolean): TrafficClass | undefined {
+  const v = env.SHIPGUARD_TRAFFIC
+  if (v === 'test' || v === 'internal') return v
+  return published ? undefined : 'test'
+}
+
 export type TelemetryVerdict = 'safe' | 'review' | 'blocked' | 'error'
 export type DurationBucket = 'lt1s' | '1to5s' | '5to30s' | 'gt30s'
 
@@ -106,6 +119,8 @@ export interface TelemetryPayload {
   verdict: TelemetryVerdict
   durationBucket: DurationBucket
   ci: boolean
+  /** Optional traffic label (test | internal). Omitted for ordinary users. */
+  traffic?: TrafficClass
 }
 
 /** What a caller knows about a finished scan. Everything else is derived inside this module. */
@@ -191,8 +206,16 @@ function envOptOut(env: NodeJS.ProcessEnv): 'env:SHIPGUARD_TELEMETRY' | 'env:DO_
  * field, so extra properties on it can never leak in.
  */
 export function buildPayload(input: TelemetryPayload): TelemetryPayload {
-  const { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci } = input
-  return { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci }
+  const { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci, traffic } = input
+  const out: TelemetryPayload = { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci }
+  if (traffic === 'test' || traffic === 'internal') out.traffic = traffic
+  return out
+}
+
+/** Key count must match exactly, or be one more with a valid `traffic`. */
+function isTrafficOk(obj: Record<string, unknown>, count: number, expected: number): boolean {
+  if ('traffic' in obj) return count === expected + 1 && (obj.traffic === 'test' || obj.traffic === 'internal')
+  return count === expected
 }
 
 /**
@@ -204,7 +227,7 @@ export function validatePayload(payload: unknown): payload is TelemetryPayload {
   const obj = payload as Record<string, unknown>
 
   const keys = Object.keys(obj)
-  if (keys.length !== ALLOWED_KEYS.length) return false
+  if (!isTrafficOk(obj, keys.length, ALLOWED_KEYS.length)) return false
   for (const k of ALLOWED_KEYS) if (!(k in obj)) return false
 
   if (obj.schema !== 2) return false
@@ -309,6 +332,7 @@ export function sendTelemetry(input: TelemetryInput, opts: SendOptions = {}): Pr
       verdict: input.verdict,
       durationBucket: durationBucket(input.durationMs),
       ci,
+      traffic: resolveTraffic(env, published),
     }
 
     if (debug) {
@@ -400,6 +424,7 @@ export interface LifecyclePayload {
   cliVersion: string
   provenance: TelemetryProvenance
   ci: boolean
+  traffic?: TrafficClass
 }
 
 const LIFECYCLE_KEYS = ['schema', 'event', 'eventId', 'installId', 'cliVersion', 'provenance', 'ci']
@@ -409,7 +434,7 @@ export function validateLifecyclePayload(payload: unknown): payload is Lifecycle
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return false
   const o = payload as Record<string, unknown>
   const keys = Object.keys(o)
-  if (keys.length !== LIFECYCLE_KEYS.length || !LIFECYCLE_KEYS.every((k) => k in o)) return false
+  if (!isTrafficOk(o, keys.length, LIFECYCLE_KEYS.length) || !LIFECYCLE_KEYS.every((k) => k in o)) return false
   if (o.schema !== 3) return false
   if (o.event !== 'cli_first_run' && o.event !== 'cli_login') return false
   if (typeof o.eventId !== 'string' || !UUID_V4.test(o.eventId)) return false
@@ -456,11 +481,12 @@ export function sendLifecycleEvent(event: LifecycleEvent, input: { cliVersion: s
       provenance: getProvenance(published),
       ci,
     }
+    const traffic = resolveTraffic(env, published)
     if (debug) {
       const installId = ci ? null : (readInstallId(configDir) ?? randomUUID())
       process.stderr.write(
         `[shipguard:telemetry] SHIPGUARD_TELEMETRY_DEBUG=1: not sending. endpoint=${endpoint ?? '(none)'} ` +
-          `payload=${JSON.stringify({ ...base, installId })}\n`,
+          `payload=${JSON.stringify({ ...base, installId, ...(traffic ? { traffic } : {}) })}\n`,
       )
       return Promise.resolve()
     }
@@ -489,7 +515,7 @@ export function sendLifecycleEvent(event: LifecycleEvent, input: { cliVersion: s
     // Mark before sending: a failed ping is not retried on every later command.
     if (event === 'cli_first_run' && !markFirstRunHandled(configDir)) return Promise.resolve()
 
-    const payload: LifecyclePayload = { ...base, installId }
+    const payload: LifecyclePayload = { ...base, installId, ...(traffic ? { traffic } : {}) }
     if (!validateLifecyclePayload(payload)) {
       logger.debug('telemetry: lifecycle payload failed validation; not sending')
       return Promise.resolve()

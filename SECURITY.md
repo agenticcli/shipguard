@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please report security issues privately by email to **founders@agenticcli.dev**.
+Please report security issues privately by email to **support@agenticcli.dev** (the same address as on the [contact page](https://agenticcli.dev/contact)). Put "ShipGuard security" in the subject.
 
 Include what you found, the ShipGuard version (`shipguard --version`), and steps to reproduce. Please do not open a public issue for a vulnerability.
 
