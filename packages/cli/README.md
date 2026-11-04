@@ -102,4 +102,4 @@ See [full docs](https://agenticcli.dev/docs?utm_source=npm_readme&utm_medium=pac
 
 ## License
 
-MIT
+[Elastic License 2.0](LICENSE). Source-available, free to use commercially; you may not offer it as a hosted service or resell it.

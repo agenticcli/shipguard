@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you mention ShipGuard in your work, please cite it as below."
+title: "ShipGuard"
+type: software
+abstract: "ShipGuard is a command-line release gate for AI-built apps. It checks a project for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deployment settings. It runs locally and your code never leaves your machine."
+authors:
+  - name: "AgenticCLI"
+    website: "https://agenticcli.dev"
+version: 0.9.0
+date-released: 2026-11-02
+license: Elastic-2.0
+url: "https://agenticcli.dev/shipguard"
+repository-code: "https://github.com/agenticcli/shipguard"
+repository-artifact: "https://www.npmjs.com/package/@agenticcli/shipguard"
+keywords:
+  - release gate
+  - AI-generated code
+  - secret detection
+  - CI/CD
+  - command-line tool

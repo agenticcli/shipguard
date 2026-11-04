@@ -24,6 +24,16 @@ shipguard scan --strict                # exit 1 if the scan blocks (opt-in hard 
 shipguard hook --target ci             # write a GitHub Actions workflow for you
 ```
 
+## Contents
+
+- [Getting started](docs/getting-started.md)
+- [What it checks](docs/checks.md)
+- [CI and agent setup](docs/ci-setup.md) (GitHub Actions, GitLab, Claude Code, Codex, Cursor)
+- [Exit codes and JSON output](docs/exit-codes.md)
+- [Privacy](docs/privacy.md)
+- [FAQ](docs/faq.md)
+- [Changelog](packages/cli/CHANGELOG.md)
+
 ## What it checks
 
 Five check groups run locally and are bundled in the CLI:
@@ -48,11 +58,11 @@ Add this step to a GitHub Actions job. It scans the whole checkout and fails the
 - run: npx --yes @agenticcli/shipguard scan --json --strict
 ```
 
-`shipguard hook --target ci` writes this workflow for you. `shipguard hook` also installs a git hook, and `shipguard hook --target claude` adds a Claude Code hook. Full guides are in the [ShipGuard docs](https://agenticcli.dev/docs).
+`shipguard hook --target ci` writes this workflow for you. `shipguard hook` also installs a git hook, and `shipguard hook --target claude` adds a Claude Code hook. Setup for GitLab, Claude Code, Codex and Cursor is in [CI and agent setup](docs/ci-setup.md).
 
 ## Free and Pro
 
-Local scans are free and unlimited, with no account. Signing in unlocks cloud scans with the full, current rule set (`shipguard login`, then `shipguard scan --pro`); see [plans and pricing](https://agenticcli.dev/pricing).
+Local scans are free and unlimited, with no account, and `--strict` is free on every plan. Signing in (`shipguard login`, then `shipguard scan --pro`) adds cloud scans with the full current rule set: Free has 5 a month, Plus ($19/mo) 10, Pro ($29/mo, or $19/mo billed yearly) 100. See [plans and pricing](https://agenticcli.dev/pricing).
 
 ## Privacy
 
@@ -71,7 +81,7 @@ the exit code alone.
 | Code | Meaning |
 |------|---------|
 | `0` | Scan completed. Verdict is in the JSON `recommendation` field — returned even if findings are blocking, and even if the scan is degraded/partial. |
-| `1` | Blocked — **only** with `--strict` and at least one blocking finding (the opt-in hard gate). |
+| `1` | Blocked — **only** with `--strict`: a blocking finding, a scan that did not finish (`degraded`), or a `DO_NOT_SHIP` verdict (the opt-in hard gate). |
 | `2` | Config error, strictly (bad policy file, bad flags, non-project directory). Never reused for a degraded-but-completed scan. |
 | `3` | Runtime error — the scan could not meaningfully run at all. |
 
@@ -90,6 +100,6 @@ Want to just read the verdict? Use `shipguard scan --json` and check `recommenda
 
 - Product page: [ShipGuard release gate](https://agenticcli.dev/shipguard)
 - Company site: [AgenticCLI](https://agenticcli.dev/)
-- Docs: [agenticcli.dev/docs](https://agenticcli.dev/docs)
+- Docs: [agenticcli.dev/docs](https://agenticcli.dev/shipguard/docs)
 - Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing)
 - Issues: [github.com/agenticcli/shipguard/issues](https://github.com/agenticcli/shipguard/issues)
