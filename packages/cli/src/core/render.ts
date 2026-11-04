@@ -14,7 +14,7 @@ import { ensureSecureDir, writeSecureFileSync } from '../utils/secure-fs.js'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { goLink } from './links.js'
-import type { Finding, ScanResult, Confidence } from '@agenticcli/shared'
+import type { Finding, ScanResult, Confidence, ScanCoverage } from '@agenticcli/shared'
 import { effectiveRecommendation } from './verdict.js'
 import { bundledRulesMeta } from './bundled-rules.js'
 
@@ -339,6 +339,36 @@ export function coverageLine(): string {
       `  Plans: ${chalk.underline(PRICING_URL)}`
     )
   )
+}
+
+/**
+ * One honest line on what was actually scanned, printed on EVERY human run (clean or not):
+ * `Coverage: scanned 40 of 52 files; skipped: binary 9, unknown 1, too large 2; decoded: UTF-16 1`.
+ * Zero counts are left out so a clean run stays one short line.
+ */
+export function coverageSummaryLine(c: ScanCoverage): string {
+  const skipped: string[] = []
+  const add = (list: string[], n: number, label: string): void => {
+    if (n > 0) list.push(`${label} ${n}`)
+  }
+  add(skipped, c.skipped.binary, 'binary')
+  add(skipped, c.skipped.tooLarge, 'too large')
+  add(skipped, c.skipped.symlink, 'symlink')
+  add(skipped, c.skipped.unknownBinary, 'unknown')
+  add(skipped, c.skipped.invalidUtf8, 'invalid UTF-8')
+  add(skipped, c.skipped.unreadable, 'unreadable')
+  add(skipped, c.skipped.special, 'special')
+  const decoded: string[] = []
+  add(decoded, c.decoded.utf16, 'UTF-16')
+  add(decoded, c.decoded.nulSubstituted, 'NUL-substituted')
+  add(decoded, c.decoded.asciiStrings, 'strings-only')
+  add(decoded, c.decoded.binaryStringsScanned, 'binary strings')
+  const ignored = c.ignoredByUser + c.ignoredByDefault.reduce((n, e) => n + (e.files ?? 0), 0)
+  const parts = [`scanned ${c.scanned} of ${c.discovered} files`]
+  if (skipped.length > 0) parts.push(`skipped: ${skipped.join(', ')}`)
+  if (decoded.length > 0) parts.push(`decoded: ${decoded.join(', ')}`)
+  if (ignored > 0) parts.push(`ignored: ${ignored}`)
+  return chalk.dim(`  Coverage: ${parts.join('; ')}`)
 }
 
 // ---------------------------------------------------------------------------

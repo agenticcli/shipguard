@@ -1,0 +1,33 @@
+
+ RUN  v4.1.11 /home/dev/1mUSD/shipguard-public-wt-honest-coverage-20261102/packages/cli
+
+ ❯ tests/utils/fs-special-files.test.ts (2 tests | 1 failed) 79ms
+     × a FIFO is counted under skipped.special, named, fast, and not an error 59ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/utils/fs-special-files.test.ts > special files > a FIFO is counted under skipped.special, named, fast, and not an error
+AssertionError: expected undefined to be 1 // Object.is equality
+
+- Expected:
+1
+
++ Received:
+undefined
+
+ ❯ tests/utils/fs-special-files.test.ts:31:32
+     29|     const res = await readFiles(dir, ['**/*'], [])
+     30|     expect(Date.now() - t0).toBeLessThan(5000)
+     31|     expect(res.skippedSpecial).toBe(1)
+       |                                ^
+     32|     expect(res.skippedSpecialFiles).toEqual(['pipe1'])
+     33|     expect(res.unreadableFiles).toEqual([])
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  14:46:57
+   Duration  884ms (transform 468ms, setup 172ms, import 442ms, tests 79ms, environment 0ms)
+

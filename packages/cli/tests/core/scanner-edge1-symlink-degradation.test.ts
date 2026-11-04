@@ -179,7 +179,12 @@ describe('scan() — EDGE-1: symlinked src/ no longer scans silently near-clean'
 describe('scan() — binary-file fixture: named but NOT wired into degraded (scope decision)', () => {
   it('a binary file is skipped, named internally, but does NOT flip degraded/recommendation', async () => {
     const project = mkTemp('shipguard-edge1-binary-')
-    writeFileSync(join(project, 'asset.bin'), Buffer.from([0x00, 0x01, 0x02, 0xff]))
+    // Honest-coverage update: only a REAL binary (magic bytes AND mostly non-printable) is a normal
+    // skip. A tiny unknown NUL blob like [00 01 02 ff] now degrades; see the next test.
+    writeFileSync(join(project, 'asset.bin'), Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from(Array.from({ length: 256 }, (_, i) => (i % 2 === 0 ? 0x00 : 0x80 + (i % 64)))),
+    ]))
     writeFileSync(join(project, 'clean.ts'), 'const a = 1', 'utf-8')
 
     const originalCwd = process.cwd()
@@ -209,6 +214,29 @@ describe('scan() — binary-file fixture: named but NOT wired into degraded (sco
       expect((result as Record<string, unknown>).degradedReasons ?? []).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ code: 'BINARY_SKIPPED' })]),
       )
+      expect(result.coverage?.skipped.binary).toBe(1)
+    } finally {
+      process.chdir(originalCwd)
+    }
+  })
+
+  it('an unknown NUL blob with no real-binary evidence DEGRADES (UNSCANNED_UNKNOWN_BINARY)', async () => {
+    const project = mkTemp('shipguard-edge1-unknown-')
+    writeFileSync(join(project, 'asset.bin'), Buffer.from([0x00, 0x01, 0x02, 0xff]))
+    writeFileSync(join(project, 'clean.ts'), 'const a = 1', 'utf-8')
+
+    const originalCwd = process.cwd()
+    process.chdir(project)
+    try {
+      const result = await scan({
+        changedOnly: false,
+        generateReport: false,
+        strict: false,
+        json: false,
+        reportPath: '.shipguard/reports/latest.md',
+      })
+      expect(result.degraded).toBe(true)
+      expect(result.degradedReasons?.map((r) => r.code)).toContain('UNSCANNED_UNKNOWN_BINARY')
     } finally {
       process.chdir(originalCwd)
     }

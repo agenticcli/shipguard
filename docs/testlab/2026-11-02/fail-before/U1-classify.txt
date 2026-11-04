@@ -1,0 +1,25 @@
+
+ RUN  v4.1.11 /home/dev/1mUSD/shipguard-public-wt-honest-coverage-20261102/packages/cli
+
+ ❯ tests/utils/classify.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/utils/classify.test.ts [ tests/utils/classify.test.ts ]
+Error: Cannot find module '../../src/utils/classify.js' imported from /home/dev/1mUSD/shipguard-public-wt-honest-coverage-20261102/packages/cli/tests/utils/classify.test.ts
+ ❯ tests/utils/classify.test.ts:8:1
+      6|  */
+      7| import { describe, it, expect, expectTypeOf } from 'vitest'
+      8| import {
+       | ^
+      9|   classifyFile,
+     10|   headLooksLikeRealBinary,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  14:37:42
+   Duration  342ms (transform 130ms, setup 87ms, import 0ms, tests 0ms, environment 0ms)
+

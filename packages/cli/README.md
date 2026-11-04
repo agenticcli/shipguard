@@ -70,6 +70,18 @@ output — it never hijacks exit `2`, which is reserved for genuine config error
 not check; the exit code stays 0 because ShipGuard is passive by default. Pass `--strict`
 when you want that truthful verdict to actually stop something.
 
+### What was actually scanned
+
+Every `--json` result (schemaVersion 6) has a `coverage` object: files discovered, scanned,
+and skipped, with the reason for each skip (real binary, too large, symlink, unknown binary,
+invalid text, unreadable, special file), plus text read as UTF-16 or with stray NUL bytes
+turned into spaces. Real binaries (images, fonts, archives) are counted and are not a
+problem. A scan that read **nothing** (`NO_FILES_SCANNED`, for example an empty folder or
+`--changed` on a clean checkout), an unknown binary blob (`UNSCANNED_UNKNOWN_BINARY`), and a
+truncated scan are `degraded` and so `DO_NOT_SHIP`. To clear a blob you trust, add its path to
+`ignore.paths`. Some formats are counted but their contents are not scanned: SQLite files
+outside the ASCII reading, compressed archives, and string tables inside ELF, PE, class and WASM files.
+
 ## Telemetry
 
 Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (version, a random install id and a CI flag only; the first-run ping is never sent in CI). A scan ping carries: CLI version, verdict (safe / review / blocked / error), a scan-duration bucket, a CI flag, the build type, and a random install id (a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account). Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.

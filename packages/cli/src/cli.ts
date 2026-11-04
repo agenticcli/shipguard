@@ -13,6 +13,7 @@ import { feedbackCommand, rateCommand } from './commands/feedback.js'
 import { telemetryCommand } from './commands/telemetry.js'
 import { quickstartHelp } from './core/render.js'
 import { CLI_VERSION, sendLifecycleEvent } from './core/telemetry.js'
+import { installStreamErrorHandlers, exitWhenDrained } from './utils/exit.js'
 import {
   handleUncaughtException,
   handleUnhandledRejection,
@@ -34,6 +35,12 @@ process.on('uncaughtException', handleUncaughtException)
 process.on('unhandledRejection', handleUnhandledRejection)
 process.on('SIGINT', handleSignal)
 process.on('SIGTERM', handleSignal)
+
+// A reader that closes the pipe early (`| head -c 100`) raises EPIPE on stdout/stderr. Install the
+// stream error handlers NOW, before any output and before parseAsync (the JSON is written and then
+// the scan still awaits telemetry), so EPIPE never reaches handleUncaughtException (exit 3) and the
+// scan's computed exit code is kept. See utils/exit.ts.
+installStreamErrorHandlers()
 
 // ---------------------------------------------------------------------------
 // Program setup
@@ -200,6 +207,9 @@ function closestCommand(input: string): string | undefined {
 
   try {
     await program.parseAsync(process.argv)
+    // A command may have only SET process.exitCode (it never calls process.exit with output queued).
+    // Exit now, once stdout and stderr are drained, so a late open handle cannot hold the run open.
+    exitWhenDrained()
   } catch (err) {
     if (err instanceof CommanderError) {
       // Unknown command: code is 'commander.unknownCommand'

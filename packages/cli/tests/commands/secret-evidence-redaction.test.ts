@@ -255,8 +255,9 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
     const json = JSON.parse(captured.json)
     // Pinned from origin/main's output on this fixture's first scan (no Pro, no baseline).
     // Adding or removing a field must be a deliberate edit here, not a side effect of redaction.
+    // `coverage` was added deliberately with schemaVersion 6 (honest coverage).
     expect(Object.keys(json).sort()).toEqual([
-      'cliVersion', 'creditsWarning', 'degraded', 'filesScanned', 'findings', 'policyUsed',
+      'cliVersion', 'coverage', 'creditsWarning', 'degraded', 'filesScanned', 'findings', 'policyUsed',
       'recommendation', 'regressionCheckSkipped', 'regressionCheckSkippedReason', 'riskScore',
       'runId', 'scanIdReused', 'schemaVersion', 'stateStatus', 'timestamp', 'treeDigest',
     ])

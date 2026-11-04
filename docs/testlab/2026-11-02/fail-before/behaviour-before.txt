@@ -1,0 +1,8 @@
+# behaviour of the BASE build (public@2bf3a7d, dist built before any src change), scan --json --strict
+B1 one NUL next to a key       exit=0 recommendation=SAFE_TO_SHIP degraded=false filesScanned=0 secretFindings=0 schemaVersion=5
+B1 NUL elsewhere + key         exit=0 recommendation=SAFE_TO_SHIP degraded=false filesScanned=0 secretFindings=0 schemaVersion=5
+B2 UTF-16LE with BOM + key     exit=0 recommendation=SAFE_TO_SHIP degraded=false filesScanned=0 secretFindings=0 schemaVersion=5
+B3 UTF-16BE with BOM + key     exit=0 recommendation=SAFE_TO_SHIP degraded=false filesScanned=0 secretFindings=0 schemaVersion=5
+BOM-less UTF-16LE + key        exit=0 recommendation=SAFE_TO_SHIP degraded=false filesScanned=0 secretFindings=0 schemaVersion=5
+real PNG only                  exit=0 recommendation=SAFE_TO_SHIP degraded=false filesScanned=0 secretFindings=0 schemaVersion=5
+empty-ish (only a lockfile)    exit=0 recommendation=SAFE_TO_SHIP degraded=false filesScanned=0 secretFindings=0 schemaVersion=5
