@@ -1,13 +1,13 @@
 # @agenticcli/shipguard
 
-## 0.10.0 - 2026-11-04
+## 0.10.0 - 2026-11-05
 
 - Added: published builds now send a small anonymous ping the first time ShipGuard runs on an install (`cli_first_run`, never in CI) and after a successful `shipguard login` (`cli_login`), as well as after each scan. First-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket`, `ci`. Never file contents, paths, repo names, branches, commits or identity.
 - Added: a one-line notice on stderr before the first ping on a machine, in every mode (stdout stays clean for `--json`).
 - Opt out any of these ways: `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1`, `shipguard telemetry disable`, or `telemetry: { enabled: false }` in your policy file. `shipguard telemetry status` shows the state; `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending it; `shipguard telemetry reset` forgets the install id. Builds from a source checkout send nothing.
 - Added: `SHIPGUARD_TRAFFIC=test` or `internal` for people testing ShipGuard. It adds an optional `traffic` key to the pings so test runs are kept apart from real usage. Any other value is ignored.
 - Docs: new README, `docs/` pages (getting started, checks, CI setup, exit codes, privacy, FAQ), and the npm README now match each other, with the contact addresses support@agenticcli.dev and contact@agenticcli.dev.
-- Changed: package metadata (author, homepage, keywords) updated.
+- Changed: package metadata (author, keywords) updated.
 - Changed: GitHub Actions and npm dependencies updated to their latest compatible versions. (The re2js update is planned separately and is not part of this release.)
 - Release process: publishing is only through the GitHub release workflow (npm trusted publishing with provenance). This version is first published as the `0.10.0-rc.0` pre-release under the `next` tag.
 

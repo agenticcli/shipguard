@@ -10,6 +10,7 @@ name: Release
 #             packs, uploads the tarball + its sha256. This is the only job that runs dependency code.
 #   publish - id-token: write, environment npm-publish. NO checkout, NO install, NO cache. Downloads the
 #             tarball, checks its sha256 against the build job output, then publishes that tarball.
+#   github-release - contents: write only, runs after publish. Creates the GitHub Release for the tag.
 on:
   push:
     tags:
