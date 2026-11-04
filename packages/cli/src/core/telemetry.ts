@@ -11,6 +11,7 @@
  *   verdict        — "safe" | "review" | "blocked" | "error"
  *   durationBucket — "lt1s" | "1to5s" | "5to30s" | "gt30s"
  *   ci             — boolean, from well-known CI environment variables being present
+ *   traffic        — OPTIONAL, "test" | "internal" from SHIPGUARD_TRAFFIC (dev builds default to "test"); omitted otherwise
  *
  * The install id is pseudonymous, not anonymous: random, never derived from the machine, user or repo,
  * never created or sent in CI, never linked to a ShipGuard account, sent only to the telemetry endpoint.
@@ -81,8 +82,10 @@ import { logger } from '../utils/logger.js'
 import { goLink } from './links.js'
 import {
   UUID_V4,
+  firstRunHandled,
   getConfigDir,
   getOrCreateInstallId,
+  markFirstRunHandled,
   markNoticeShown,
   noticeShown,
   projectTelemetryEnabled,
@@ -90,6 +93,18 @@ import {
   readUserConfig,
   userConfigUnreadable,
 } from './telemetry-config.js'
+
+export type TrafficClass = 'test' | 'internal'
+
+/**
+ * Optional `traffic` wire key. SHIPGUARD_TRAFFIC=test|internal (exactly; anything else is ignored and
+ * nothing is sent). A dev/probe build defaults to 'test'. Never read from anywhere but the environment.
+ */
+export function resolveTraffic(env: NodeJS.ProcessEnv, published: boolean): TrafficClass | undefined {
+  const v = env.SHIPGUARD_TRAFFIC
+  if (v === 'test' || v === 'internal') return v
+  return published ? undefined : 'test'
+}
 
 export type TelemetryVerdict = 'safe' | 'review' | 'blocked' | 'error'
 export type DurationBucket = 'lt1s' | '1to5s' | '5to30s' | 'gt30s'
@@ -104,6 +119,8 @@ export interface TelemetryPayload {
   verdict: TelemetryVerdict
   durationBucket: DurationBucket
   ci: boolean
+  /** Optional traffic label (test | internal). Omitted for ordinary users. */
+  traffic?: TrafficClass
 }
 
 /** What a caller knows about a finished scan. Everything else is derived inside this module. */
@@ -189,8 +206,16 @@ function envOptOut(env: NodeJS.ProcessEnv): 'env:SHIPGUARD_TELEMETRY' | 'env:DO_
  * field, so extra properties on it can never leak in.
  */
 export function buildPayload(input: TelemetryPayload): TelemetryPayload {
-  const { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci } = input
-  return { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci }
+  const { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci, traffic } = input
+  const out: TelemetryPayload = { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci }
+  if (traffic === 'test' || traffic === 'internal') out.traffic = traffic
+  return out
+}
+
+/** Key count must match exactly, or be one more with a valid `traffic`. */
+function isTrafficOk(obj: Record<string, unknown>, count: number, expected: number): boolean {
+  if ('traffic' in obj) return count === expected + 1 && (obj.traffic === 'test' || obj.traffic === 'internal')
+  return count === expected
 }
 
 /**
@@ -202,7 +227,7 @@ export function validatePayload(payload: unknown): payload is TelemetryPayload {
   const obj = payload as Record<string, unknown>
 
   const keys = Object.keys(obj)
-  if (keys.length !== ALLOWED_KEYS.length) return false
+  if (!isTrafficOk(obj, keys.length, ALLOWED_KEYS.length)) return false
   for (const k of ALLOWED_KEYS) if (!(k in obj)) return false
 
   if (obj.schema !== 2) return false
@@ -256,7 +281,7 @@ export function decideTelemetry(
 
 /** The one-line stderr notice printed before the first ping on an install. */
 export const NOTICE_TEXT =
-  'shipguard: sends a pseudonymous usage ping after each scan (version, verdict, duration bucket, a random install id outside CI; never code, paths or your account). ' +
+  'shipguard: sends a pseudonymous usage ping after each scan, once on first run and after login (version, verdict, duration bucket, a random install id outside CI; never code, paths or your account). ' +
   'Turn it off: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, or `shipguard telemetry disable`. ' + goLink('telemetry')
 
 /** Hard ceiling on how long a caller waits for the ping (abort fires at 1 s; this covers slow teardown). */
@@ -307,6 +332,7 @@ export function sendTelemetry(input: TelemetryInput, opts: SendOptions = {}): Pr
       verdict: input.verdict,
       durationBucket: durationBucket(input.durationMs),
       ci,
+      traffic: resolveTraffic(env, published),
     }
 
     if (debug) {
@@ -346,31 +372,155 @@ export function sendTelemetry(input: TelemetryInput, opts: SendOptions = {}): Pr
     }
     const body = JSON.stringify(payload)
 
-    const controller = new AbortController()
-    const abortTimer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-    const request = fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      signal: controller.signal,
-    })
-      .then(
-        () => undefined,
-        (err: unknown) => {
-          // Telemetry failure must never affect the scan result, output or exit code.
-          logger.debug(`telemetry: ping failed (ignored): ${err instanceof Error ? err.message : String(err)}`)
-        },
-      )
-      .finally(() => clearTimeout(abortTimer))
+    return postBounded(endpoint, body)
+  } catch (err) {
+    logger.debug(`telemetry: skipped after error (ignored): ${err instanceof Error ? err.message : String(err)}`)
+    return Promise.resolve()
+  }
+}
 
-    return new Promise<void>((resolve) => {
-      const cap = setTimeout(resolve, PING_WAIT_MS)
-      cap.unref()
-      void request.then(() => {
-        clearTimeout(cap)
-        resolve()
-      })
+/** POST with the 1 s abort; resolves (never rejects) within PING_WAIT_MS. */
+function postBounded(endpoint: string, body: string): Promise<void> {
+  const controller = new AbortController()
+  const abortTimer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  const request = fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    signal: controller.signal,
+  })
+    .then(
+      () => undefined,
+      (err: unknown) => {
+        // Telemetry failure must never affect the command result, output or exit code.
+        logger.debug(`telemetry: ping failed (ignored): ${err instanceof Error ? err.message : String(err)}`)
+      },
+    )
+    .finally(() => clearTimeout(abortTimer))
+
+  return new Promise<void>((resolve) => {
+    const cap = setTimeout(resolve, PING_WAIT_MS)
+    cap.unref()
+    void request.then(() => {
+      clearTimeout(cap)
+      resolve()
     })
+  })
+}
+
+// Injected by tsup `define` (same source as cli.ts / scan.ts); falls back under vitest.
+declare const __SHIPGUARD_VERSION__: string | undefined
+export const CLI_VERSION: string =
+  typeof __SHIPGUARD_VERSION__ !== 'undefined' ? __SHIPGUARD_VERSION__ : (process.env.npm_package_version ?? '0.0.0-dev')
+
+export type LifecycleEvent = 'cli_first_run' | 'cli_login'
+
+/** The v3 wire payload (cli-telemetry contract v3). Exactly these keys, all required. */
+export interface LifecyclePayload {
+  schema: 3
+  event: LifecycleEvent
+  eventId: string
+  installId: string | null
+  cliVersion: string
+  provenance: TelemetryProvenance
+  ci: boolean
+  traffic?: TrafficClass
+}
+
+const LIFECYCLE_KEYS = ['schema', 'event', 'eventId', 'installId', 'cliVersion', 'provenance', 'ci']
+
+/** Same rules as the relay: exact keys; cli_first_run never from CI; installId null iff ci. */
+export function validateLifecyclePayload(payload: unknown): payload is LifecyclePayload {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return false
+  const o = payload as Record<string, unknown>
+  const keys = Object.keys(o)
+  if (!isTrafficOk(o, keys.length, LIFECYCLE_KEYS.length) || !LIFECYCLE_KEYS.every((k) => k in o)) return false
+  if (o.schema !== 3) return false
+  if (o.event !== 'cli_first_run' && o.event !== 'cli_login') return false
+  if (typeof o.eventId !== 'string' || !UUID_V4.test(o.eventId)) return false
+  if (typeof o.ci !== 'boolean') return false
+  if (o.ci) {
+    if (o.installId !== null || o.event === 'cli_first_run') return false
+  } else if (typeof o.installId !== 'string' || !UUID_V4.test(o.installId)) {
+    return false
+  }
+  if (typeof o.cliVersion !== 'string' || o.cliVersion.length > 40 || !VERSION_RE.test(o.cliVersion)) return false
+  return o.provenance === 'published' || o.provenance === 'dev'
+}
+
+/**
+ * One-off lifecycle event: `cli_first_run` (first command on an install, once) or `cli_login` (after a
+ * successful `login`). Same opt-outs, CI rule, dev-build rule, notice, id, timeout and "never throws,
+ * never writes stdout" behaviour as sendTelemetry. Payload carries no path, code or repo name.
+ *  - cli_first_run is never sent from CI (the relay rejects it; there is no install id there).
+ *  - An install that already has an id (pings from before this event existed) is marked handled
+ *    without sending, so upgrades are not counted as new installs.
+ */
+export function sendLifecycleEvent(event: LifecycleEvent, input: { cliVersion: string }, opts: SendOptions = {}): Promise<void> {
+  try {
+    const env = opts.env ?? process.env
+    const configDir = opts.configDir ?? getConfigDir()
+    const published = opts.published ?? IS_PUBLISHED_BUILD
+    const debug = debugEnabled(env)
+    const ci = detectCi(env)
+
+    if (event === 'cli_first_run' && ci) return Promise.resolve()
+
+    const decision = decideTelemetry({ env, configDir, policy: opts.policy, projectDir: opts.projectDir })
+    if (!decision.enabled) {
+      if (debug) process.stderr.write(`[shipguard:telemetry] disabled (${decision.source}); nothing would be sent\n`)
+      return Promise.resolve()
+    }
+    const endpoint = resolveEndpoint(published, env)
+
+    const base = {
+      schema: 3 as const,
+      event,
+      eventId: randomUUID(),
+      cliVersion: input.cliVersion,
+      provenance: getProvenance(published),
+      ci,
+    }
+    const traffic = resolveTraffic(env, published)
+    if (debug) {
+      const installId = ci ? null : (readInstallId(configDir) ?? randomUUID())
+      process.stderr.write(
+        `[shipguard:telemetry] SHIPGUARD_TELEMETRY_DEBUG=1: not sending. endpoint=${endpoint ?? '(none)'} ` +
+          `payload=${JSON.stringify({ ...base, installId, ...(traffic ? { traffic } : {}) })}\n`,
+      )
+      return Promise.resolve()
+    }
+    if (endpoint === null) {
+      logger.debug('telemetry: dev build, not sending (set a loopback SHIPGUARD_TELEMETRY_URL to capture)')
+      return Promise.resolve()
+    }
+
+    if (event === 'cli_first_run') {
+      if (firstRunHandled(configDir)) return Promise.resolve()
+      if (readInstallId(configDir)) {
+        markFirstRunHandled(configDir)
+        return Promise.resolve()
+      }
+    }
+
+    if (!noticeShown(configDir)) {
+      process.stderr.write(NOTICE_TEXT + '\n')
+      markNoticeShown(configDir)
+    }
+    const installId = ci ? null : (getOrCreateInstallId(configDir) ?? undefined)
+    if (installId === undefined) {
+      logger.debug('telemetry: no install id could be saved; not sending')
+      return Promise.resolve()
+    }
+    // Mark before sending: a failed ping is not retried on every later command.
+    if (event === 'cli_first_run' && !markFirstRunHandled(configDir)) return Promise.resolve()
+
+    const payload: LifecyclePayload = { ...base, installId, ...(traffic ? { traffic } : {}) }
+    if (!validateLifecyclePayload(payload)) {
+      logger.debug('telemetry: lifecycle payload failed validation; not sending')
+      return Promise.resolve()
+    }
+    return postBounded(endpoint, JSON.stringify(payload))
   } catch (err) {
     logger.debug(`telemetry: skipped after error (ignored): ${err instanceof Error ? err.message : String(err)}`)
     return Promise.resolve()

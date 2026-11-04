@@ -8,6 +8,7 @@
  *                             Unknown keys are preserved. Also holds `installId`: a random
  *                             v4 UUID (crypto.randomUUID) made lazily on the first non-CI ping; never derived from anything.
  *   telemetry-notice-shown    marker: the one-line "we send an anonymous ping" notice was printed.
+ *   telemetry-first-run-sent  marker: the one-off `cli_first_run` event was handled for this install.
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
@@ -20,6 +21,7 @@ import { logger } from '../utils/logger.js'
 
 const CONFIG_FILE = 'telemetry.json'
 const NOTICE_MARKER = 'telemetry-notice-shown'
+const FIRST_RUN_MARKER = 'telemetry-first-run-sent'
 
 export function getConfigDir(): string {
   return join(homedir(), '.config', 'shipguard')
@@ -122,6 +124,22 @@ export function markNoticeShown(dir: string = getConfigDir()): void {
     writeSecureFileSync(join(dir, NOTICE_MARKER), '1\n')
   } catch (err) {
     logger.debug(`telemetry: could not persist the notice marker: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+export function firstRunHandled(dir: string = getConfigDir()): boolean {
+  return existsSync(join(dir, FIRST_RUN_MARKER))
+}
+
+/** Record that the first-run event was sent (or skipped for an older install). Returns false if it could not be saved. */
+export function markFirstRunHandled(dir: string = getConfigDir()): boolean {
+  try {
+    ensureSecureDir(dir)
+    writeSecureFileSync(join(dir, FIRST_RUN_MARKER), '1\n')
+    return true
+  } catch (err) {
+    logger.debug(`telemetry: could not persist the first-run marker: ${err instanceof Error ? err.message : String(err)}`)
+    return false
   }
 }
 

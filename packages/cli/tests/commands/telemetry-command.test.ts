@@ -218,7 +218,7 @@ describe('a --strict exit no longer loses the ping, and the exit code is unchang
 })
 
 describe('C4: pseudonymous install id, v2 payload, never in CI, telemetry reset', () => {
-  const V2 = ['ci', 'cliVersion', 'durationBucket', 'eventId', 'installId', 'provenance', 'schema', 'verdict']
+  const V2 = ['ci', 'cliVersion', 'durationBucket', 'eventId', 'installId', 'provenance', 'schema', 'traffic', 'verdict']
   const sent = (r: { attempts: Array<{ body: string }> }) => JSON.parse(r.attempts[0].body) as Record<string, unknown>
 
   it('human run: v2 payload with a random v4 install id, saved 0600 next to other keys, stable across runs', async () => {
@@ -228,7 +228,7 @@ describe('C4: pseudonymous install id, v2 payload, never in CI, telemetry reset'
       const a = await cli.run(['scan', cli.project, '--json'], { env: ON })
       const pa = sent(a)
       expect(Object.keys(pa).sort()).toEqual(V2)
-      expect(pa).toMatchObject({ schema: 2, provenance: 'dev', ci: false, durationBucket: expect.stringMatching(/^(lt1s|1to5s|5to30s|gt30s)$/) })
+      expect(pa).toMatchObject({ schema: 2, provenance: 'dev', traffic: 'test', ci: false, durationBucket: expect.stringMatching(/^(lt1s|1to5s|5to30s|gt30s)$/) })
       expect(pa.installId).toMatch(UUID_V4)
       expect(pa.eventId).toMatch(UUID_V4)
       const file = join(cli.home, '.config', 'shipguard', 'telemetry.json')

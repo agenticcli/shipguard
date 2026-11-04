@@ -17,6 +17,6 @@ If ShipGuard could not read everything (an oversized file, an unreadable file, a
 
 ## JSON output
 
-`shipguard scan --json` prints one JSON object with, among others: `recommendation` (`SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`), `findings`, `riskScore`, `filesScanned`, `coverage`, `degraded`, `degradedReasons` and `schemaVersion` (`"6"`). Each finding has `id`, `title`, `severity`, `category`, `file`, `line`, `explanation`, `recommendation`, `blocking` and an optional `fix`.
+`shipguard scan --json` prints one JSON object with, among others: `recommendation` (`SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`), `findings`, `riskScore`, `filesScanned`, `coverage`, `degraded`, `degradedReasons` and `schemaVersion` (`"6"`). Each finding has `id`, `title`, `severity`, `category`, `file`, an optional `line`, `explanation`, `recommendation`, `blocking` and an optional `fix`.
 
 Run `shipguard schema --json` to print the exact contract of the version you have installed.

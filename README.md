@@ -66,7 +66,7 @@ Local scans are free and unlimited, with no account, and `--strict` is free on e
 
 ## Privacy
 
-Scans run 100% on your machine. No file contents, paths or secrets are sent to a server. A small anonymous usage ping (version, verdict, duration, CI flag) is sent unless you turn it off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0` or `DO_NOT_TRACK=1`.
+Scans run 100% on your machine. No file contents, paths or secrets are sent to a server. Published builds send a small anonymous ping after a scan, once on first run, and after `shipguard login`. Each ping carries 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`, plus an optional `traffic` label if you set `SHIPGUARD_TRAFFIC` (the scan ping has `verdict` and `durationBucket` instead of `event`). Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
 
 ---
 
@@ -100,6 +100,6 @@ Want to just read the verdict? Use `shipguard scan --json` and check `recommenda
 
 - Product page: [ShipGuard release gate](https://agenticcli.dev/shipguard)
 - Company site: [AgenticCLI](https://agenticcli.dev/)
-- Docs: [agenticcli.dev/docs](https://agenticcli.dev/shipguard/docs)
+- Docs: [agenticcli.dev/shipguard/docs](https://agenticcli.dev/shipguard/docs)
 - Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing)
 - Issues: [github.com/agenticcli/shipguard/issues](https://github.com/agenticcli/shipguard/issues)
