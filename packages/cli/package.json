@@ -1,6 +1,6 @@
 {
   "name": "@agenticcli/shipguard",
-  "version": "0.9.0",
+  "version": "0.10.0-rc.0",
   "description": "CLI-first release gate for AI-built apps",
   "type": "module",
   "main": "./dist/cli.js",
@@ -51,7 +51,6 @@
     "agenticcli",
     "release-gate",
     "ai-code",
-    "security",
     "cli",
     "ai-agents",
     "claude-code",
@@ -59,11 +58,10 @@
     "codex",
     "agentic",
     "pre-deploy-check",
-    "secrets-scanner",
     "llm-generated-code"
   ],
   "license": "Elastic-2.0",
-  "author": "agenticcli",
+  "author": "AgenticCLI",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agenticcli/shipguard.git"

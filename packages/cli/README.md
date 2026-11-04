@@ -2,7 +2,7 @@
 
 CLI-first release gate for AI-built apps.
 
-Catches secrets leaks, auth gaps, payment webhook risks, destructive migrations, and deployment misconfigurations — before your code ships.
+Checks for leaked secrets, auth gaps, payment webhook risks, destructive migrations, and deployment misconfigurations — before your code ships.
 
 ## 30-second quickstart
 
@@ -84,7 +84,7 @@ outside the ASCII reading, compressed archives, and string tables inside ELF, PE
 
 ## Telemetry
 
-Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (the keys `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run ping is never sent in CI). A scan ping carries the keys `schema`, `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket` and `ci`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
+Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run ping is never sent in CI). A scan ping carries 8 keys: `schema`, `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket` and `ci`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
 
 Before the first ping on a machine, ShipGuard prints a one-line notice to stderr (in every mode, including `--json` and CI, so stdout stays clean). Turn pings off any of these ways:
 
@@ -94,11 +94,17 @@ Before the first ping on a machine, ShipGuard prints a one-line notice to stderr
 
 To see exactly what would be sent without sending it: `SHIPGUARD_TELEMETRY_DEBUG=1 shipguard scan`.
 
-Details: [agenticcli.dev/docs#telemetry](https://agenticcli.dev/docs?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen&utm_content=telemetry#telemetry)
+Details: [docs/privacy.md](https://github.com/agenticcli/shipguard/blob/main/docs/privacy.md) and [agenticcli.dev/privacy](https://agenticcli.dev/privacy?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen).
 
 ## Documentation
 
-See [full docs](https://agenticcli.dev/docs?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen&utm_content=docs) for policy configuration, CI setup, and agent integration.
+See the [ShipGuard docs](https://agenticcli.dev/shipguard/docs?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen) for policy configuration, CI setup, and agent integration. Product page: [agenticcli.dev/shipguard](https://agenticcli.dev/shipguard?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen).
+
+## Help
+
+- Help, billing, bugs and security reports: support@agenticcli.dev
+- General and press: contact@agenticcli.dev
+- Issues: [github.com/agenticcli/shipguard/issues](https://github.com/agenticcli/shipguard/issues)
 
 ## License
 

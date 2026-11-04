@@ -66,7 +66,7 @@ Local scans are free and unlimited, with no account, and `--strict` is free on e
 
 ## Privacy
 
-Scans run 100% on your machine. No file contents, paths or secrets are sent to a server. Published builds send a small anonymous ping after a scan, once on first run, and after `shipguard login`. Each ping carries 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`, plus an optional `traffic` label if you set `SHIPGUARD_TRAFFIC` (the scan ping has `verdict` and `durationBucket` instead of `event`). Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
+Scans run 100% on your machine. No file contents, paths or secrets are sent to a server. Published builds send a small anonymous ping after a scan, once on first run, and after `shipguard login`. The first-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket` and `ci`. An optional `traffic` label is added only if you set `SHIPGUARD_TRAFFIC`. Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
 
 ---
 
@@ -103,3 +103,5 @@ Want to just read the verdict? Use `shipguard scan --json` and check `recommenda
 - Docs: [agenticcli.dev/shipguard/docs](https://agenticcli.dev/shipguard/docs)
 - Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing)
 - Issues: [github.com/agenticcli/shipguard/issues](https://github.com/agenticcli/shipguard/issues)
+- Help, billing, bugs and security reports: support@agenticcli.dev
+- General and press: contact@agenticcli.dev
