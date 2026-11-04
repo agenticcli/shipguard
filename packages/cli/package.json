@@ -1,6 +1,6 @@
 {
   "name": "@agenticcli/shipguard",
-  "version": "0.10.0-rc.0",
+  "version": "0.10.0",
   "description": "CLI-first release gate for AI-built apps",
   "type": "module",
   "main": "./dist/cli.js",
