@@ -1,13 +1,17 @@
 # ShipGuard
 
-**A release gate for AI-built apps. Run one command before you ship.**
+**The deterministic check that runs inside your agent loop. Same diff, same verdict, a real exit code your agent can read.**
 
 [![npm version](https://img.shields.io/npm/v/@agenticcli/shipguard)](https://www.npmjs.com/package/@agenticcli/shipguard)
 [![License: Elastic-2.0](https://img.shields.io/badge/License-Elastic--2.0-blue.svg)](LICENSE)
+[![Node.js 20+](https://img.shields.io/node/v/@agenticcli/shipguard)](https://www.npmjs.com/package/@agenticcli/shipguard)
+[![CI](https://github.com/agenticcli/shipguard/actions/workflows/ci.yml/badge.svg)](https://github.com/agenticcli/shipguard/actions/workflows/ci.yml)
 
-ShipGuard is a command-line tool from AgenticCLI. It checks your project for leaked secrets, unprotected routes, risky database migrations, unverified payment webhooks and unsafe deploy settings. It runs on your machine, gives the same answer every time, and your code never leaves your computer. Learn more on the [ShipGuard product page](https://agenticcli.dev/shipguard).
+Your agent already shipped it. Did it just re-break it? Long agentic loops quietly regress the app that makes you money. ShipGuard is the deterministic, local security and config check that runs inside the loop, from AgenticCLI. It checks your project for leaked secrets, unprotected routes, risky database migrations, unverified payment webhooks and unsafe deploy settings. It runs on your machine, gives the same answer every time, and your code never leaves your computer. Learn more on the [ShipGuard product page](https://agenticcli.dev/shipguard).
 
-It is built for people who ship real apps with AI coding agents (Claude Code, Codex CLI, Cursor) and want a fast, predictable check before code goes live. It gives a verdict and a list of findings; you decide what blocks a release.
+**Who it is for:** people who ship real apps with AI coding agents (Claude Code, Codex CLI, Cursor) and want a fast, predictable check before code goes live. It gives a verdict and a list of findings; you decide what blocks a release.
+
+The source is public under the Elastic License 2.0. That is source-available: you can read it, run it and use it commercially, but it is not an OSI-approved open source license (see [License](#license)).
 
 ## Quickstart (30 seconds)
 
@@ -24,6 +28,24 @@ shipguard scan --strict                # exit 1 if the scan blocks (opt-in hard 
 shipguard hook --target ci             # write a GitHub Actions workflow for you
 ```
 
+## Example output
+
+A real run on a small demo project that has a live Stripe key in a committed `.env` file and an unprotected admin route (output shortened):
+
+```text
+   CRITICAL  🛑 1 finding
+    Stripe Live Secret Key — .env:1 [low false-positive chance]
+
+   HIGH      ⛔ 3 findings
+    .env file tracked in git — .env [low false-positive chance]
+    No Next.js middleware.ts found — middleware.ts [moderate — review]
+    Unprotected API route handler: app/api/admin/route.ts [moderate — review]
+
+⛔ DO NOT SHIP  score=100/100  findings=5  blocking=4  (informational — exit 0; use --strict to enforce)
+```
+
+Secret values are masked in the output. Add `--json` for the same result as data: read the verdict from the `recommendation` field.
+
 ## Contents
 
 - [Getting started](docs/getting-started.md)
@@ -32,6 +54,8 @@ shipguard hook --target ci             # write a GitHub Actions workflow for you
 - [Exit codes and JSON output](docs/exit-codes.md)
 - [Privacy](docs/privacy.md)
 - [FAQ](docs/faq.md)
+- [Support](SUPPORT.md), [Contributing](CONTRIBUTING.md), [Security policy](SECURITY.md)
+- [llms.txt](packages/cli/docs/llms.txt) (a plain-text summary for AI tools)
 - [Changelog](packages/cli/CHANGELOG.md)
 
 ## What it checks
@@ -59,6 +83,22 @@ Add this step to a GitHub Actions job. It scans the whole checkout and fails the
 ```
 
 `shipguard hook --target ci` writes this workflow for you. `shipguard hook` also installs a git hook, and `shipguard hook --target claude` adds a Claude Code hook. Setup for GitLab, Claude Code, Codex and Cursor is in [CI and agent setup](docs/ci-setup.md).
+
+## FAQ
+
+**What is ShipGuard?** A command-line release gate for AI-built apps. One command checks for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings before you ship.
+
+**Is it a security scanner or a code reviewer?** No. It is a release gate: a fixed set of plain pattern rules that run locally and give the same answer every time. It does not use an AI model and it does not read your code for design problems.
+
+**Does my code leave my machine?** No. Scans run on your machine. See [Privacy](#privacy).
+
+**Do I need an account?** No. Local scans need no account and are unlimited.
+
+**Which AI coding tools does it work with?** It is a normal command, so it works with Claude Code, Codex CLI and Cursor, and in any CI. See [CI and agent setup](docs/ci-setup.md).
+
+**Why did my CI job pass when ShipGuard found problems?** Without `--strict` the exit code is `0` whenever the scan completes. Use `--strict`, or read `recommendation` in the JSON. See [exit codes](docs/exit-codes.md).
+
+More answers: [docs/faq.md](docs/faq.md). Questions and ideas: [GitHub Discussions](https://github.com/agenticcli/shipguard/discussions).
 
 ## Free and Pro
 
@@ -102,6 +142,8 @@ Want to just read the verdict? Use `shipguard scan --json` and check `recommenda
 - Company site: [AgenticCLI](https://agenticcli.dev/)
 - Docs: [agenticcli.dev/shipguard/docs](https://agenticcli.dev/shipguard/docs)
 - Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing)
+- npm: [@agenticcli/shipguard](https://www.npmjs.com/package/@agenticcli/shipguard)
 - Issues: [github.com/agenticcli/shipguard/issues](https://github.com/agenticcli/shipguard/issues)
+- Questions and ideas: [GitHub Discussions](https://github.com/agenticcli/shipguard/discussions)
 - Help, billing, bugs and security reports: support@agenticcli.dev
 - General and press: contact@agenticcli.dev

@@ -2,7 +2,7 @@
  * QA (2026-11-02, qa-final on ed3a6ae9): plan D1 ("a scan that read nothing is never SAFE") must
  * hold on EVERY run, not only the first.
  *
- * Found by the QA C0 re-run (docs/testlab/2026-11-02/C0-rerun-ed3a6ae9.txt, step 3d): the first
+ * Found by the QA tarball re-run (step 3d): the first
  * scan of an empty folder is NO_FILES_SCANNED / DO_NOT_SHIP / --strict exit 1, as designed. That
  * scan also writes `.gitignore` (the history store's courtesy line `.shipguard/`,
  * src/core/history/identity.ts ensureGitignoreEntry) into the scanned folder. The second scan then

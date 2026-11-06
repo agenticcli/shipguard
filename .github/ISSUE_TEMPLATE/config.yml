@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/agenticcli/shipguard/discussions
+    about: Ask how to use ShipGuard, or suggest an idea, in Discussions.
+  - name: Security problem
+    url: https://github.com/agenticcli/shipguard/blob/main/SECURITY.md
+    about: Do not open a public issue. Follow the steps in SECURITY.md.

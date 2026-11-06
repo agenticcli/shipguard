@@ -1,20 +1,23 @@
 # ShipGuard CLI
-> CLI-first release gate for AI-built apps
+> The deterministic, local security and config check that runs inside your agent loop: same diff, same verdict, a real exit code your agent can read. One command checks a project for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings. It runs locally, gives the same answer every time, and your code never leaves your machine.
 
-ShipGuard checks the high-risk mistakes that AI coding agents commonly introduce before code is deployed.
+ShipGuard is not a code reviewer and not a general security scanner. It uses plain pattern rules (no AI model). It informs: the verdict is in the JSON `recommendation` field (SAFE_TO_SHIP, REVIEW_BEFORE_SHIP, DO_NOT_SHIP). The exit code is 0 whenever the scan completes; add --strict to make it exit 1 on a blocking result.
 
 ## Install
+npx @agenticcli/shipguard scan
 npm install -g @agenticcli/shipguard
 
 ## Commands
 shipguard init — initialize policy file
 shipguard scan — scan project for risks
-shipguard scan --changed — scan only changed files
-shipguard scan --strict — exit code 1 on high-risk findings
+shipguard scan --changed — scan only changed files (not for CI: a clean checkout has nothing to compare)
+shipguard scan --strict — exit code 1 on a blocking result or an unfinished scan (opt-in hard gate, free on every plan)
 shipguard scan --report — generate Markdown report
 shipguard scan --json — machine-readable output (schemaVersion 6; the `coverage` object says how many files were discovered, scanned and skipped, and why)
 shipguard scan --check-regressions — exit code 1 if a previously-passing rule now fails
+shipguard hook — install the gate as a git hook (--target claude or --target ci for Claude Code or GitHub Actions)
 shipguard history — show recent local scan history for this repo (read-only)
+shipguard schema --json — the machine-readable contract: verdicts, exit codes, limits
 
 ## Risk Categories
 - Secrets: hardcoded API keys, committed .env files, frontend exposure
@@ -25,6 +28,15 @@ shipguard history — show recent local scan history for this repo (read-only)
 
 ## Target Users
 Solo SaaS builders, indie hackers, small dev teams using Claude Code, Codex, Cursor, or Lovable
+
+## License
+Elastic License 2.0 (source-available, free to use commercially, may not be offered as a hosted service).
+
+## Docs
+- Getting started: https://github.com/agenticcli/shipguard/blob/main/docs/getting-started.md
+- FAQ: https://github.com/agenticcli/shipguard/blob/main/docs/faq.md
+- Product page: https://agenticcli.dev/shipguard
+- Docs: https://agenticcli.dev/shipguard/docs
 
 ## GitHub
 https://github.com/agenticcli/shipguard
