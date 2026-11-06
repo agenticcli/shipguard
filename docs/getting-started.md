@@ -1,6 +1,6 @@
 # Getting started with ShipGuard
 
-ShipGuard is a release gate for AI-built apps. This page gets you from zero to a first scan. For the full guide, see the [ShipGuard docs](https://agenticcli.dev/shipguard/docs).
+ShipGuard is the deterministic check that runs inside your agent loop, and it also works as a release gate in CI. This page gets you from zero to a first scan. For the full guide, see the [ShipGuard docs](https://agenticcli.dev/shipguard/docs).
 
 ## 1. Run a scan (no install, no account)
 

@@ -2,7 +2,7 @@
 
 ## 0.10.0 - 2026-11-05
 
-- Added: published builds now send a small anonymous ping the first time ShipGuard runs on an install (`cli_first_run`, never in CI) and after a successful `shipguard login` (`cli_login`), as well as after each scan. First-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket`, `ci`. Never file contents, paths, repo names, branches, commits or identity.
+- Added: published builds now send a small pseudonymous ping the first time ShipGuard runs on an install (`cli_first_run`, never in CI) and after a successful `shipguard login` (`cli_login`), as well as after each scan. First-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket`, `ci`. Never file contents, paths, repo names, branches, commits or identity.
 - Added: a one-line notice on stderr before the first ping on a machine, in every mode (stdout stays clean for `--json`).
 - Opt out any of these ways: `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1`, `shipguard telemetry disable`, or `telemetry: { enabled: false }` in your policy file. `shipguard telemetry status` shows the state; `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending it; `shipguard telemetry reset` forgets the install id. Builds from a source checkout send nothing.
 - Added: `SHIPGUARD_TRAFFIC=test` or `internal` for people testing ShipGuard. It adds an optional `traffic` key to the pings so test runs are kept apart from real usage. Any other value is ignored.
@@ -45,4 +45,4 @@ ShipGuard is a CLI-first release gate for AI-built apps. It scans your project l
 - Inline suppressions with `// shipguard-ignore: <ruleId> -- <reason>`.
 - A clear message when ShipGuard's hosted service is temporarily unavailable: the CLI says so plainly, shows the suggested wait, and `--json` carries the stable code `PLATFORM_UNAVAILABLE` with `retryAfterSeconds` when known. Exit code is 3; `--allow-degraded` still works.
 - Links printed by the CLI (docs, site, pricing, billing, dashboard) use `agenticcli.dev/go/<slot>` short links that the site tags for analytics, and the README and npm page links carry fixed UTM tags. No install id, version, path or scan data is ever added to a link.
-- Anonymous usage ping with simple opt-outs: `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `shipguard telemetry disable`.
+- Pseudonymous usage ping with simple opt-outs: `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `shipguard telemetry disable`.
