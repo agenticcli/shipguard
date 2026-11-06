@@ -1,7 +1,7 @@
 {
   "name": "@agenticcli/shipguard",
   "version": "0.10.0",
-  "description": "Release gate CLI for AI-built apps: checks for leaked secrets, unprotected routes, risky migrations, unverified payment webhooks and unsafe deploy settings, locally, before you ship",
+  "description": "Deterministic check that runs inside your agent loop (same diff, same verdict, a real exit code): checks for leaked secrets, unprotected routes, risky migrations, unverified payment webhooks and unsafe deploy settings, locally",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {

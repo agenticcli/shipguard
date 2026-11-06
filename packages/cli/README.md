@@ -1,6 +1,6 @@
 # @agenticcli/shipguard
 
-CLI-first release gate for AI-built apps.
+Deterministic, local security and config check that runs inside your agent loop: same diff, same verdict, a real exit code your agent can read.
 
 Checks for leaked secrets, auth gaps, payment webhook risks, destructive migrations, and deployment misconfigurations — before your code ships.
 
