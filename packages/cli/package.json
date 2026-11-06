@@ -1,7 +1,7 @@
 {
   "name": "@agenticcli/shipguard",
   "version": "0.10.0",
-  "description": "CLI-first release gate for AI-built apps",
+  "description": "Release gate CLI for AI-built apps: checks for leaked secrets, unprotected routes, risky migrations, unverified payment webhooks and unsafe deploy settings, locally, before you ship",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
@@ -58,10 +58,23 @@
     "codex",
     "agentic",
     "pre-deploy-check",
-    "llm-generated-code"
+    "llm-generated-code",
+    "vibe-coding",
+    "ai-generated-code",
+    "pre-commit",
+    "github-actions",
+    "ci",
+    "pre-deploy",
+    "stripe-webhook",
+    "env-files",
+    "nextjs",
+    "release-checklist"
   ],
   "license": "Elastic-2.0",
-  "author": "AgenticCLI",
+  "author": {
+    "name": "AgenticCLI",
+    "url": "https://agenticcli.dev"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agenticcli/shipguard.git"

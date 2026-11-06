@@ -1,0 +1,33 @@
+name: False positive or missed finding
+description: A finding that should not be there, or a problem ShipGuard did not report.
+labels: [rule-feedback]
+body:
+  - type: markdown
+    attributes:
+      value: Replace any real secret with a made-up value of the same shape before you paste it.
+  - type: input
+    id: version
+    attributes:
+      label: ShipGuard version
+      description: Output of `shipguard --version`.
+    validations:
+      required: true
+  - type: input
+    id: rule
+    attributes:
+      label: Rule or finding title
+    validations:
+      required: true
+  - type: textarea
+    id: snippet
+    attributes:
+      label: The smallest code or config that shows it
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is this wrong (or missing)?
+    validations:
+      required: true
