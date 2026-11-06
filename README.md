@@ -1,19 +1,21 @@
 # ShipGuard
 
-**The deterministic check that runs inside your agent loop. Same diff, same verdict, a real exit code your agent can read.**
+**The security scanner your coding agent runs before every commit. On your machine. Flat price, no seats.**
+
+Same code, same answer.
 
 [![npm version](https://img.shields.io/npm/v/@agenticcli/shipguard)](https://www.npmjs.com/package/@agenticcli/shipguard)
 [![License: Elastic-2.0](https://img.shields.io/badge/License-Elastic--2.0-blue.svg)](LICENSE)
 [![Node.js 20+](https://img.shields.io/node/v/@agenticcli/shipguard)](https://www.npmjs.com/package/@agenticcli/shipguard)
 [![CI](https://github.com/agenticcli/shipguard/actions/workflows/ci.yml/badge.svg)](https://github.com/agenticcli/shipguard/actions/workflows/ci.yml)
 
-Your agent already shipped it. Did it just re-break it? Long agentic loops quietly regress the app that makes you money. ShipGuard is the deterministic, local security and config check that runs inside the loop, from AgenticCLI. It checks your project for leaked secrets, unprotected routes, risky database migrations, unverified payment webhooks and unsafe deploy settings. It runs on your machine, gives the same answer every time, and your code never leaves your computer. Learn more on the [ShipGuard product page](https://agenticcli.dev/shipguard).
+Your agent already shipped it. Did it just re-break it? Long agent sessions quietly regress the app that makes you money. ShipGuard is a local security scanner from AgenticCLI that runs after each change your coding agent makes. It checks your project for leaked secrets, unprotected routes, risky database migrations, unverified payment webhooks and unsafe deploy settings. It runs on your machine, gives the same answer every time, and your code never leaves your computer. Learn more on the [ShipGuard product page](https://agenticcli.dev/shipguard).
 
-**Who it is for:** people who ship real apps with AI coding agents (Claude Code, Codex CLI, Cursor) and want a fast, predictable check before code goes live. It gives a verdict and a list of findings; you decide what blocks a release.
+**Who it is for:** Technical founders of SaaS products with paying customers, shipping with Claude Code, Codex CLI or Cursor, without a security team.
 
 The source is public under the Elastic License 2.0. That is source-available: you can read it, run it and use it commercially, but it is not an OSI-approved open source license (see [License](#license)).
 
-## Quickstart (30 seconds)
+## Quickstart
 
 ```bash
 npx @agenticcli/shipguard scan
@@ -68,7 +70,7 @@ Five check groups run locally and are bundled in the CLI:
 - **Payments**: missing Stripe and Razorpay webhook verification.
 - **Deployment**: risky config such as open CORS, debug mode and exposed environment values.
 
-ShipGuard is the deterministic check that runs inside your agent loop, not a code reviewer and not a general security scanner. Its checks are plain pattern rules (no AI model in the loop), so results are repeatable. It also works as a release gate in CI.
+ShipGuard is a focused security scanner, not a full SAST tool and not a code reviewer. Its checks are plain pattern rules (no AI model involved), so results are repeatable. It also works as a CI check.
 
 ## Use it in CI
 
@@ -100,9 +102,9 @@ The hook runs `npx -y @agenticcli/shipguard scan --strict` on the whole project 
 
 ## FAQ
 
-**What is ShipGuard?** A command-line check that runs inside your agent loop (and works as a release gate in CI). One command checks for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings before you ship.
+**What is ShipGuard?** A command-line security scanner that runs after each agent change (and works as a CI check). One command checks for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings before you ship.
 
-**Is it a security scanner or a code reviewer?** No. It is a deterministic check: a fixed set of plain pattern rules that run locally and give the same answer every time. It does not use an AI model and it does not read your code for design problems.
+**Is it a security scanner or a code reviewer?** A security scanner, not a code reviewer. It is a fixed set of plain pattern rules that run locally and give the same answer every time. It does not use an AI model and it does not read your code for design problems.
 
 **Does my code leave my machine?** No. Scans run on your machine. See [Privacy](#privacy).
 
@@ -152,7 +154,7 @@ Want to just read the verdict? Use `shipguard scan --json` and check `recommenda
 
 ## Links
 
-- Product page: [ShipGuard release gate](https://agenticcli.dev/shipguard)
+- Product page: [ShipGuard product page](https://agenticcli.dev/shipguard)
 - Company site: [AgenticCLI](https://agenticcli.dev/)
 - Docs: [agenticcli.dev/shipguard/docs](https://agenticcli.dev/shipguard/docs)
 - Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing)
