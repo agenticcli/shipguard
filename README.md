@@ -1,6 +1,8 @@
 # ShipGuard
 
-**The deterministic check that runs inside your agent loop. Same diff, same verdict, a real exit code your agent can read.**
+**The security scanner your coding agent runs before every commit. On your machine. Flat price, no seats.**
+
+Same code, same answer.
 
 [![npm version](https://img.shields.io/npm/v/@agenticcli/shipguard)](https://www.npmjs.com/package/@agenticcli/shipguard)
 [![License: Elastic-2.0](https://img.shields.io/badge/License-Elastic--2.0-blue.svg)](LICENSE)
@@ -9,11 +11,11 @@
 
 Your agent already shipped it. Did it just re-break it? Long agentic loops quietly regress the app that makes you money. ShipGuard is the deterministic, local security and config check that runs inside the loop, from AgenticCLI. It checks your project for leaked secrets, unprotected routes, risky database migrations, unverified payment webhooks and unsafe deploy settings. It runs on your machine, gives the same answer every time, and your code never leaves your computer. Learn more on the [ShipGuard product page](https://agenticcli.dev/shipguard).
 
-**Who it is for:** people who ship real apps with AI coding agents (Claude Code, Codex CLI, Cursor) and want a fast, predictable check before code goes live. It gives a verdict and a list of findings; you decide what blocks a release.
+**Who it is for:** Technical founders of SaaS products with paying customers, shipping with Claude Code, Codex CLI or Cursor, without a security team.
 
 The source is public under the Elastic License 2.0. That is source-available: you can read it, run it and use it commercially, but it is not an OSI-approved open source license (see [License](#license)).
 
-## Quickstart (30 seconds)
+## Quickstart
 
 ```bash
 npx @agenticcli/shipguard scan
@@ -152,7 +154,7 @@ Want to just read the verdict? Use `shipguard scan --json` and check `recommenda
 
 ## Links
 
-- Product page: [ShipGuard release gate](https://agenticcli.dev/shipguard)
+- Product page: [ShipGuard product page](https://agenticcli.dev/shipguard)
 - Company site: [AgenticCLI](https://agenticcli.dev/)
 - Docs: [agenticcli.dev/shipguard/docs](https://agenticcli.dev/shipguard/docs)
 - Pricing / Pro: [agenticcli.dev/pricing](https://agenticcli.dev/pricing)
