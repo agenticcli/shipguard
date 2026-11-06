@@ -1,8 +1,7 @@
 /**
  * B1, B17, B23 (unit rows): the single content classifier.
  *
- * Plan: docs/plans/scan-honest-coverage-20261102.md (D2, D3, D4, A1) plus
- * docs/plans/JUDGE-R3-BUILD-REQUIREMENTS.md. Fixture keys are the public example values.
+ * Fixture keys are the public example values.
  */
 import { describe, it, expect, expectTypeOf } from 'vitest'
 import {
