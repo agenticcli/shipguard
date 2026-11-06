@@ -1,6 +1,6 @@
 name: False positive or missed finding
 description: A finding that should not be there, or a problem ShipGuard did not report.
-labels: [rule-feedback]
+labels: [bug]
 body:
   - type: markdown
     attributes:
