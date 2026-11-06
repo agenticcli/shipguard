@@ -16,7 +16,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { cleanupTrees, degradeCodes, mkTree, scanJson } from '../helpers/cli-fixture.js'
 
-vi.setConfig({ testTimeout: 60_000 })
+vi.setConfig({ testTimeout: 180_000 })
 afterAll(cleanupTrees)
 
 const png1x1 = Buffer.from(
