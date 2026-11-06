@@ -70,7 +70,7 @@ Five check groups run locally and are bundled in the CLI:
 - **Payments**: missing Stripe and Razorpay webhook verification.
 - **Deployment**: risky config such as open CORS, debug mode and exposed environment values.
 
-ShipGuard is the deterministic check that runs inside your agent loop, not a code reviewer and not a general security scanner. Its checks are plain pattern rules (no AI model in the loop), so results are repeatable. It also works as a release gate in CI.
+ShipGuard is a focused security scanner, not a full SAST tool and not a code reviewer. Its checks are plain pattern rules (no AI model in the loop), so results are repeatable. It also works as a CI check.
 
 ## Use it in CI
 
@@ -102,7 +102,7 @@ The hook runs `npx -y @agenticcli/shipguard scan --strict` on the whole project 
 
 ## FAQ
 
-**What is ShipGuard?** A command-line check that runs inside your agent loop (and works as a release gate in CI). One command checks for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings before you ship.
+**What is ShipGuard?** A command-line security scanner that runs after each agent change (and works as a CI check). One command checks for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings before you ship.
 
 **Is it a security scanner or a code reviewer?** No. It is a deterministic check: a fixed set of plain pattern rules that run locally and give the same answer every time. It does not use an AI model and it does not read your code for design problems.
 
