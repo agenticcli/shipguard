@@ -41,7 +41,7 @@ A real run on a small demo project that has a live Stripe key in a committed `.e
     No Next.js middleware.ts found — middleware.ts [moderate — review]
     Unprotected API route handler: app/api/admin/route.ts [moderate — review]
 
-⛔ DO NOT SHIP  findings=5  blocking=4  (informational — exit 0; use --strict to enforce)
+⛔ DO NOT SHIP  score=100/100  findings=5  blocking=4  (informational — exit 0; use --strict to enforce)
 ```
 
 Secret values are masked in the output. Add `--json` for the same result as data: read the verdict from the `recommendation` field.
