@@ -1,0 +1,10 @@
+# Hook definition for pre-commit (https://pre-commit.com/#new-hooks).
+# Uses `language: system` (renamed `unsupported` in pre-commit 4.4.0; the old name still works),
+# so Node.js 20+ and network access for npx must already be available.
+- id: shipguard
+  name: ShipGuard
+  description: Deterministic local check for secrets, auth, migrations, payments and deploy config.
+  entry: npx -y @agenticcli/shipguard scan --strict
+  language: system
+  pass_filenames: false
+  always_run: true

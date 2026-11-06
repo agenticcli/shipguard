@@ -1,7 +1,7 @@
 # FAQ
 
 ## What is ShipGuard?
-A command-line release gate for AI-built apps. It checks your project for leaked secrets, unprotected routes, destructive migrations, unverified payment webhooks and risky deploy settings before you ship. It is not a code reviewer and not a general security scanner.
+The deterministic check that runs inside your agent loop: same diff, same verdict, a real exit code your agent can read. It also works as a release gate in CI. It checks your project for leaked secrets, unprotected routes, destructive migrations, unverified payment webhooks and risky deploy settings before you ship. It is not a code reviewer and not a general security scanner.
 
 ## Does my code leave my machine?
 No. Scans run locally. See [privacy](privacy.md).

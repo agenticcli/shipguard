@@ -68,7 +68,7 @@ Five check groups run locally and are bundled in the CLI:
 - **Payments**: missing Stripe and Razorpay webhook verification.
 - **Deployment**: risky config such as open CORS, debug mode and exposed environment values.
 
-ShipGuard is a release gate, not a code reviewer and not a general security scanner. Its checks are plain pattern rules (no AI model in the loop), so results are repeatable.
+ShipGuard is the deterministic check that runs inside your agent loop, not a code reviewer and not a general security scanner. Its checks are plain pattern rules (no AI model in the loop), so results are repeatable. It also works as a release gate in CI.
 
 ## Use it in CI
 
@@ -84,11 +84,25 @@ Add this step to a GitHub Actions job. It scans the whole checkout and fails the
 
 `shipguard hook --target ci` writes this workflow for you. `shipguard hook` also installs a git hook, and `shipguard hook --target claude` adds a Claude Code hook. Setup for GitLab, Claude Code, Codex and Cursor is in [CI and agent setup](docs/ci-setup.md).
 
+## Use with pre-commit
+
+Add ShipGuard to `.pre-commit-config.yaml` (needs Node.js 20 or newer on your PATH):
+
+```yaml
+repos:
+  - repo: https://github.com/agenticcli/shipguard
+    rev: main   # pin to a commit or tag you trust
+    hooks:
+      - id: shipguard
+```
+
+The hook runs `npx -y @agenticcli/shipguard scan --strict` on the whole project and fails the commit when ShipGuard blocks. Test it with `pre-commit run shipguard --all-files`. See [pre-commit hooks](https://pre-commit.com/#new-hooks).
+
 ## FAQ
 
-**What is ShipGuard?** A command-line release gate for AI-built apps. One command checks for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings before you ship.
+**What is ShipGuard?** A command-line check that runs inside your agent loop (and works as a release gate in CI). One command checks for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings before you ship.
 
-**Is it a security scanner or a code reviewer?** No. It is a release gate: a fixed set of plain pattern rules that run locally and give the same answer every time. It does not use an AI model and it does not read your code for design problems.
+**Is it a security scanner or a code reviewer?** No. It is a deterministic check: a fixed set of plain pattern rules that run locally and give the same answer every time. It does not use an AI model and it does not read your code for design problems.
 
 **Does my code leave my machine?** No. Scans run on your machine. See [Privacy](#privacy).
 
@@ -106,7 +120,7 @@ Local scans are free and unlimited, with no account, and `--strict` is free on e
 
 ## Privacy
 
-Scans run 100% on your machine. No file contents, paths or secrets are sent to a server. Published builds send a small anonymous ping after a scan, once on first run, and after `shipguard login`. The first-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket` and `ci`. An optional `traffic` label is added only if you set `SHIPGUARD_TRAFFIC`. Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
+Scans run 100% on your machine. No file contents, paths or secrets are sent to a server. Published builds send a small pseudonymous ping after a scan, once on first run, and after `shipguard login`. The first-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket` and `ci`. An optional `traffic` label is added only if you set `SHIPGUARD_TRAFFIC`. Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
 
 ---
 

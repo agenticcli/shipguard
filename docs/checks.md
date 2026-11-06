@@ -1,6 +1,6 @@
 # What ShipGuard checks
 
-ShipGuard is a release gate, not a code reviewer and not a general security scanner. It looks for a small set of failures that AI coding tools introduce often. Checks are plain pattern rules (no AI model), so the same project gives the same result every time.
+ShipGuard is the deterministic check that runs inside your agent loop (and works as a release gate in CI), not a code reviewer and not a general security scanner. It looks for a small set of failures that AI coding tools introduce often. Checks are plain pattern rules (no AI model), so the same project gives the same result every time.
 
 Five check groups are bundled in the CLI and run locally, with no account:
 

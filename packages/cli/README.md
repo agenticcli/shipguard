@@ -20,7 +20,7 @@ shipguard scan
 > **PATH gotcha:** `npm install` (without `-g`) does NOT put `shipguard` on your PATH.
 > Use `npx @agenticcli/shipguard scan` or install with `npm install -g @agenticcli/shipguard`.
 
-ShipGuard is a release gate, not a code reviewer and not a general security scanner. It runs on your machine, uses plain pattern rules (no AI model), and your code never leaves your computer. Source: [github.com/agenticcli/shipguard](https://github.com/agenticcli/shipguard).
+ShipGuard is the deterministic check that runs inside your agent loop (it also works as a release gate in CI), not a code reviewer and not a general security scanner. It runs on your machine, uses plain pattern rules (no AI model), and your code never leaves your computer. Source: [github.com/agenticcli/shipguard](https://github.com/agenticcli/shipguard).
 
 ## Usage
 
