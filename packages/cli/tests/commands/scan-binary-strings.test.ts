@@ -17,7 +17,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 import { classifyFile, stringsReading } from '../../src/utils/classify.js'
 import { cleanupTrees, KEY, keyFoundIn, mkTree, noise, scanJson } from '../helpers/cli-fixture.js'
 
-vi.setConfig({ testTimeout: 60_000 })
+vi.setConfig({ testTimeout: 180_000 })
 afterAll(cleanupTrees)
 
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])

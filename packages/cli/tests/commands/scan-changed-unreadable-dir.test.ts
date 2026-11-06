@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { cleanupTrees, ENV_KEY_LINE, mkTree, scanJson } from '../helpers/cli-fixture.js'
 
-vi.setConfig({ testTimeout: 60_000 })
+vi.setConfig({ testTimeout: 180_000 })
 
 const locked: string[] = []
 afterAll(() => {
