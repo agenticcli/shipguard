@@ -14,8 +14,8 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('RE2JS_VERSION constant', () => {
-  it('is the exact pinned version 2.8.3', () => {
-    expect(RE2JS_VERSION).toBe('2.8.3')
+  it('is the exact pinned version 2.8.7', () => {
+    expect(RE2JS_VERSION).toBe('2.8.7')
   })
 
   it('is a string', () => {
@@ -79,7 +79,7 @@ describe('EngineMeta type — re2js engine', () => {
   it('makeRe2jsEngineMeta produces a valid EngineMeta with engine="re2js"', () => {
     const meta: EngineMeta = makeRe2jsEngineMeta()
     expect(meta.engine).toBe('re2js')
-    expect(meta.version).toBe(RE2JS_VERSION) // pinned to 2.8.3
+    expect(meta.version).toBe(RE2JS_VERSION) // pinned to 2.8.7
     expect(typeof meta.options).toBe('object')
     expect(meta.options).not.toBeNull()
   })
@@ -91,7 +91,7 @@ describe('EngineMeta type — re2js engine', () => {
 
   it('re2js EngineMeta version is exactly RE2JS_VERSION', () => {
     const meta = makeRe2jsEngineMeta()
-    expect(meta.version).toBe('2.8.3')
+    expect(meta.version).toBe('2.8.7')
   })
 })
 
