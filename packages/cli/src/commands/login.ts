@@ -6,6 +6,7 @@ import { assertTrustedApiUrl } from '../utils/trust.js'
 import { CLI_VERSION, sendLifecycleEvent } from '../core/telemetry.js'
 
 const DEFAULT_API_URL = 'https://agenticcli.dev'
+const SIGN_IN_TIMED_OUT = 'Sign-in timed out. Run `shipguard login` again.'
 
 export function loginCommand(): Command {
   return new Command('login')
@@ -60,8 +61,9 @@ export function loginCommand(): Command {
         const { error } = tokenBody
         if (error === 'authorization_pending') continue
         if (error === 'slow_down') { await new Promise(r => setTimeout(r, 5000)); continue }
+        if (error === 'expired_token') { logger.error(SIGN_IN_TIMED_OUT); process.exit(2) }
         logger.error(`Auth failed: ${error}`); process.exit(2)
       }
-      logger.error('Auth timed out'); process.exit(2)
+      logger.error(SIGN_IN_TIMED_OUT); process.exit(2)
     })
 }
