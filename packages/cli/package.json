@@ -1,7 +1,7 @@
 {
   "name": "@agenticcli/shipguard",
-  "version": "0.10.0",
-  "description": "Deterministic check that runs inside your agent loop (same diff, same verdict, a real exit code): checks for leaked secrets, unprotected routes, risky migrations, unverified payment webhooks and unsafe deploy settings, locally",
+  "version": "0.11.0",
+  "description": "The security scanner your coding agent runs before every commit. Runs locally, same code same answer: checks for leaked secrets, unprotected routes, risky migrations, unverified payment webhooks and unsafe deploy settings.",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
@@ -50,6 +50,7 @@
     "shipguard",
     "agenticcli",
     "release-gate",
+    "security-scanner",
     "ai-code",
     "cli",
     "ai-agents",

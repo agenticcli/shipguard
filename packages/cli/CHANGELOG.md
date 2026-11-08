@@ -1,5 +1,12 @@
 # @agenticcli/shipguard
 
+## 0.11.0 - 2026-11-08
+
+- Security: updated the regular-expression engine `re2js` from 2.8.3 to 2.8.7. Versions before 2.8.7 have a high-severity slow-matching flaw in lookbehind handling (GHSA-gg6h-894w-4m9c, CVE-2026-116795). ShipGuard keeps lookbehinds switched off, so it was not reachable through normal scans, but the fixed version is now the only one used. Because the engine version is part of the signed rules identity, this release needs rules bundles signed for the new engine: Pro rules published before the update are not accepted by 0.11.0, and the re-signed rules are not accepted by older versions. A rejected Pro bundle makes `shipguard scan --pro` stop with exit code 3 (or, with `--allow-degraded`, fall back to the free rules, marked degraded). The free rules are not affected.
+- Fixed: `shipguard scan --changed` when nothing changed no longer reports `DO_NOT_SHIP` with no findings. If git ran fine and the only changes are ShipGuard's own `.shipguard/` files (or there are none), there is nothing to check: the scan is not degraded, the normal verdict applies, `filesScanned` is `0` and `coverage.changed.nothingToCheck` is `true`. This is not proof the project is safe, so run a plain `shipguard scan` for that. Every other scan that reads nothing still reports `NO_FILES_SCANNED` and `DO_NOT_SHIP` (an empty folder, everything ignored or binary, or changed files that were all ignored, outside the scanned folder or unreadable). `schemaVersion` stays `6` (additive field).
+- Changed: the npm description, README opening line and keywords now match the product line "The security scanner your coding agent runs before every commit."
+- Tests: removed the branch-only check that failed on any change to the matcher contract (it was meant for one earlier branch).
+
 ## 0.10.0 - 2026-11-05
 
 - Added: published builds now send a small pseudonymous ping the first time ShipGuard runs on an install (`cli_first_run`, never in CI) and after a successful `shipguard login` (`cli_login`), as well as after each scan. First-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket`, `ci`. Never file contents, paths, repo names, branches, commits or identity.
