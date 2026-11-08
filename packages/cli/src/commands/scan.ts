@@ -11,6 +11,7 @@ import { goLink } from '../core/links.js'
 import {
   verdictPanel,
   renderFindingsSummary,
+  renderNothingToCheck,
   findingsByCategoryTable,
   coverageLine,
   coverageSummaryLine,
@@ -801,7 +802,11 @@ async function runScan(ctx: {
     }
 
     // Findings summary — categorized by severity + confidence/FP labels
-    console.log(renderFindingsSummary(result.findings))
+    if (result.coverage?.changed?.nothingToCheck) {
+      console.log(renderNothingToCheck())
+    } else {
+      console.log(renderFindingsSummary(result.findings))
+    }
 
     // Category breakdown table
     if (result.findings.length > 0) {
@@ -857,7 +862,9 @@ async function runScan(ctx: {
       )
     }
 
-    if (coverage && coverage.scanned === 0) {
+    if (coverage?.changed?.nothingToCheck) {
+      logger.info('Nothing to check: git reports no changed files. Run `shipguard scan` to check the whole tree.')
+    } else if (coverage && coverage.scanned === 0) {
       logger.warn(
         `Nothing was scanned (0 of ${coverage.discovered} candidate file(s) could be read). A scan that read nothing is DO_NOT_SHIP, never safe.`
       )

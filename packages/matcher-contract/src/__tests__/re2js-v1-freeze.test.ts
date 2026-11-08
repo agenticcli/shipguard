@@ -110,7 +110,7 @@ describe('RE2JS_V1_RUNTIME_ID — derivation regression', () => {
     // Freeze inputs (matcher spec §9.1) documented in re2js-v1.ts:
     //   contractVersion: '0.5.0'
     //   adapterImplHash: RE2JS_V1_ADAPTER_IMPL_HASH (the stable blanked-file hash)
-    //   engineMeta:      re2js@2.8.3, LOOKBEHINDS:false
+    //   engineMeta:      re2js@2.8.7, LOOKBEHINDS:false
     //   buildLock:       're2js-v1-build-2026-06-25-v0.5.0'
     const derived = computeMatcherRuntimeId({
       contractVersion: '0.5.0',

@@ -37,8 +37,8 @@ importers:
         specifier: '>=11.0.1 <12'
         version: 11.0.4
       re2js:
-        specifier: 2.8.3
-        version: 2.8.3
+        specifier: 2.8.7
+        version: 2.8.7
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -74,8 +74,8 @@ importers:
   packages/matcher-contract:
     dependencies:
       re2js:
-        specifier: 2.8.3
-        version: 2.8.3
+        specifier: 2.8.7
+        version: 2.8.7
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -1017,9 +1017,9 @@ packages:
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
 
-  re2js@2.8.3:
-    resolution: {integrity: sha512-lUKeXVwMqU302DM/WaOm33XF2hhzjGUZ8CbLg4zSAMpW2PPkJ2+is25AROevNiw+DytFmKU5gsQ92cB1Kxy+fA==}
-    engines: {node: '>=18.0.0'}
+  re2js@2.8.7:
+    resolution: {integrity: sha512-bRSL/vn3KAmlGfGNoVpcsBXLaVvl6AbuvMMWbz0m3vBj60nj+p2/biozfBUOSBP+5XTduF6mr6IO/ZVjmqqkVQ==}
+    engines: {node: '>=20.0.0'}
 
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
@@ -2113,7 +2113,7 @@ snapshots:
 
   queue-microtask@1.2.3: {}
 
-  re2js@2.8.3: {}
+  re2js@2.8.7: {}
 
   readdirp@4.1.2: {}
 

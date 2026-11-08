@@ -1,6 +1,6 @@
 # CI and agent setup
 
-Use the full scan with `--strict` in CI: `npx --yes @agenticcli/shipguard scan --json --strict`. It scans the whole checkout and exits `1` when the verdict is blocking. Do not use `--changed` in CI: on a clean checkout nothing differs from `HEAD`, so it reads no files (and a scan that reads nothing is reported as `DO_NOT_SHIP`).
+Use the full scan with `--strict` in CI: `npx --yes @agenticcli/shipguard scan --json --strict`. It scans the whole checkout and exits `1` when the verdict is blocking. Do not use `--changed` in CI: on a clean checkout nothing differs from `HEAD`, so it reads no files and reports "nothing to check" (`coverage.changed.nothingToCheck` is `true`, `filesScanned` is `0`). That is not a pass for the project.
 
 `--strict` is free on every plan.
 

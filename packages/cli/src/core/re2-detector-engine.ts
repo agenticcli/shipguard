@@ -3,7 +3,7 @@
 // PURPOSE
 // =======
 // Provides a minimal drop-in API surface for compiling and executing regex
-// patterns in detector files (src/checks/**). Uses re2js@2.8.3 (pure-JS RE2
+// patterns in detector files (src/checks/**). Uses re2js@2.8.7 (pure-JS RE2
 // engine) for linear-time, ReDoS-immune matching — identical engine as the
 // Pro path (re2jsV1Executor in @agenticcli/matcher-contract).
 //

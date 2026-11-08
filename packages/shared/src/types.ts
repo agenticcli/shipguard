@@ -278,8 +278,12 @@ export interface ScanCoverage {
   /** ShipGuard's own artifacts found in the scan folder (the `.gitignore` it writes holding only `.shipguard/`). Never scanned, never in `discovered`, so they cannot make an empty scan look scanned. */
   selfArtifacts: number
   mode: 'full' | 'changed'
-  /** `--changed` only. `listed` = every path git reported; `outsideScope` = those outside the scan folder. */
-  changed?: { listed: number; outsideScope: number }
+  /**
+   * `--changed` only. `listed` = every path git reported; `outsideScope` = those outside the scan folder.
+   * `nothingToCheck` is present (always `true`) only when git ran fine and nothing but ShipGuard's own
+   * files changed: nothing was scanned because there was nothing to scan. That scan is not degraded.
+   */
+  changed?: { listed: number; outsideScope: number; nothingToCheck?: true }
   /** Project-relative names, sorted, each list capped at 50 (the counts above are exact). */
   files: {
     binary: string[]

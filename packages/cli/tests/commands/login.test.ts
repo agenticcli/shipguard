@@ -54,6 +54,34 @@ describe('loginCommand', () => {
     exit.mockRestore()
   })
 
+  it('expired_token: says what to do next and exits 2', async () => {
+    const { logger } = await import('../../src/utils/logger.js')
+    const err = vi.spyOn(logger, 'error').mockImplementation(() => {})
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ device_code: 'd', user_code: 'A', verification_uri: 'https://agenticcli.dev/activate', expires_in: 300, interval: 1 }) })
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'expired_token' }) }) as unknown as typeof fetch
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit') }) as never)
+    await expect(loginCommand().parseAsync(['node', 'login'])).rejects.toThrow('exit')
+    expect(exit).toHaveBeenCalledWith(2)
+    expect(err.mock.calls.map(c => String(c[0]))).toContain('Sign-in timed out. Run `shipguard login` again.')
+    exit.mockRestore()
+    err.mockRestore()
+  })
+
+  it('never approved before the code expires: same message, exit 2', async () => {
+    const { logger } = await import('../../src/utils/logger.js')
+    const err = vi.spyOn(logger, 'error').mockImplementation(() => {})
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ device_code: 'd', user_code: 'A', verification_uri: 'https://agenticcli.dev/activate', expires_in: 1, interval: 1 }) })
+      .mockResolvedValue({ ok: false, json: async () => ({ error: 'authorization_pending' }) }) as unknown as typeof fetch
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit') }) as never)
+    await expect(loginCommand().parseAsync(['node', 'login'])).rejects.toThrow('exit')
+    expect(exit).toHaveBeenCalledWith(2)
+    expect(err.mock.calls.map(c => String(c[0]))).toContain('Sign-in timed out. Run `shipguard login` again.')
+    exit.mockRestore()
+    err.mockRestore()
+  })
+
   it('fallback message points to /auth/device when the server URL is untrusted', async () => {
     const { logger } = await import('../../src/utils/logger.js')
     const info = vi.spyOn(logger, 'info').mockImplementation(() => {})

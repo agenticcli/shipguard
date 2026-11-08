@@ -1,6 +1,8 @@
 # @agenticcli/shipguard
 
-Deterministic, local security and config check that runs inside your agent loop: same diff, same verdict, a real exit code your agent can read.
+**The security scanner your coding agent runs before every commit. On your machine. Flat price, no seats.**
+
+Same code, same answer: same diff, same verdict, a real exit code your agent can read.
 
 Checks for leaked secrets, auth gaps, payment webhook risks, destructive migrations, and deployment misconfigurations — before your code ships.
 
@@ -78,10 +80,12 @@ Every `--json` result (schemaVersion 6) has a `coverage` object: files discovere
 and skipped, with the reason for each skip (real binary, too large, symlink, unknown binary,
 invalid text, unreadable, special file), plus text read as UTF-16 or with stray NUL bytes
 turned into spaces. Real binaries (images, fonts, archives) are counted and are not a
-problem. A scan that read **nothing** (`NO_FILES_SCANNED`, for example an empty folder or
-`--changed` on a clean checkout), an unknown binary blob (`UNSCANNED_UNKNOWN_BINARY`), and a
+problem. A scan that read **nothing** (`NO_FILES_SCANNED`, for example an empty folder or a
+`--changed` scan where every changed file was ignored), an unknown binary blob (`UNSCANNED_UNKNOWN_BINARY`), and a
 truncated scan are `degraded` and so `DO_NOT_SHIP`. To clear a blob you trust, add its path to
-`ignore.paths`. Some formats are counted but their contents are not scanned: SQLite files
+`ignore.paths`. `--changed` when nothing changed at all is different: there is nothing to
+check, so it is not degraded and `coverage.changed.nothingToCheck` is `true` (`filesScanned` is
+`0`). Do not use that as proof a project is safe: run a full `shipguard scan` for that. Some formats are counted but their contents are not scanned: SQLite files
 outside the ASCII reading, compressed archives, and string tables inside ELF, PE, class and WASM files.
 
 ## Telemetry

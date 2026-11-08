@@ -226,6 +226,11 @@ const SEVERITY_COLORS: Record<string, (s: string) => string> = {
 
 // Local alias — SEVERITY_ICONS is already exported at top of file
 
+/** `--changed` found nothing changed (see coverage.changed.nothingToCheck): say so, never "clean scan". */
+export function renderNothingToCheck(): string {
+  return chalk.green('  ✓  Nothing to check: no files changed, so nothing was scanned.')
+}
+
 /**
  * Render grouped findings list with severity headers and FP labels.
  * Returns empty-state message if no findings.
