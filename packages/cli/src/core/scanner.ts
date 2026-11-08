@@ -100,7 +100,7 @@ const sortedCapped = (names: string[]): string[] => [...names].sort(compareScanP
 function buildCoverage(
   state: ReadFilesResult,
   mode: 'full' | 'changed',
-  changed?: { listed: number; outsideScope: number },
+  changed?: { listed: number; outsideScope: number; nothingToCheck?: true },
 ): ScanCoverage {
   return {
     discovered: state.discovered,
@@ -162,7 +162,8 @@ export async function scan(
 
   let state: ReadFilesResult
   let mode: 'full' | 'changed' = 'full'
-  let changedInfo: { listed: number; outsideScope: number } | undefined
+  let nothingToCheck = false
+  let changedInfo: { listed: number; outsideScope: number; nothingToCheck?: true } | undefined
 
   if (options.changedOnly && isGitRepo(cwd)) {
     mode = 'changed'
@@ -176,7 +177,9 @@ export async function scan(
     // The same ignore rules as the full scan, counted exactly per rule.
     const defaultCounts = new Map<string, number>()
     const candidates: string[] = []
+    let ownFilesOnly = true // every changed path is ShipGuard's own state (.shipguard/**)
     for (const rp of changed.paths) {
+      if (!isShipguardArtifactPath(rp)) ownFilesOnly = false
       const rule = classifyIgnored(rp, ignoreRules)
       if (!rule && isShipguardArtifactPath(rp)) { state.selfArtifacts++; if (state.selfArtifactFiles.length < MAX_SKIPPED_NAMES) state.selfArtifactFiles.push(rp) }
       else if (!rule) candidates.push(rp)
@@ -201,13 +204,18 @@ export async function scan(
     }
     state.discovered = candidates.length + changed.unaddressable.length + (changed.unreadable ?? []).length
 
-    if (listed === 0) {
-      // Git ran successfully and genuinely found nothing changed.
-      logger.info('--changed: git ran successfully - 0 changed files to scan.')
-    }
-    if (candidates.length === 0 && !options.json) {
+    // Git ran fine and the only changes are ShipGuard's own files (or there are none): there is
+    // nothing to check. Anything else that leaves 0 files (changed files that are all ignored,
+    // outside the scan folder, unreadable or not valid UTF-8) is NOT this case and stays degraded.
+    if (
+      ownFilesOnly && changed.outsideScope === 0 && changed.unaddressable.length === 0 &&
+      (changed.unreadable ?? []).length === 0
+    ) {
+      nothingToCheck = true
+      changedInfo.nothingToCheck = true
+    } else if (candidates.length === 0 && !options.json) {
       logger.warn(
-        '`--changed` scans only files that differ from git; on a clean checkout it scans nothing. ' +
+        '`--changed` scans only files that differ from git; every changed file was ignored or could not be read. ' +
         'Run `shipguard scan` for the whole tree.',
       )
     }
@@ -486,7 +494,7 @@ export async function scan(
   }
 
   // Nothing at all was scanned: never SAFE. Evaluated last so the detail can name every cause.
-  if (state.acceptedPaths === 0) {
+  if (state.acceptedPaths === 0 && !nothingToCheck) {
     const parts: string[] = []
     const add = (n: number, label: string): void => {
       if (n > 0) parts.push(`${n} ${label}`)

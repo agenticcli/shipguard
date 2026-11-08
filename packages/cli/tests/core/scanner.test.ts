@@ -179,10 +179,14 @@ describe('scan()', () => {
     try {
       const result = await scan({ changedOnly: true, generateReport: false, strict: false, json: false, reportPath: '.shipguard/reports/latest.md' })
       expect(result.filesScanned).toBe(0)
-      // Plan Q2: nothing was read, so the scan is NOT clean. It is degraded (NO_FILES_SCANNED) and
-      // still distinguishable from the git-failure case (which throws).
-      expect(result.degraded).toBe(true)
-      expect(result.degradedReasons?.map(r => r.code)).toContain('NO_FILES_SCANNED')
+      // Git ran and found nothing changed: there is nothing to check. Not degraded, normal verdict,
+      // flagged so a consumer can tell it from a scan that read files. (Before 2026-11-08 this was
+      // degraded NO_FILES_SCANNED / DO_NOT_SHIP; every other zero-file case still is.) It is still
+      // distinguishable from the git-failure case, which throws.
+      expect(result.degraded).toBeFalsy()
+      expect(result.degradedReasons).toBeUndefined()
+      expect(result.recommendation).toBe('SAFE_TO_SHIP')
+      expect(result.coverage?.changed?.nothingToCheck).toBe(true)
     } finally {
       process.chdir(originalCwd)
     }
