@@ -436,6 +436,46 @@ function extractJwtRoleClaim(payloadSegment: string): string | null {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Public (publishable) keys and placeholder text are not leaked secrets (0.12 trust fixes)
+// ---------------------------------------------------------------------------
+//
+// A key that is MEANT to ship to the browser is not a leak, and flagging it as a critical secret
+// on the first scan of every Supabase / Stripe / Clerk app teaches the user to ignore the tool:
+//   - Stripe and Clerk publishable keys: pk_live_ / pk_test_ (Stripe docs: publishable keys "can be
+//     publicly accessible in your web or mobile app's client-side code").
+//   - Supabase anon key: a JWT whose decoded payload says role "anon" (decoded, not guessed), and the
+//     newer sb_publishable_ key. The service_role JWT and sb_secret_ are NEVER treated as public.
+// Placeholder text in a README or .env.example (sk_live_xxxx..., your-api-key, REPLACE_ME) is not a key.
+const PUBLISHABLE_PREFIX_RE = compileDetectorRegex(`^(?:pk_(?:live|test)_|sb_publishable_)[A-Za-z0-9_\\-]+$`)
+const PLACEHOLDER_VALUE_RE = compileDetectorRegex(
+  `x{5,}|\\*{3,}|\\.{3}|your[_\\- ]?(?:api|key|secret|token|service|password|stripe|openai|supabase)|replace[_\\-]?me|change[_\\-]?me|placeholder|dummy|redacted|insert[_\\-]|<[a-z0-9_\\- ]+>`,
+  'i',
+)
+const ASSIGNED_LITERAL_RE = compileDetectorRegex(`[=:]\\s*['"\`]?([^\\s'"\`;,]+)`)
+
+/** True when `value` is a key that is designed to be public (see block comment above). Pure. */
+export function isPublicKeyValue(value: string): boolean {
+  const v = value.trim()
+  if (PUBLISHABLE_PREFIX_RE.test(v)) return true
+  const parts = v.split('.')
+  if (parts.length === 3 && parts[0].startsWith('eyJ') && parts[1].startsWith('eyJ')) {
+    return extractJwtRoleClaim(parts[1]) === 'anon'
+  }
+  return false
+}
+
+/** True when `value` is obvious placeholder text, not a real credential. Pure. */
+export function isPlaceholderValue(value: string): boolean {
+  return PLACEHOLDER_VALUE_RE.test(value)
+}
+
+/** The literal written after `=` or `:` in `rest`, up to the next quote, space, `;` or `,` ('' if none). */
+function assignedLiteral(rest: string): string {
+  const m = ASSIGNED_LITERAL_RE.exec(rest)
+  return m ? (m.groups[0] ?? '') : ''
+}
+
 function checkSupabaseServiceRoleJwt(file: FileInfo, findings: Finding[], policy: Policy, dedupe: SecretDedupe): void {
   const { content, relativePath } = file
   const lines = content.split('\n')
@@ -541,6 +581,8 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
         const line = lines[i]
         const match = NEXT_PUBLIC_SECRET_RE.exec(line)
         if (match && match.groups[0]) {
+          // A publishable key (Supabase anon, Stripe/Clerk pk_) or placeholder text is meant to be public.
+          if (isPublicKeyValue(assignedLiteral(line.slice(match.index))) || isPlaceholderValue(match.groups[0])) continue
           const id = 'exposed_env'
           findings.push({
             id,
@@ -618,6 +660,12 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
 
           // Extract the captured group (the secret value) for redaction
           const secretValue = lineMatch.groups[0] ?? lineMatch.match
+          // Public keys and placeholder text are not leaked secrets (see isPublicKeyValue).
+          if (isPlaceholderValue(secretValue)) continue
+          // Only a keyword-style match (`name = value`) may look past its captured slice to the full value
+          // (a JWT's capture stops at the first dot); never read a LATER value on the line for a bare-token match.
+          const isAssignMatch = lineMatch.match.includes('=') || lineMatch.match.includes(':')
+          if (isPublicKeyValue((isAssignMatch ? assignedLiteral(line.slice(lineMatch.index)) : '') || secretValue)) continue
           const secretFinding: Finding = {
             id: pattern.id,
             title: pattern.name,
