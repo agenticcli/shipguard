@@ -89,6 +89,14 @@ describe('public_admin_route: a page is protected only by a real gate', () => {
     const page = f('app/account/page.tsx', `export default async function A() {\n  const supabase = createClient();\n  const [user, details] = await Promise.all([\n    getUser(supabase),\n    getDetails(supabase)\n  ]);\n  if (!user) {\n    return redirect('/signin');\n  }\n  return <div/>\n}`)
     expect(adminFindings([page])).toHaveLength(0)
   })
+  it('getUser(clientId) is a data fetch, not a session fetch, even when the next line tests !user', () => {
+    const page = f('app/dashboard/page.tsx', `export default async function P({ params }) {\n  const user = await getUser(clientId);\n  if (!user) notFound();\n  return <div/>\n}`)
+    expect(adminFindings([page])).toHaveLength(1)
+  })
+  it('a destructuring KEY is not a bound name: if (!res.data) notFound() does not guard', () => {
+    const page = f('app/dashboard/page.tsx', `export default async function P() {\n  const { data: { user } } = await supabase.auth.getUser();\n  const res = await db.get();\n  if (!res.data) notFound();\n  return <div/>\n}`)
+    expect(adminFindings([page])).toHaveLength(1)
+  })
   it('a guard that tests the fetched variable is accepted in its common spellings', () => {
     for (const body of [
       `const session = await auth(); if (!session) redirect('/login');`,

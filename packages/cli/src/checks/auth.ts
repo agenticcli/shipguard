@@ -740,7 +740,7 @@ const RE2_ENFORCING_CALL = compileDetectorRegex(
   `\\b(?:require(?:Auth|User|Session|Admin|Login)\\w*|assertAuth\\w*|ensureAuth\\w*|withAuth\\w*|verifyToken|clerkMiddleware|authMiddleware)\\s*\\(|\\bauth\\.protect\\s*\\(`,
 )
 const RE2_SESSION_FETCH = compileDetectorRegex(
-  `\\b(?:auth|getAuth|getUser|getSession|getClaims|currentUser|validateRequest|getCurrentUser)\\s*\\(\\s*(?:(?:supabase|client|sb|req|request|ctx|context)\\w*)?\\s*\\)|\\bgetServerSession\\s*\\(|\\buse(?:Session|User|Auth)\\s*\\(`,
+  `\\b(?:auth|getAuth|getUser|getSession|getClaims|currentUser|validateRequest|getCurrentUser)\\s*\\(\\s*(?:supabase|client|sb|req|request|ctx|context)?\\s*\\)|\\bgetServerSession\\s*\\(|\\buse(?:Session|User|Auth)\\s*\\(`,
 )
 // What a guard does once its condition is true: turn the request away.
 const RE2_GUARD_ACTION = compileDetectorRegex(
@@ -813,7 +813,14 @@ function assignedNames(text: string, fetchIdx: number): string[] {
   const m = RE2_ASSIGN_TARGET.exec(before.slice(kw))
   if (!m) return []
   const names: string[] = []
-  for (const id of RE2_IDENT.matchAll(m.groups[0] ?? '')) names.push(id.match)
+  const lhs = m.groups[0] ?? ''
+  for (const id of RE2_IDENT.matchAll(lhs)) {
+    // `{ data: { user } }`: `data` is a property KEY, only `user` is a bound name. `{ data: session }` binds `session`.
+    let k = id.index + id.match.length
+    while (k < lhs.length && (lhs[k] === ' ' || lhs[k] === '\t' || lhs[k] === '\n' || lhs[k] === '\r')) k++
+    if (lhs[k] === ':') continue
+    names.push(id.match)
+  }
   return names
 }
 
