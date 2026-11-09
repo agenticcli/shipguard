@@ -449,7 +449,7 @@ function extractJwtRoleClaim(payloadSegment: string): string | null {
 // Placeholder text in a README or .env.example (sk_live_xxxx..., your-api-key, REPLACE_ME) is not a key.
 const PUBLISHABLE_PREFIX_RE = compileDetectorRegex(`^(?:pk_(?:live|test)_|sb_publishable_)[A-Za-z0-9_\\-]+$`)
 const PLACEHOLDER_VALUE_RE = compileDetectorRegex(
-  `x{5,}|\\*{3,}|\\.{3}|your[_\\- ]?(?:api|key|secret|token|service|password|stripe|openai|supabase)|replace[_\\-]?me|change[_\\-]?me|placeholder|dummy|redacted|insert[_\\-]|<[a-z0-9_\\- ]+>`,
+  `^(?:[a-z]{1,6}[_-]){0,3}x{5,}(?:[_-]x{3,})*$|\\*{3,}|\\.{3}|your[_\\- ]?(?:api|key|secret|token|service|password|stripe|openai|supabase)|replace[_\\-]?me|change[_\\-]?me|placeholder|dummy|redacted|insert[_\\-]|<[a-z0-9_\\- ]+>`,
   'i',
 )
 const ASSIGNED_LITERAL_RE = compileDetectorRegex(`[=:]\\s*['"\`]?([^\\s'"\`;,]+)`)

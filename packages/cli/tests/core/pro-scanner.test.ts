@@ -836,4 +836,21 @@ describe('runProRules: pattern rule context.requiresPattern (sg012 level A)', ()
     const f = runProRules([rule], [makeFile('app/actions.ts', '"use server"\nexport async function save() {}')], POLICY)
     expect(f).toHaveLength(1)
   })
+
+  it('a malformed requiresPattern fails closed: one finding per matched file, no throw', () => {
+    const bad = makeRule({
+      id: 'pattern-requires-bad',
+      matcher: {
+        type: 'pattern',
+        fileGlob: '**/*.ts',
+        patterns: ['export'],
+        antiPatterns: [],
+        flags: '',
+        context: { requiresPattern: '(' },
+      },
+    })
+    const f = runProRules([bad], [makeFile('a.ts', 'export const a = 1')], POLICY)
+    expect(f).toHaveLength(1)
+    expect(f[0].evidence).toContain('fail closed')
+  })
 })

@@ -90,6 +90,9 @@ describe('placeholder text is not flagged', () => {
       expect(isPlaceholderValue(v)).toBe(true)
     }
     expect(isPlaceholderValue(SK_LIVE)).toBe(false)
+    // a real key that merely contains a run of x is NOT a placeholder
+    expect(isPlaceholderValue(['sk', 'live', 'AbCdxxxxxEfGh1234567890abcd'].join('_'))).toBe(false)
+    expect(isPlaceholderValue('re_xxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxx')).toBe(true)
   })
 
   it('README and .env.local.example placeholders are not flagged', () => {
