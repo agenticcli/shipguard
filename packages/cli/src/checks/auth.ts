@@ -110,9 +110,9 @@ const RE2_INLINE_AUTH_CHECK = compileDetectorRegex(
 )
 
 // ─── Middleware file matchers ─────────────────────────────────────────────────
-// Path classifier — native RegExp is fine (non-content).
+// Path classifier — native RegExp is fine (non-content). Next 16 renamed middleware.ts to proxy.ts.
 // eslint-disable-next-line no-restricted-syntax
-const MIDDLEWARE_FILE_PATTERN = /^(?:src\/)?middleware\.[tj]s$/
+const MIDDLEWARE_FILE_PATTERN = /^(?:src\/)?(?:middleware|proxy)\.[tj]s$/
 
 // ─── Next.js detection ───────────────────────────────────────────────────────
 // Detect Next.js without reading disk (checks are pure (files, policy) → findings).

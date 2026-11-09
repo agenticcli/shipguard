@@ -363,6 +363,41 @@ describe('Next.js middleware.ts coverage', () => {
   })
 })
 
+// N-proxy (benchmark 2026-11-08, D7): Next 16 renamed middleware.ts to proxy.ts. A clean Next 16
+// app was told "No Next.js middleware.ts found" - a false claim.
+describe('Next.js 16 proxy.ts counts as middleware', () => {
+  const PROXY_WITH_ADMIN = makeFile(
+    'proxy.ts',
+    `import { NextResponse } from 'next/server'
+
+export function proxy(req: Request) {
+  return NextResponse.next()
+}
+
+export const config = { matcher: ['/admin/:path*', '/dashboard/:path*'] }`,
+  )
+
+  it('does NOT claim middleware.ts is missing when proxy.ts covers admin routes', () => {
+    const findings = authCheck.run([ADMIN_PAGE_WITH_AUTH, PROXY_WITH_ADMIN], policy)
+    expect(findings.filter((f) => /No Next\.js middleware/.test(f.title))).toEqual([])
+    expect(findings.filter((f) => f.file === 'proxy.ts' || f.file === 'middleware.ts')).toEqual([])
+  })
+
+  it('also accepts src/proxy.ts', () => {
+    const f = makeFile('src/proxy.ts', PROXY_WITH_ADMIN.content)
+    const findings = authCheck.run([ADMIN_PAGE_WITH_AUTH, f], policy)
+    expect(findings.filter((x) => /No Next\.js middleware/.test(x.title))).toEqual([])
+  })
+
+  it('still reviews proxy.ts content: no admin coverage is reported on proxy.ts', () => {
+    const f = makeFile('proxy.ts', "export function proxy() { return null }")
+    const findings = authCheck.run([ADMIN_PAGE_UNPROTECTED, f], policy)
+    const hit = findings.filter((x) => x.file === 'proxy.ts')
+    expect(hit.length).toBe(1)
+    expect(hit[0].explanation).toMatch(/does not reference/)
+  })
+})
+
 describe('Policy blocking', () => {
   it('findings are non-blocking when ids not in policy.block', () => {
     const findings = authCheck.run([ADMIN_PAGE_UNPROTECTED], permissivePolicy)
