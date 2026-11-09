@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import type { RepoIdKind } from '@agenticcli/shared'
 import { DEFAULT_REPO_ID_FALLBACK_PATH } from '@agenticcli/shared'
 import { logger } from '../../utils/logger.js'
+import { assertCwdAlive } from '../../utils/cwd-guard.js'
 
 export interface RepoIdentity {
   repoId: string
@@ -77,6 +78,7 @@ export function resolveRepoIdentity(cwd: string): RepoIdentity {
       }
     }
     const id = randomUUID()
+    assertCwdAlive()
     mkdirSync(dirname(fallbackPath), { recursive: true })
     writeFileSync(fallbackPath, `${id}\n`, 'utf-8')
     ensureGitignored(cwd, '.shipguard/')

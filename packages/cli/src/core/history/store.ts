@@ -5,6 +5,7 @@ import type { StateStatus } from '@agenticcli/shared'
 import { CURRENT_SCHEMA_VERSION, MIGRATIONS } from './schema.js'
 import { keyFindingIdentity, loadOrCreateSalt } from './finding-key.js'
 import { logger } from '../../utils/logger.js'
+import { assertCwdAlive } from '../../utils/cwd-guard.js'
 import type { RuleOutcome, ScanSnapshot } from './regression.js'
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,7 @@ export class HistoryStore {
     const preExisted = existsSync(dbPath)
 
     try {
+      assertCwdAlive()
       mkdirSync(dirname(dbPath), { recursive: true })
     } catch (err) {
       return {
