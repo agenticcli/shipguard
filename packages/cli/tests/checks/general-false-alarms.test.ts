@@ -73,6 +73,37 @@ describe('public_admin_route: a page is protected only by a real gate', () => {
     expect(adminFindings([above, f('app/settings/page.tsx', PAGE)])).toHaveLength(1)
   })
 
+  it('X1 getUser() then an unrelated early return on empty rows is flagged', () => {
+    const page = f('app/dashboard/page.tsx', `export default async function P() { const { data: { user } } = await supabase.auth.getUser(); const rows = await db.list(); if (rows.length === 0) return <Empty/>; return <div/> }`)
+    expect(adminFindings([page])).toHaveLength(1)
+  })
+  it('X2 getUser() then notFound() on a different variable is flagged', () => {
+    const page = f('app/dashboard/page.tsx', `export default async function P() { const { data: { user } } = await supabase.auth.getUser(); const row = await db.get(); if (!row) notFound(); return <div/> }`)
+    expect(adminFindings([page])).toHaveLength(1)
+  })
+  it('X3 getUser() then a catch that rethrows is flagged', () => {
+    const page = f('app/dashboard/page.tsx', `export default async function P() { const { data: { user } } = await supabase.auth.getUser(); try { await db.save() } catch (e) { throw e } return <div/> }`)
+    expect(adminFindings([page])).toHaveLength(1)
+  })
+  it('getUser(supabase) inside Promise.all with a later `if (!user) redirect` is a guard', () => {
+    const page = f('app/account/page.tsx', `export default async function A() {\n  const supabase = createClient();\n  const [user, details] = await Promise.all([\n    getUser(supabase),\n    getDetails(supabase)\n  ]);\n  if (!user) {\n    return redirect('/signin');\n  }\n  return <div/>\n}`)
+    expect(adminFindings([page])).toHaveLength(0)
+  })
+  it('a guard that tests the fetched variable is accepted in its common spellings', () => {
+    for (const body of [
+      `const session = await auth(); if (!session) redirect('/login');`,
+      `const user = await getUser(); if (user == null) { redirect('/login') }`,
+      `const { data } = await supabase.auth.getUser(); if (!data.user) redirect('/login');`,
+      `const { data: { user }, error } = await supabase.auth.getUser(); if (error || !user) { redirect('/login') }`,
+      `const session = await getServerSession(authOptions); if (!session?.user) throw new Error('no')`,
+      `if (!(await auth())) redirect('/login');`,
+      `const user = (await getUser()) || redirect('/login');`,
+    ]) {
+      const page = f('app/dashboard/page.tsx', `export default async function P() { ${body} return <div/> }`)
+      expect(adminFindings([page]), body).toHaveLength(0)
+    }
+  })
+
   // ---- real guards that must not be flagged ----
   it('if (!user) redirect() after getUser() is a guard', () => {
     const page = f('app/dashboard/page.tsx', `export default async function P() { const { data: { user } } = await supabase.auth.getUser(); if (!user) { redirect('/login') } return <div/> }`)

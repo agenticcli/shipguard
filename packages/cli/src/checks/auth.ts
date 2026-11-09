@@ -740,11 +740,16 @@ const RE2_ENFORCING_CALL = compileDetectorRegex(
   `\\b(?:require(?:Auth|User|Session|Admin|Login)\\w*|assertAuth\\w*|ensureAuth\\w*|withAuth\\w*|verifyToken|clerkMiddleware|authMiddleware)\\s*\\(|\\bauth\\.protect\\s*\\(`,
 )
 const RE2_SESSION_FETCH = compileDetectorRegex(
-  `\\b(?:auth|getAuth|getUser|getSession|getClaims|currentUser|validateRequest|getCurrentUser)\\s*\\(\\s*\\)|\\bgetServerSession\\s*\\(|\\buse(?:Session|User|Auth)\\s*\\(`,
+  `\\b(?:auth|getAuth|getUser|getSession|getClaims|currentUser|validateRequest|getCurrentUser)\\s*\\(\\s*(?:(?:supabase|client|sb|req|request|ctx|context)\\w*)?\\s*\\)|\\bgetServerSession\\s*\\(|\\buse(?:Session|User|Auth)\\s*\\(`,
 )
-const RE2_GUARD_AFTER = compileDetectorRegex(
-  `\\bif\\s*\\([^\\n]{0,160}?\\)\\s*(?:\\{\\s*)?(?:return\\s+)?(?:(?:redirect|permanentRedirect|notFound|unauthorized|forbidden)\\s*\\(|throw\\b|null\\b|<)|(?:\\|\\||\\?\\?)\\s*(?:redirect|notFound|unauthorized)\\s*\\(|\\?\\s*null\\s*:|\\bthrow\\b`,
+// What a guard does once its condition is true: turn the request away.
+const RE2_GUARD_ACTION = compileDetectorRegex(
+  `^\\s*(?:\\{\\s*)?(?:return\\s+)?(?:(?:redirect|permanentRedirect|notFound|unauthorized|forbidden)\\s*\\(|throw\\b|null\\b|<|router\\.(?:push|replace)\\s*\\()`,
 )
+const RE2_IF_OPEN = compileDetectorRegex(`\\bif\\s*\\(`)
+const RE2_INLINE_GUARD = compileDetectorRegex(`^[^\\n;]{0,60}(?:\\|\\||\\?\\?)\\s*(?:redirect|notFound|unauthorized|forbidden)\\s*\\(`)
+const RE2_ASSIGN_TARGET = compileDetectorRegex(`^(?:const|let|var)\\s+([^=;]{1,120}?)\\s*=`)
+const RE2_IDENT = compileDetectorRegex(`[A-Za-z_$][\\w$]*`)
 
 const RE2_DEFAULT_FN = compileDetectorRegex(`export\\s+default\\s+(?:async\\s+)?function\\s*(\\w*)\\s*\\(`)
 const RE2_DEFAULT_REF = compileDetectorRegex(`export\\s+default\\s+(\\w+)\\s*;?\\s*$`, 'm')
@@ -799,11 +804,77 @@ function componentText(code: string): string {
   return body + '\n' + extra
 }
 
+/** Identifiers a session fetch is assigned to: `const user`, `const { data: { user } }`, `const [a, b]`. */
+function assignedNames(text: string, fetchIdx: number): string[] {
+  const before = text.slice(Math.max(0, fetchIdx - 300), fetchIdx)
+  // the declaration the fetch belongs to: the LAST const/let/var before it (also `= await Promise.all([ ...`)
+  const kw = Math.max(before.lastIndexOf('const '), before.lastIndexOf('let '), before.lastIndexOf('var '))
+  if (kw === -1 || before.slice(kw).includes(';')) return []
+  const m = RE2_ASSIGN_TARGET.exec(before.slice(kw))
+  if (!m) return []
+  const names: string[] = []
+  for (const id of RE2_IDENT.matchAll(m.groups[0] ?? '')) names.push(id.match)
+  return names
+}
+
+/** Drop leading whitespace and closing parens (the end of an `if (...)` condition). */
+function trimLead(t: string): string {
+  let k = 0
+  while (k < t.length && (t[k] === ' ' || t[k] === '\t' || t[k] === '\n' || t[k] === '\r' || t[k] === ')')) k++
+  return t.slice(k)
+}
+
+/** First `n` lines of `text`. */
+function firstLines(text: string, n: number): string {
+  let end = 0
+  for (let k = 0; k < n; k++) {
+    const nl = text.indexOf('\n', end)
+    if (nl === -1) return text
+    end = nl + 1
+  }
+  return text.slice(0, end)
+}
+
+/** `if (<cond naming the variable with a negation/comparison>) <redirect|notFound|throw|return null>` in `win`. */
+function testsVariableThenTurnsAway(win: string, names: string[]): boolean {
+  for (const open of RE2_IF_OPEN.matchAll(win)) {
+    let depth = 0
+    let close = -1
+    for (let k = open.index + open.match.length - 1; k < win.length && k < open.index + 200; k++) {
+      if (win[k] === '(') depth++
+      else if (win[k] === ')' && --depth === 0) {
+        close = k
+        break
+      }
+    }
+    if (close === -1) continue
+    const cond = win.slice(open.index + open.match.length, close)
+    const condIds = new Set<string>()
+    for (const id of RE2_IDENT.matchAll(cond)) condIds.add(id.match)
+    const namesIt = names.some((nm) => condIds.has(nm))
+    const tests = cond.includes('!') || cond.includes('==')
+    if (namesIt && tests && RE2_GUARD_ACTION.test(win.slice(close + 1))) return true
+  }
+  for (const nm of names) {
+    const tail = win.split(nm)
+    for (let k = 1; k < tail.length; k++) if (RE2_INLINE_GUARD.test(tail[k])) return true
+  }
+  return false
+}
+
 function gatesAccess(src: string): boolean {
   const text = componentText(extractExecutableText(src))
   if (RE2_ENFORCING_CALL.test(text)) return true
   for (const m of RE2_SESSION_FETCH.matchAll(text)) {
-    if (RE2_GUARD_AFTER.test(text.slice(m.index + m.match.length))) return true
+    const end = m.index + m.match.length
+    const lineStart = text.lastIndexOf('\n', m.index) + 1
+    // fetch sits inside the guard's own condition: `if (!(await auth())) redirect(...)`
+    const prefix = text.slice(lineStart, m.index)
+    if (RE2_IF_OPEN.test(prefix) && RE2_GUARD_ACTION.test(trimLead(text.slice(text.indexOf(')', end) + 1)))) return true
+    if (RE2_INLINE_GUARD.test(text.slice(end))) return true
+    // otherwise the guard must test the variable the fetch was assigned to, within ~6 lines
+    const names = assignedNames(text, m.index)
+    if (names.length > 0 && testsVariableThenTurnsAway(firstLines(text.slice(end), 7), names)) return true
   }
   return false
 }
