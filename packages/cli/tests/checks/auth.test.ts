@@ -383,6 +383,18 @@ export const config = { matcher: ['/admin/:path*', '/dashboard/:path*'] }`,
     expect(findings.filter((f) => f.file === 'proxy.ts' || f.file === 'middleware.ts')).toEqual([])
   })
 
+  it('a catch-all matcher (the Next.js / Supabase / Clerk default) counts as covering every route', () => {
+    const f = makeFile(
+      'proxy.ts',
+      `export async function proxy(request: Request) { return updateSession(request) }
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png)$).*)"],
+}`,
+    )
+    const findings = authCheck.run([ADMIN_PAGE_WITH_AUTH, f], policy)
+    expect(findings.filter((x) => x.id === 'public_admin_route')).toEqual([])
+  })
+
   it('also accepts src/proxy.ts', () => {
     const f = makeFile('src/proxy.ts', PROXY_WITH_ADMIN.content)
     const findings = authCheck.run([ADMIN_PAGE_WITH_AUTH, f], policy)

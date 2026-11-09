@@ -99,7 +99,8 @@ const RE2_EXPRESS_AUTH_MIDDLEWARE_PATTERN = compileDetectorRegex(
 // Middleware content coverage — checks whether middleware.ts references sensitive routes.
 // No lookahead/lookbehind/backreference → RE2-safe.
 const RE2_MIDDLEWARE_ADMIN_COVERAGE = compileDetectorRegex(
-  `(?:admin|dashboard|billing|account|management)`,
+  // `\(\?!_next` is the catch-all matcher every Next.js starter ships (matches all routes except static files).
+  `(?:admin|dashboard|billing|account|management|\\(\\?!_next)`,
 )
 
 // Inline auth check — verifies whether a 300-char route call slice contains auth middleware.
