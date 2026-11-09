@@ -447,9 +447,10 @@ function extractJwtRoleClaim(payloadSegment: string): string | null {
 //   - Supabase anon key: a JWT whose decoded payload says role "anon" (decoded, not guessed), and the
 //     newer sb_publishable_ key. The service_role JWT and sb_secret_ are NEVER treated as public.
 // Placeholder text in a README or .env.example (sk_live_xxxx..., your-api-key, REPLACE_ME) is not a key.
-const PUBLISHABLE_PREFIX_RE = compileDetectorRegex(`^(?:pk_(?:live|test)_|sb_publishable_)[A-Za-z0-9_\\-]+$`)
+const PUBLISHABLE_PREFIX_RE = compileDetectorRegex(`^(?:pk_(?:live|test)_|sb_publishable_|phc_)[A-Za-z0-9_\\-]+$`)
 const PLACEHOLDER_VALUE_RE = compileDetectorRegex(
-  `^(?:[a-z]{1,6}[_-]){0,3}x{3,}(?:[_-]x{3,})*$|\\*{3,}|\\.{3}|\u2026|^your[_\\- ]|[_\\-]here$|replace[_\\-]?me|change[_\\-]?me|^(?:changeme|todo|tbd|none|null|undefined|secret|password|passw0rd|test|dummy|example|fixme)$|placeholder|redacted|insert[_\\-]|<[^>]{1,60}>|^\\{\\{.*\\}\\}$|^\\$\\{.*\\}$|^\\[[a-z0-9_\\- ]+\\]$|^%[a-z0-9_]+%$|:\\/\\/[^\\s:\\/@]*:(?:password|secret|changeme|your[_\\-]?password|x{3,}|\\*+)@`,
+  // Every alternative is anchored to the WHOLE value (or, for a URL, to the whole password part).
+  `^(?:[a-z]{1,6}[_-]){0,3}x{3,}(?:[_-]x{3,})*$|\\*{3,}|\\.{3}|\u2026|^(?:[a-z0-9]{1,8}[_\\-]){0,3}your[_\\- ].*$|^.*[_\\-]here$|^(?:[a-z0-9]{1,8}[_\\-]){0,3}(?:replace[_\\-]?me|change[_\\-]?me|placeholder|redacted|dummy|todo|tbd|fixme)(?:[_\\-](?:replace[_\\-]?me|change[_\\-]?me|placeholder|redacted|dummy|todo|tbd|fixme))*$|^(?:changeme|secret|password|passw0rd|test|example|none|null|undefined)$|^<[^>]{1,60}>$|^\\{\\{.*\\}\\}$|^\\$\\{.*\\}$|^\\[[a-z0-9_\\- ]+\\]$|^%[a-z0-9_]+%$|:\\/\\/[^\\s:\\/@]*:(?:<[^>@]{1,40}>|\\$\\{[^}@]+\\}|\\{\\{[^}@]+\\}\\}|%[A-Za-z0-9_]+%|your[_\\-]?password|change[_\\-]?me|\\*+|x{3,})@`,
   'i',
 )
 const ASSIGNED_LITERAL_RE = compileDetectorRegex(`[=:]\\s*['"\`]?([^\\s'"\`;,]+)`)
@@ -519,15 +520,36 @@ function checkSupabaseServiceRoleJwt(file: FileInfo, findings: Finding[], policy
 // ---------------------------------------------------------------------------
 
 const SECRET_KEY_NAME_RE = compileDetectorRegex(
-  `(?:SECRET|PASSWORD|PASSWD|PRIVATE|TOKEN|API_?KEY|ACCESS_?KEY|SERVICE_?ROLE|CREDENTIAL|DATABASE_URL|DB_URL|CONNECTION_STRING|_KEY$|_PAT$|^KEY$)`,
+  `(?:SECRET|PASS|PWD|PRIVATE|TOKEN|API_?KEY|ACCESS_?KEY|SERVICE_?ROLE|CREDENTIAL|DATABASE_URL|DB_URL|CONNECTION_STRING|SALT|SESSION|JWT|COOKIE|SIGNING|WEBHOOK|DSN|AUTH|_KEY$|_PAT$|^KEY$)`,
   'i',
 )
-const CREDENTIAL_URL_RE = compileDetectorRegex(`[a-z][a-z0-9+.\\-]*:\\/\\/[^\\s:\\/@]+:[^\\s@]+@`, 'i')
+const STRONG_SECRET_NAME_RE = compileDetectorRegex(`(?:SECRET|PRIVATE|PASSWORD|PASSWD|SERVICE_?ROLE|SIGNING)`, 'i')
+const PUBLIC_PREFIX_KEY_RE = compileDetectorRegex(`^(?:NEXT_PUBLIC|VITE|EXPO_PUBLIC|PUBLIC|REACT_APP|NUXT_PUBLIC|GATSBY)_`)
+// Credentials inside a URL: scheme://user:password@host or scheme://:password@host (empty user).
+const URL_USERINFO_RE = compileDetectorRegex(`^[a-z][a-z0-9+.\\-]*:\\/\\/([^\\/\\s@?#]*)@`, 'i')
+// Shapes that are public or plain configuration, never a secret. Everything else in a tracked .env is flagged.
+const PUBLIC_CONFIG_VALUE_RE = compileDetectorRegex(
+  `^(?:true|false|yes|no|on|off|0|1|[0-9]{1,5}|development|production|test|staging|preview|local|debug|info|warn|error|trace|silent|[a-z]{2}-[a-z]+-[0-9]|https?:\\/\\/[^\\s@]+|[a-z0-9][a-z0-9.\\-]*\\.[a-z]{2,}(?::[0-9]{1,5})?(?:\\/[^\\s@]*)?|localhost(?::[0-9]{1,5})?|127\\.0\\.0\\.1(?::[0-9]{1,5})?)$`,
+  'i',
+)
+
+/** True when the userinfo part of a URL carries a password that is not a whole-token placeholder. Pure. */
+function urlHasRealPassword(value: string): boolean {
+  const m = URL_USERINFO_RE.exec(value)
+  if (!m) return false
+  const info = m.groups[0] ?? ''
+  const colon = info.indexOf(':')
+  if (colon === -1) return false // user only (git@host): no password
+  const pw = info.slice(colon + 1)
+  if (pw === '') return false
+  return !isPlaceholderValue(`://u:${pw}@`)
+}
 
 /**
- * True when a .env file carries something that is a secret. A tracked .env that holds only public
- * values (Supabase anon key, pk_ keys, sb_publishable_, URLs, flags, empty or placeholder values) is
- * not an "exposed secrets file". Pure.
+ * True when a .env file carries something that could be a secret. Inverted on purpose (fail closed): ANY
+ * non-empty value flags the file unless it is a known-public shape (anon JWT, pk_ / sb_publishable_ keys, a
+ * NEXT_PUBLIC_-style variable that is not secret-named, booleans, ports, hostnames and URLs without
+ * credentials) or a whole-value placeholder. Pure.
  */
 export function envFileHasSecret(content: string): boolean {
   for (const raw of content.split('\n')) {
@@ -540,9 +562,16 @@ export function envFileHasSecret(content: string): boolean {
     const q = value.charAt(0)
     if ((q === '"' || q === "'") && value.indexOf(q, 1) > 0) value = value.slice(1, value.indexOf(q, 1))
     else value = value.split(/\s+#/)[0].trim()
-    if (value === '' || isPublicKeyValue(value) || isPlaceholderValue(value)) continue
-    if (CREDENTIAL_URL_RE.test(value)) return true
-    if (SECRET_KEY_NAME_RE.test(key)) return true
+    if (value === '') continue
+    if (URL_USERINFO_RE.test(value)) {
+      if (urlHasRealPassword(value)) return true
+      continue
+    }
+    if (isPublicKeyValue(value) || isPlaceholderValue(value)) continue
+    if (value.includes('hooks.slack.com/') || value.includes('/api/webhooks/')) return true // webhook URLs are secrets
+    if (PUBLIC_PREFIX_KEY_RE.test(key) && !STRONG_SECRET_NAME_RE.test(key)) continue // shipped to the browser by design
+    if (!SECRET_KEY_NAME_RE.test(key) && PUBLIC_CONFIG_VALUE_RE.test(value)) continue
+    return true
   }
   return false
 }

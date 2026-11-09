@@ -739,6 +739,7 @@ describe('Lexer: conservative on uncertainty — malformed input scanned, never 
 const broken = "unterminated
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )
@@ -781,6 +782,7 @@ describe('Lexer: no ReDoS pattern — no .*? inside lookbehinds', () => {
       `import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )
@@ -799,6 +801,7 @@ export default async function AdminPage() {
 import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )
@@ -813,6 +816,7 @@ export default async function AdminPage() {
 import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )

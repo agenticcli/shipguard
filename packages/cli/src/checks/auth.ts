@@ -76,27 +76,10 @@ const RE2_EXPRESS_ROUTE_DEFINITION = compileDetectorRegex(
 // The dead AUTH_CALL_SITE_PATTERN (with a /g stale-lastIndex hazard and a
 // variable-width lookbehind (?<!\/{2}[^\n]*?)) is also DELETED.
 // No lookahead/lookbehind/backreference → RE2-safe.
-// 0.12: also the session/user helpers the common stacks use (Supabase getUser/getClaims, Clerk currentUser,
-// Lucia validateRequest, hooks for client pages) and a notFound()/unauthorized()/forbidden() guard.
+// Auth calls for the API-route check. 0.12: also the session/user helpers the common stacks use.
 const RE2_AUTH_CALL_PATTERN = compileDetectorRegex(
-  `(?:auth|getAuth|getServerSession|getSession|getUser|getClaims|currentUser|requireAuth|requireUser|requireSession|requireAdmin|verifyToken|verifyAuth|withAuth|validateRequest|clerkMiddleware|authMiddleware|useSession|useUser|useAuth|notFound|unauthorized|forbidden)\\s*\\(`,
+  `(?:auth|getAuth|getServerSession|getSession|getUser|getClaims|currentUser|requireAuth|requireUser|requireSession|requireAdmin|verifyToken|verifyAuth|withAuth|validateRequest|clerkMiddleware|authMiddleware)\\s*\\(`,
 )
-
-// redirect('/login') style guard. The lexer blanks string literals, so this runs over raw lines that
-// are not comments.
-const RE2_LOGIN_REDIRECT = compileDetectorRegex(
-  `redirect\\s*\\(\\s*['"\`]/?(?:auth/|account/)?(?:log-?in|sign-?in|signin|sign-?up)`,
-  'i',
-)
-
-function hasLoginRedirect(content: string): boolean {
-  for (const raw of content.split('\n')) {
-    const line = raw.trim()
-    if (line.startsWith('//') || line.startsWith('*') || line.startsWith('/*')) continue
-    if (RE2_LOGIN_REDIRECT.test(line)) return true
-  }
-  return false
-}
 
 // Commented-out auth — matches lines where a comment marker precedes an auth call.
 // The [^\n]* allows tokens like `const session = await` between the marker and the call.
@@ -717,7 +700,7 @@ function extractExecutableText(src: string): string {
  */
 function hasActiveAuthCall(content: string): boolean {
   const execText = extractExecutableText(content)
-  return RE2_AUTH_CALL_PATTERN.test(execText) || hasLoginRedirect(content)
+  return RE2_AUTH_CALL_PATTERN.test(execText)
 }
 
 // eslint-disable-next-line no-restricted-syntax -- path classifier, not content
@@ -726,11 +709,17 @@ function isPageFile(rp: string): boolean {
   return PAGE_FILE_PATTERN.test(rp)
 }
 
-/** Layout files (layout.ts/tsx/js/jsx) from the app root down to the page's directory. */
+/**
+ * Layout files from the sensitive segment folder (app/dashboard, app/admin, ...) down to the page's folder.
+ * The root layout and any layout above the sensitive segment are NOT included: they usually read the
+ * session only to draw a nav bar, which protects nothing.
+ */
 function layoutChain(pagePath: string, byPath: Map<string, FileInfo>): FileInfo[] {
   const segs = pagePath.split('/').slice(0, -1)
+  const start = segs.findIndex((x) => RE2_SENSITIVE_SEGMENT.test(x))
   const out: FileInfo[] = []
-  for (let n = 1; n <= segs.length; n++) {
+  if (start === -1) return out
+  for (let n = start + 1; n <= segs.length; n++) {
     const dir = segs.slice(0, n).join('/')
     for (const ext of ['tsx', 'ts', 'jsx', 'js']) {
       const f = byPath.get(`${dir}/layout.${ext}`)
@@ -738,6 +727,85 @@ function layoutChain(pagePath: string, byPath: Map<string, FileInfo>): FileInfo[
     }
   }
   return out
+}
+
+// ─── Does this page / layout actually GATE access? ───────────────────────────
+// Fetching the session is not protection: the result has to be checked and the request turned away.
+// Counts: an enforcing call (requireUser(), auth.protect()), or a session fetch with no data argument whose
+// result is followed by redirect / notFound / unauthorized / throw / `return null`, inside the component.
+// Does not count: anything in a comment, getUser(<id>) (a data fetch), a notFound() for a missing row with no
+// session fetch before it, a function that nothing calls, the root layout.
+const RE2_SENSITIVE_SEGMENT = compileDetectorRegex(`^(?:admin|dashboard|billing|account|settings|management|debug|internal)$`)
+const RE2_ENFORCING_CALL = compileDetectorRegex(
+  `\\b(?:require(?:Auth|User|Session|Admin|Login)\\w*|assertAuth\\w*|ensureAuth\\w*|withAuth\\w*|verifyToken|clerkMiddleware|authMiddleware)\\s*\\(|\\bauth\\.protect\\s*\\(`,
+)
+const RE2_SESSION_FETCH = compileDetectorRegex(
+  `\\b(?:auth|getAuth|getUser|getSession|getClaims|currentUser|validateRequest|getCurrentUser)\\s*\\(\\s*\\)|\\bgetServerSession\\s*\\(|\\buse(?:Session|User|Auth)\\s*\\(`,
+)
+const RE2_GUARD_AFTER = compileDetectorRegex(
+  `\\bif\\s*\\([^\\n]{0,160}?\\)\\s*(?:\\{\\s*)?(?:return\\s+)?(?:(?:redirect|permanentRedirect|notFound|unauthorized|forbidden)\\s*\\(|throw\\b|null\\b|<)|(?:\\|\\||\\?\\?)\\s*(?:redirect|notFound|unauthorized)\\s*\\(|\\?\\s*null\\s*:|\\bthrow\\b`,
+)
+
+const RE2_DEFAULT_FN = compileDetectorRegex(`export\\s+default\\s+(?:async\\s+)?function\\s*(\\w*)\\s*\\(`)
+const RE2_DEFAULT_REF = compileDetectorRegex(`export\\s+default\\s+(\\w+)\\s*;?\\s*$`, 'm')
+const RE2_CALL_NAME = compileDetectorRegex(`\\b([A-Za-z_]\\w*)\\s*\\(`)
+
+/** Text between the brace that matches the first `{` at or after `from`, or '' when unbalanced. */
+function braceBody(code: string, from: number): string {
+  const open = code.indexOf('{', from)
+  if (open === -1) return ''
+  let depth = 0
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === '{') depth++
+    else if (code[i] === '}' && --depth === 0) return code.slice(open, i + 1)
+  }
+  return ''
+}
+
+/** Index just after the `)` that closes the `(` at `open`. */
+function afterParens(code: string, open: number): number {
+  let depth = 0
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === '(') depth++
+    else if (code[i] === ')' && --depth === 0) return i + 1
+  }
+  return open
+}
+
+function functionBody(code: string, name: string): string {
+  const fn = compileDetectorRegex(`(?:function\\s+${name}\\s*\\(|(?:const|let)\\s+${name}\\s*=\\s*(?:async\\s*)?(?:function\\s*)?\\()`).exec(code)
+  if (!fn) return ''
+  const paren = code.indexOf('(', fn.index + fn.match.length - 1)
+  return braceBody(code, afterParens(code, paren))
+}
+
+/** The default-exported component plus the bodies of local functions it calls; the whole file if it cannot be found. */
+function componentText(code: string): string {
+  let body = ''
+  const decl = RE2_DEFAULT_FN.exec(code)
+  if (decl) {
+    body = braceBody(code, afterParens(code, decl.index + decl.match.length - 1))
+  } else {
+    const ref = RE2_DEFAULT_REF.exec(code)
+    if (ref) body = functionBody(code, ref.groups[0] ?? '') || ''
+  }
+  if (body === '') return code
+  let extra = ''
+  for (const m of RE2_CALL_NAME.matchAll(body)) {
+    const name = m.groups[0] ?? ''
+    if (name === 'if' || name === 'function' || name === '') continue
+    extra += functionBody(code, name)
+  }
+  return body + '\n' + extra
+}
+
+function gatesAccess(src: string): boolean {
+  const text = componentText(extractExecutableText(src))
+  if (RE2_ENFORCING_CALL.test(text)) return true
+  for (const m of RE2_SESSION_FETCH.matchAll(text)) {
+    if (RE2_GUARD_AFTER.test(text.slice(m.index + m.match.length))) return true
+  }
+  return false
 }
 
 /**
@@ -836,7 +904,7 @@ export const authCheck: CheckModule = {
         // Only the page itself is judged (helpers, styles and components in the folder are not routes), and
         // it counts as protected when the page OR a layout above it checks the session.
         if (!isPageFile(rp)) continue
-        if (!hasActiveAuthCall(content) && !layoutChain(rp, filesByPath).some((l) => hasActiveAuthCall(l.content))) {
+        if (!gatesAccess(content) && !layoutChain(rp, filesByPath).some((l) => gatesAccess(l.content))) {
           // Check if auth was recently removed (commented out).
           const wasRemoved = hasCommentedAuthCall(content)
           findings.push({
