@@ -190,6 +190,14 @@ describe('exposed_env: any real-looking value keeps the finding', () => {
     expect(envFileHasSecret(`DB_PASS=<${secretValue}>x\n`)).toBe(true)
     expect(envFileHasSecret(`DATABASE_URL=postgres://postgres:pre<pw>fix@localhost/app\n`)).toBe(true)
   })
+  it('export prefix and inline comments are parsed (re2js engine)', () => {
+    expect(envFileHasSecret(`export STRIPE_SECRET_KEY=${secretValue}\n`)).toBe(true) // export stripped, secret flagged
+    expect(envFileHasSecret(`export   JWT_SECRET=changeme\n`)).toBe(false) // export + placeholder
+    expect(envFileHasSecret(`JWT_SECRET=changeme   # ${secretValue}\n`)).toBe(false) // inline comment dropped
+    expect(envFileHasSecret(`JWT_SECRET=${secretValue} # note\n`)).toBe(true) // value before comment kept
+    expect(envFileHasSecret(`JWT_SECRET=changeme#${secretValue}\n`)).toBe(true) // no whitespace: not a comment
+    expect(envFileHasSecret(`exportJWT_SECRET=${secretValue}\n`)).toBe(true) // no whitespace after export: not a prefix
+  })
   it('empty values and whole-value placeholders are not flagged', () => {
     expect(envFileHasSecret(`STRIPE_SECRET_KEY=\nAPI_TOKEN=your-token-here\nJWT_SECRET=changeme\nSMTP_PASS=<password>\n`)).toBe(false)
   })

@@ -533,6 +533,10 @@ const PUBLIC_CONFIG_VALUE_RE = compileDetectorRegex(
   'i',
 )
 
+// .env line helpers (re2js; anchored / first-match semantics identical to the former native /^export\s+/ and split(/\s+#/)[0]).
+const EXPORT_PREFIX_RE = compileDetectorRegex(`^export\\s+`)
+const INLINE_COMMENT_RE = compileDetectorRegex(`\\s+#`)
+
 /** True when the userinfo part of a URL carries a password that is not a whole-token placeholder. Pure. */
 function urlHasRealPassword(value: string): boolean {
   const m = URL_USERINFO_RE.exec(value)
@@ -557,11 +561,14 @@ export function envFileHasSecret(content: string): boolean {
     if (line === '' || line.startsWith('#')) continue
     const eq = line.indexOf('=')
     if (eq <= 0) continue
-    const key = line.slice(0, eq).replace(/^export\s+/, '').trim()
+    const key = EXPORT_PREFIX_RE.replace(line.slice(0, eq), '').trim()
     let value = line.slice(eq + 1).trim()
     const q = value.charAt(0)
     if ((q === '"' || q === "'") && value.indexOf(q, 1) > 0) value = value.slice(1, value.indexOf(q, 1))
-    else value = value.split(/\s+#/)[0].trim()
+    else {
+      const c = INLINE_COMMENT_RE.exec(value)
+      value = (c ? value.slice(0, c.index) : value).trim()
+    }
     if (value === '') continue
     if (URL_USERINFO_RE.test(value)) {
       if (urlHasRealPassword(value)) return true
