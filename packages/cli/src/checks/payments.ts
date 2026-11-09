@@ -281,7 +281,8 @@ export const payments: CheckModule = {
           findings.push({
             id,
             title: 'Webhook handler lacks idempotency protection',
-            severity: 'medium',
+            // Robustness, not a security hole: a duplicate delivery repeats an action, it does not open access.
+            severity: 'low',
             category: 'payments',
             file: relativePath,
             evidence: 'No idempotency key, event.id check, or duplicate-detection logic found',

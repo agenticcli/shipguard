@@ -449,7 +449,7 @@ function extractJwtRoleClaim(payloadSegment: string): string | null {
 // Placeholder text in a README or .env.example (sk_live_xxxx..., your-api-key, REPLACE_ME) is not a key.
 const PUBLISHABLE_PREFIX_RE = compileDetectorRegex(`^(?:pk_(?:live|test)_|sb_publishable_)[A-Za-z0-9_\\-]+$`)
 const PLACEHOLDER_VALUE_RE = compileDetectorRegex(
-  `^(?:[a-z]{1,6}[_-]){0,3}x{5,}(?:[_-]x{3,})*$|\\*{3,}|\\.{3}|your[_\\- ]?(?:api|key|secret|token|service|password|stripe|openai|supabase)|replace[_\\-]?me|change[_\\-]?me|placeholder|dummy|redacted|insert[_\\-]|<[a-z0-9_\\- ]+>`,
+  `^(?:[a-z]{1,6}[_-]){0,3}x{3,}(?:[_-]x{3,})*$|\\*{3,}|\\.{3}|\u2026|^your[_\\- ]|[_\\-]here$|replace[_\\-]?me|change[_\\-]?me|^(?:changeme|todo|tbd|none|null|undefined|secret|password|passw0rd|test|dummy|example|fixme)$|placeholder|redacted|insert[_\\-]|<[^>]{1,60}>|^\\{\\{.*\\}\\}$|^\\$\\{.*\\}$|^\\[[a-z0-9_\\- ]+\\]$|^%[a-z0-9_]+%$|:\\/\\/[^\\s:\\/@]*:(?:password|secret|changeme|your[_\\-]?password|x{3,}|\\*+)@`,
   'i',
 )
 const ASSIGNED_LITERAL_RE = compileDetectorRegex(`[=:]\\s*['"\`]?([^\\s'"\`;,]+)`)
@@ -518,6 +518,35 @@ function checkSupabaseServiceRoleJwt(file: FileInfo, findings: Finding[], policy
 // Main check implementation
 // ---------------------------------------------------------------------------
 
+const SECRET_KEY_NAME_RE = compileDetectorRegex(
+  `(?:SECRET|PASSWORD|PASSWD|PRIVATE|TOKEN|API_?KEY|ACCESS_?KEY|SERVICE_?ROLE|CREDENTIAL|DATABASE_URL|DB_URL|CONNECTION_STRING|_KEY$|_PAT$|^KEY$)`,
+  'i',
+)
+const CREDENTIAL_URL_RE = compileDetectorRegex(`[a-z][a-z0-9+.\\-]*:\\/\\/[^\\s:\\/@]+:[^\\s@]+@`, 'i')
+
+/**
+ * True when a .env file carries something that is a secret. A tracked .env that holds only public
+ * values (Supabase anon key, pk_ keys, sb_publishable_, URLs, flags, empty or placeholder values) is
+ * not an "exposed secrets file". Pure.
+ */
+export function envFileHasSecret(content: string): boolean {
+  for (const raw of content.split('\n')) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#')) continue
+    const eq = line.indexOf('=')
+    if (eq <= 0) continue
+    const key = line.slice(0, eq).replace(/^export\s+/, '').trim()
+    let value = line.slice(eq + 1).trim()
+    const q = value.charAt(0)
+    if ((q === '"' || q === "'") && value.indexOf(q, 1) > 0) value = value.slice(1, value.indexOf(q, 1))
+    else value = value.split(/\s+#/)[0].trim()
+    if (value === '' || isPublicKeyValue(value) || isPlaceholderValue(value)) continue
+    if (CREDENTIAL_URL_RE.test(value)) return true
+    if (SECRET_KEY_NAME_RE.test(key)) return true
+  }
+  return false
+}
+
 function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
   const findings: Finding[] = []
 
@@ -525,8 +554,10 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
     const { content, relativePath } = file
 
     // 1. Detect .env files tracked in git
+    let envFindingIdx = -1
     if (isDotEnvFile(relativePath)) {
       const id = 'exposed_env'
+      envFindingIdx = findings.length
       findings.push({
         id,
         title: '.env file tracked in git',
@@ -684,6 +715,13 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
           }
         }
       }
+    }
+
+    // A tracked .env that holds only public or placeholder values is not an exposed-secrets file:
+    // drop the file-level finding unless the file has a real secret (a secret-named key with a real
+    // value, a credential URL) or another finding of its own.
+    if (envFindingIdx >= 0 && !envFileHasSecret(content) && !findings.slice(envFindingIdx + 1).some((f) => f.file === relativePath)) {
+      findings.splice(envFindingIdx, 1)
     }
   }
 

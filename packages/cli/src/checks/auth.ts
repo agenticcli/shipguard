@@ -76,9 +76,27 @@ const RE2_EXPRESS_ROUTE_DEFINITION = compileDetectorRegex(
 // The dead AUTH_CALL_SITE_PATTERN (with a /g stale-lastIndex hazard and a
 // variable-width lookbehind (?<!\/{2}[^\n]*?)) is also DELETED.
 // No lookahead/lookbehind/backreference → RE2-safe.
+// 0.12: also the session/user helpers the common stacks use (Supabase getUser/getClaims, Clerk currentUser,
+// Lucia validateRequest, hooks for client pages) and a notFound()/unauthorized()/forbidden() guard.
 const RE2_AUTH_CALL_PATTERN = compileDetectorRegex(
-  `(?:auth|getServerSession|requireAuth|verifyToken|withAuth|clerkMiddleware|authMiddleware)\\s*\\(`,
+  `(?:auth|getAuth|getServerSession|getSession|getUser|getClaims|currentUser|requireAuth|requireUser|requireSession|requireAdmin|verifyToken|verifyAuth|withAuth|validateRequest|clerkMiddleware|authMiddleware|useSession|useUser|useAuth|notFound|unauthorized|forbidden)\\s*\\(`,
 )
+
+// redirect('/login') style guard. The lexer blanks string literals, so this runs over raw lines that
+// are not comments.
+const RE2_LOGIN_REDIRECT = compileDetectorRegex(
+  `redirect\\s*\\(\\s*['"\`]/?(?:auth/|account/)?(?:log-?in|sign-?in|signin|sign-?up)`,
+  'i',
+)
+
+function hasLoginRedirect(content: string): boolean {
+  for (const raw of content.split('\n')) {
+    const line = raw.trim()
+    if (line.startsWith('//') || line.startsWith('*') || line.startsWith('/*')) continue
+    if (RE2_LOGIN_REDIRECT.test(line)) return true
+  }
+  return false
+}
 
 // Commented-out auth — matches lines where a comment marker precedes an auth call.
 // The [^\n]* allows tokens like `const session = await` between the marker and the call.
@@ -101,9 +119,10 @@ const RE2_EXPRESS_AUTH_MIDDLEWARE_PATTERN = compileDetectorRegex(
 const RE2_MIDDLEWARE_ADMIN_COVERAGE = compileDetectorRegex(
   `(?:admin|dashboard|billing|account|management)`,
 )
-// A catch-all matcher whose lookahead excludes one of these prefixes does NOT cover them.
+// A catch-all matcher whose lookahead excludes one of these prefixes does NOT cover them. api and auth are not
+// listed: the Next.js docs matcher itself excludes api, _next and static files, and login routes are public by design.
 const RE2_SENSITIVE_PREFIX = compileDetectorRegex(
-  `(?:admin|dashboard|billing|account|management|settings|api|auth)`,
+  `(?:admin|dashboard|billing|account|management|settings)`,
 )
 
 /** Source with comments removed; string and template literals are kept intact. */
@@ -698,7 +717,27 @@ function extractExecutableText(src: string): string {
  */
 function hasActiveAuthCall(content: string): boolean {
   const execText = extractExecutableText(content)
-  return RE2_AUTH_CALL_PATTERN.test(execText)
+  return RE2_AUTH_CALL_PATTERN.test(execText) || hasLoginRedirect(content)
+}
+
+// eslint-disable-next-line no-restricted-syntax -- path classifier, not content
+const PAGE_FILE_PATTERN = /(?:^|\/)page\.[tj]sx?$/
+function isPageFile(rp: string): boolean {
+  return PAGE_FILE_PATTERN.test(rp)
+}
+
+/** Layout files (layout.ts/tsx/js/jsx) from the app root down to the page's directory. */
+function layoutChain(pagePath: string, byPath: Map<string, FileInfo>): FileInfo[] {
+  const segs = pagePath.split('/').slice(0, -1)
+  const out: FileInfo[] = []
+  for (let n = 1; n <= segs.length; n++) {
+    const dir = segs.slice(0, n).join('/')
+    for (const ext of ['tsx', 'ts', 'jsx', 'js']) {
+      const f = byPath.get(`${dir}/layout.${ext}`)
+      if (f) out.push(f)
+    }
+  }
+  return out
 }
 
 /**
@@ -759,26 +798,10 @@ export const authCheck: CheckModule = {
     const middlewareFile = files.find((f) => MIDDLEWARE_FILE_PATTERN.test(f.relativePath))
 
     if (isNextjsProject(files)) {
-      if (!middlewareFile) {
-        // No middleware.ts — any sensitive Next.js pages are doubly at risk.
-        findings.push({
-          id: 'public_admin_route',
-          title: 'No Next.js middleware.ts found',
-          severity: 'high',
-          category: 'auth',
-          file: 'middleware.ts',
-          confidence: 'MEDIUM',
-          explanation:
-            'No middleware.ts file was found. Next.js App Router relies on middleware to enforce ' +
-            'route-level auth for admin, dashboard, and billing routes. Without it, protection ' +
-            'depends entirely on individual Server Components and Route Handlers, which is error-prone.',
-          recommendation:
-            'Create middleware.ts at the project root (or src/middleware.ts) and add a matcher ' +
-            'that covers /admin, /dashboard, and /billing. Use auth() from next-auth/auth.js or ' +
-            'clerkMiddleware() to redirect unauthenticated requests.',
-          blocking: policy.block.includes('public_admin_route'),
-        })
-      } else if (!middlewareCoversRoutes(middlewareFile.content)) {
+      // A missing middleware.ts / proxy.ts is NOT a finding: Next.js documents middleware as optional,
+      // and an app that checks the session in each page, layout or route handler is protected without it.
+      // Only an existing middleware whose matcher leaves the sensitive prefixes out is reported.
+      if (middlewareFile && !middlewareCoversRoutes(middlewareFile.content)) {
         findings.push({
           id: 'public_admin_route',
           title: 'middleware.ts does not cover admin/dashboard routes',
@@ -799,6 +822,7 @@ export const authCheck: CheckModule = {
     }
 
     // ── 2. Per-file checks ────────────────────────────────────────────────────
+    const filesByPath = new Map<string, FileInfo>(files.map((f) => [f.relativePath, f]))
     for (const file of files) {
       const { relativePath: rp, content } = file
 
@@ -809,7 +833,10 @@ export const authCheck: CheckModule = {
 
       // ── 2a. Next.js App Router page / layout files ──────────────────────────
       if (SENSITIVE_NEXTJS_PAGE_PATTERN.test(rp)) {
-        if (!hasActiveAuthCall(content)) {
+        // Only the page itself is judged (helpers, styles and components in the folder are not routes), and
+        // it counts as protected when the page OR a layout above it checks the session.
+        if (!isPageFile(rp)) continue
+        if (!hasActiveAuthCall(content) && !layoutChain(rp, filesByPath).some((l) => hasActiveAuthCall(l.content))) {
           // Check if auth was recently removed (commented out).
           const wasRemoved = hasCommentedAuthCall(content)
           findings.push({
