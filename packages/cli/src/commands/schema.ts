@@ -67,6 +67,8 @@ export interface SchemaContract {
     deprecatedMirrors: string[]
   }
   exitCodes: Array<{ code: number; name: string; meaning: string }>
+  /** Exit-2 errors in machine mode: stdout holds exactly one object of this shape. */
+  configError: { shape: string; when: string; codes: Array<{ code: string; meaning: string }> }
   degradeCodes: Array<{ code: string; meaning: string }>
   limits: {
     maxFiles: LimitEntry
@@ -104,6 +106,16 @@ export function buildSchemaContract(limits: {
         'The exit code is unaffected: ShipGuard is passive by default and still exits 0 ' +
         'while saying this. Only --strict turns it into a hard stop.',
       deprecatedMirrors: ['riskScore.recommendation'],
+    },
+    configError: {
+      shape: '{ "error": string, "code": string }',
+      when: 'exit code 2 with --json or --sarif: stdout is exactly this one JSON object (also for --sarif, instead of a SARIF document); the same message is on stderr',
+      codes: [
+        { code: 'INVALID_POLICY', meaning: 'shipguard.policy.yml could not be parsed' },
+        { code: 'NOT_A_PROJECT', meaning: 'the directory is not a project root; pass a path or --all' },
+        { code: 'PATH_NOT_FOUND', meaning: 'the scan path does not exist or cannot be read' },
+        { code: 'PATH_NOT_A_DIRECTORY', meaning: 'the scan path is a file, not a directory' },
+      ],
     },
     exitCodes: [
       {
@@ -292,6 +304,9 @@ export function renderSchemaHuman(c: SchemaContract): string {
   lines.push('')
   lines.push('Exit codes:')
   for (const e of c.exitCodes) lines.push(`  ${e.code}  ${e.name} — ${e.meaning}`)
+  lines.push('')
+  lines.push(`Config errors (exit 2) with --json/--sarif: stdout is ${c.configError.shape}`)
+  for (const e of c.configError.codes) lines.push(`  ${e.code} — ${e.meaning}`)
   lines.push('')
   lines.push('Limits:')
   for (const [name, entry] of Object.entries(c.limits)) {

@@ -395,6 +395,44 @@ export const config = {
     expect(findings.filter((x) => x.id === 'public_admin_route')).toEqual([])
   })
 
+  const flagged = (content: string) =>
+    authCheck
+      .run([ADMIN_PAGE_WITH_AUTH, makeFile('proxy.ts', content)], policy)
+      .filter((x) => x.id === 'public_admin_route').length
+
+  it('a catch-all only mentioned in a line comment does not count', () => {
+    expect(flagged("// matcher: ['/((?!_next).*)']\nexport function proxy() { return null }")).toBe(1)
+  })
+
+  it('a catch-all only mentioned in a block comment does not count', () => {
+    expect(flagged("/* (?!_next static) */\nexport function proxy() { return null }")).toBe(1)
+  })
+
+  it('a catch-all that EXCLUDES admin/dashboard/api prefixes does not count', () => {
+    for (const ex of ['admin', 'dashboard', 'api', 'account', 'billing', 'settings']) {
+      expect(
+        flagged(`export function proxy() { return null }\nexport const config = { matcher: ["/((?!${ex}|_next/static).*)"] }`),
+        ex,
+      ).toBe(1)
+    }
+  })
+
+  it('an empty proxy with no matcher is still flagged', () => {
+    expect(flagged('export function proxy() { return null }')).toBe(1)
+  })
+
+  it('the Supabase-style catch-all (comment inside the matcher array) is covered', () => {
+    expect(
+      flagged(`export function proxy() { return null }
+export const config = {
+  matcher: [
+    /* Match all except: _next/static, favicon */
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg)$).*)",
+  ],
+}`),
+    ).toBe(0)
+  })
+
   it('also accepts src/proxy.ts', () => {
     const f = makeFile('src/proxy.ts', PROXY_WITH_ADMIN.content)
     const findings = authCheck.run([ADMIN_PAGE_WITH_AUTH, f], policy)
