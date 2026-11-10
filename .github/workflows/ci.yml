@@ -1,9 +1,10 @@
 name: CI
 
 # Minimal validation gate: install (frozen lockfile), build, lint, test.
-# Runs on PRs and pushes to main. No secrets, no publish.
+# Runs on ready (non-draft) PRs and pushes to main. Draft PRs are skipped (no CI-failure emails). No secrets, no publish.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
       - main
@@ -18,6 +19,8 @@ concurrency:
 jobs:
   ci:
     name: Build, lint, test
+    # Null-safe on push: github.event.pull_request is absent there, so the draft test only applies to PRs.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
