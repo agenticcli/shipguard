@@ -1,8 +1,8 @@
 # ShipGuard — repo rules
-Master rules load from the owner's user-level CLAUDE.md. This file adds rules and context for this repo only.
+This file adds rules and context for this repo.
 
 ## Stakes & Status
-- Paying users: yes, through Pro on the hosted service (not in this repo) · Payments: no (none in this repo) · User data: no (scans run locally and never send code off the machine) (recorded 2026-10-21, proposed — owner confirms)
+- Paying users: yes, through Pro on the hosted service (not in this repo) · Payments: no (none in this repo) · User data: no code or file data (scans run locally; only a small anonymous usage ping)
 - High-stakes paths: `packages/cli/src/core/crypto.ts`, `packages/cli/src/core/auth.ts`, `packages/cli/src/core/jwks.ts`, `packages/cli/src/core/release-verify.ts`.
 
 ## Rules
