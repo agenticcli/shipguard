@@ -75,6 +75,8 @@ describe('#9 — the contract exists and is machine-readable', () => {
     const c = JSON.parse((await runCli(['schema', '--json'])).stdout)
     expect(c.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(c.recommendation.values).toEqual(['SAFE_TO_SHIP', 'REVIEW_BEFORE_SHIP', 'DO_NOT_SHIP'])
+    expect(c.configError.codes.map((e: { code: string }) => e.code)).toEqual(['INVALID_POLICY', 'NOT_A_PROJECT', 'PATH_NOT_FOUND', 'PATH_NOT_A_DIRECTORY'])
+    expect(c.configError.shape).toContain('"code"')
     expect(c.exitCodes.map((e: { code: number }) => e.code)).toEqual([0, 1, 2, 3])
     expect(c.limits.maxFiles.value).toBe(DEFAULT_MAX_FILES)
     expect(c.limits.maxFileSizeBytes.value).toBe(DEFAULT_MAX_FILE_SIZE_BYTES)

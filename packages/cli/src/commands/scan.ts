@@ -322,11 +322,13 @@ ${LEARN_MORE}`)
       // and almost certainly unintentional. Require either a project root or --all.
       // ---------------------------------------------------------------------------
       if (!scanPath && !opts.all && !isProjectRoot(cwd)) {
-        logger.error(
+        const refusal =
           `Refusing to scan a non-project directory ${cwd}. ` +
           `Pass a path (\`shipguard scan ./my-app\`) or \`--all\` to override.`
-        )
-        if (!machineOutput) {
+        logger.error(refusal)
+        if (machineOutput) {
+          console.log(JSON.stringify({ error: refusal, code: 'NOT_A_PROJECT' }))
+        } else {
           console.log(`\n${LEARN_MORE}`)
         }
         return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
@@ -403,7 +405,12 @@ async function runScan(ctx: {
   try {
     policy = await loadPolicy(cwd)
   } catch (error) {
-    logger.error(`Config error: ${error instanceof Error ? error.message : error}`)
+    const message = error instanceof Error ? error.message : String(error)
+    logger.error(`Config error: ${message}`)
+    if (machineOutput) {
+      // Agents read stdout: give them one parseable error object (same shape as PATH_NOT_FOUND).
+      console.log(JSON.stringify({ error: message, code: 'INVALID_POLICY' }))
+    }
     return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, cwd)
   }
 

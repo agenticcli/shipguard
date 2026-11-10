@@ -96,11 +96,105 @@ const RE2_EXPRESS_AUTH_MIDDLEWARE_PATTERN = compileDetectorRegex(
   'i',
 )
 
-// Middleware content coverage — checks whether middleware.ts references sensitive routes.
+// Middleware content coverage — checks whether middleware.ts / proxy.ts references sensitive routes.
 // No lookahead/lookbehind/backreference → RE2-safe.
 const RE2_MIDDLEWARE_ADMIN_COVERAGE = compileDetectorRegex(
   `(?:admin|dashboard|billing|account|management)`,
 )
+// A catch-all matcher whose lookahead excludes one of these prefixes does NOT cover them.
+const RE2_SENSITIVE_PREFIX = compileDetectorRegex(
+  `(?:admin|dashboard|billing|account|management|settings|api|auth)`,
+)
+
+/** Source with comments removed; string and template literals are kept intact. */
+function stripComments(src: string): string {
+  let out = ''
+  let i = 0
+  while (i < src.length) {
+    const c = src[i]
+    if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1
+      while (j < src.length && src[j] !== c) j += src[j] === '\\' ? 2 : 1
+      out += src.slice(i, j + 1)
+      i = j + 1
+    } else if (c === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') i++
+    } else if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2)
+      i = end === -1 ? src.length : end + 2
+      out += ' '
+    } else {
+      out += c
+      i++
+    }
+  }
+  return out
+}
+
+/** String literals inside the value of `matcher:` (a string or an array), or [] if none. */
+function matcherLiterals(code: string): string[] {
+  const key = code.indexOf('matcher')
+  if (key === -1) return []
+  let i = code.indexOf(':', key)
+  if (i === -1) return []
+  i++
+  while (i < code.length && ' \t\r\n'.includes(code[i])) i++
+  const lits: string[] = []
+  let depth = 0
+  for (; i < code.length; i++) {
+    const c = code[i]
+    if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1
+      while (j < code.length && code[j] !== c) j += code[j] === '\\' ? 2 : 1
+      lits.push(code.slice(i + 1, j))
+      i = j
+      if (depth === 0) break
+    } else if (c === '[') depth++
+    else if (c === ']') {
+      depth--
+      if (depth <= 0) break
+    } else if (depth === 0) break
+  }
+  return lits
+}
+
+/** `/((?!a|b).*)` style catch-all whose lookahead does not exclude a sensitive prefix. */
+function isSafeCatchAll(lit: string): boolean {
+  const start = lit.indexOf('(?!')
+  if (start === -1 || !lit.startsWith('/(')) return false
+  let depth = 0
+  let end = -1
+  for (let i = start; i < lit.length; i++) {
+    if (lit[i] === '\\') i++
+    else if (lit[i] === '(') depth++
+    else if (lit[i] === ')' && --depth === 0) {
+      end = i
+      break
+    }
+  }
+  if (end === -1) return false
+  const rest = lit.slice(end + 1)
+  if (rest !== '.*)' && rest !== '.*') return false
+  return !RE2_SENSITIVE_PREFIX.test(lit.slice(start, end + 1))
+}
+
+function middlewareCoversRoutes(content: string): boolean {
+  const code = stripComments(content)
+  // Words inside a negative lookahead are EXCLUDED routes, so drop those groups before the word test.
+  let words = ''
+  for (let i = 0; i < code.length; i++) {
+    if (code.startsWith('(?!', i)) {
+      let depth = 0
+      for (; i < code.length; i++) {
+        if (code[i] === '\\') i++
+        else if (code[i] === '(') depth++
+        else if (code[i] === ')' && --depth === 0) break
+      }
+    } else words += code[i]
+  }
+  if (RE2_MIDDLEWARE_ADMIN_COVERAGE.test(words)) return true
+  return matcherLiterals(code).some(isSafeCatchAll)
+}
 
 // Inline auth check — verifies whether a 300-char route call slice contains auth middleware.
 // No lookahead/lookbehind/backreference → RE2-safe.
@@ -110,9 +204,9 @@ const RE2_INLINE_AUTH_CHECK = compileDetectorRegex(
 )
 
 // ─── Middleware file matchers ─────────────────────────────────────────────────
-// Path classifier — native RegExp is fine (non-content).
+// Path classifier — native RegExp is fine (non-content). Next 16 renamed middleware.ts to proxy.ts.
 // eslint-disable-next-line no-restricted-syntax
-const MIDDLEWARE_FILE_PATTERN = /^(?:src\/)?middleware\.[tj]s$/
+const MIDDLEWARE_FILE_PATTERN = /^(?:src\/)?(?:middleware|proxy)\.[tj]s$/
 
 // ─── Next.js detection ───────────────────────────────────────────────────────
 // Detect Next.js without reading disk (checks are pure (files, policy) → findings).
@@ -684,7 +778,7 @@ export const authCheck: CheckModule = {
             'clerkMiddleware() to redirect unauthenticated requests.',
           blocking: policy.block.includes('public_admin_route'),
         })
-      } else if (!RE2_MIDDLEWARE_ADMIN_COVERAGE.test(middlewareFile.content)) {
+      } else if (!middlewareCoversRoutes(middlewareFile.content)) {
         findings.push({
           id: 'public_admin_route',
           title: 'middleware.ts does not cover admin/dashboard routes',

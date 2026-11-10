@@ -11,6 +11,17 @@ ShipGuard's exit code is verdict-neutral by default. The verdict is in the JSON 
 
 Exit `0` does not mean "safe". Never use it alone as a pass.
 
+## Config errors in machine mode
+
+With `--json` or `--sarif`, an exit `2` prints exactly one JSON object on stdout (also for `--sarif`, instead of a SARIF document): `{ "error": "<message>", "code": "<CODE>" }`. The same message goes to stderr. Codes:
+
+| `code` | Meaning |
+|--------|---------|
+| `INVALID_POLICY` | `shipguard.policy.yml` could not be parsed. |
+| `NOT_A_PROJECT` | The folder is not a project root. Pass a path or `--all`. |
+| `PATH_NOT_FOUND` | The scan path does not exist or cannot be read. |
+| `PATH_NOT_A_DIRECTORY` | The scan path is a file. |
+
 ## Degraded scans
 
 If ShipGuard could not read everything (an oversized file, an unreadable file, a skipped symlink, lost Pro rules, or a scan that read no files), the scan is `degraded` and the verdict is `DO_NOT_SHIP`. The reasons are in `degradedReasons`.
