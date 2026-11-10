@@ -2,7 +2,7 @@
 This file adds rules and context for this repo.
 
 ## Stakes & Status
-- Paying users: yes, through Pro on the hosted service (not in this repo) · Payments: no (none in this repo) · User data: no code or file data (scans run locally; only a small anonymous usage ping)
+- Paying users: yes, through Pro on the hosted service (not in this repo) · Payments: no (none in this repo) · User data: no code or file data (scans run locally; only a small usage ping with a random install ID, opt-out)
 - High-stakes paths: `packages/cli/src/core/crypto.ts`, `packages/cli/src/core/auth.ts`, `packages/cli/src/core/jwks.ts`, `packages/cli/src/core/release-verify.ts`.
 
 ## Rules
