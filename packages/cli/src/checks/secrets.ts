@@ -436,6 +436,47 @@ function extractJwtRoleClaim(payloadSegment: string): string | null {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Public (publishable) keys and placeholder text are not leaked secrets (0.12 trust fixes)
+// ---------------------------------------------------------------------------
+//
+// A key that is MEANT to ship to the browser is not a leak, and flagging it as a critical secret
+// on the first scan of every Supabase / Stripe / Clerk app teaches the user to ignore the tool:
+//   - Stripe and Clerk publishable keys: pk_live_ / pk_test_ (Stripe docs: publishable keys "can be
+//     publicly accessible in your web or mobile app's client-side code").
+//   - Supabase anon key: a JWT whose decoded payload says role "anon" (decoded, not guessed), and the
+//     newer sb_publishable_ key. The service_role JWT and sb_secret_ are NEVER treated as public.
+// Placeholder text in a README or .env.example (sk_live_xxxx..., your-api-key, REPLACE_ME) is not a key.
+const PUBLISHABLE_PREFIX_RE = compileDetectorRegex(`^(?:pk_(?:live|test)_|sb_publishable_|phc_)[A-Za-z0-9_\\-]+$`)
+const PLACEHOLDER_VALUE_RE = compileDetectorRegex(
+  // Every alternative is anchored to the WHOLE value (or, for a URL, to the whole password part).
+  `^(?:[a-z]{1,6}[_-]){0,3}x{3,}(?:[_-]x{3,})*$|\\*{3,}|\\.{3}|\u2026|^(?:[a-z0-9]{1,8}[_\\-]){0,3}your[_\\- ].*$|^.*[_\\-]here$|^(?:[a-z0-9]{1,8}[_\\-]){0,3}(?:replace[_\\-]?me|change[_\\-]?me|placeholder|redacted|dummy|todo|tbd|fixme)(?:[_\\-](?:replace[_\\-]?me|change[_\\-]?me|placeholder|redacted|dummy|todo|tbd|fixme))*$|^(?:changeme|secret|password|passw0rd|test|example|none|null|undefined)$|^<[^>]{1,60}>$|^\\{\\{.*\\}\\}$|^\\$\\{.*\\}$|^\\[[a-z0-9_\\- ]+\\]$|^%[a-z0-9_]+%$|:\\/\\/[^\\s:\\/@]*:(?:<[^>@]{1,40}>|\\$\\{[^}@]+\\}|\\{\\{[^}@]+\\}\\}|%[A-Za-z0-9_]+%|your[_\\-]?password|change[_\\-]?me|\\*+|x{3,})@`,
+  'i',
+)
+const ASSIGNED_LITERAL_RE = compileDetectorRegex(`[=:]\\s*['"\`]?([^\\s'"\`;,]+)`)
+
+/** True when `value` is a key that is designed to be public (see block comment above). Pure. */
+export function isPublicKeyValue(value: string): boolean {
+  const v = value.trim()
+  if (PUBLISHABLE_PREFIX_RE.test(v)) return true
+  const parts = v.split('.')
+  if (parts.length === 3 && parts[0].startsWith('eyJ') && parts[1].startsWith('eyJ')) {
+    return extractJwtRoleClaim(parts[1]) === 'anon'
+  }
+  return false
+}
+
+/** True when `value` is obvious placeholder text, not a real credential. Pure. */
+export function isPlaceholderValue(value: string): boolean {
+  return PLACEHOLDER_VALUE_RE.test(value)
+}
+
+/** The literal written after `=` or `:` in `rest`, up to the next quote, space, `;` or `,` ('' if none). */
+function assignedLiteral(rest: string): string {
+  const m = ASSIGNED_LITERAL_RE.exec(rest)
+  return m ? (m.groups[0] ?? '') : ''
+}
+
 function checkSupabaseServiceRoleJwt(file: FileInfo, findings: Finding[], policy: Policy, dedupe: SecretDedupe): void {
   const { content, relativePath } = file
   const lines = content.split('\n')
@@ -478,6 +519,70 @@ function checkSupabaseServiceRoleJwt(file: FileInfo, findings: Finding[], policy
 // Main check implementation
 // ---------------------------------------------------------------------------
 
+const SECRET_KEY_NAME_RE = compileDetectorRegex(
+  `(?:SECRET|PASS|PWD|PRIVATE|TOKEN|API_?KEY|ACCESS_?KEY|SERVICE_?ROLE|CREDENTIAL|DATABASE_URL|DB_URL|CONNECTION_STRING|SALT|SESSION|JWT|COOKIE|SIGNING|WEBHOOK|DSN|AUTH|_KEY$|_PAT$|^KEY$)`,
+  'i',
+)
+const STRONG_SECRET_NAME_RE = compileDetectorRegex(`(?:SECRET|PRIVATE|PASSWORD|PASSWD|SERVICE_?ROLE|SIGNING)`, 'i')
+const PUBLIC_PREFIX_KEY_RE = compileDetectorRegex(`^(?:NEXT_PUBLIC|VITE|EXPO_PUBLIC|PUBLIC|REACT_APP|NUXT_PUBLIC|GATSBY)_`)
+// Credentials inside a URL: scheme://user:password@host or scheme://:password@host (empty user).
+const URL_USERINFO_RE = compileDetectorRegex(`^[a-z][a-z0-9+.\\-]*:\\/\\/([^\\/\\s@?#]*)@`, 'i')
+// Shapes that are public or plain configuration, never a secret. Everything else in a tracked .env is flagged.
+const PUBLIC_CONFIG_VALUE_RE = compileDetectorRegex(
+  `^(?:true|false|yes|no|on|off|0|1|[0-9]{1,5}|development|production|test|staging|preview|local|debug|info|warn|error|trace|silent|[a-z]{2}-[a-z]+-[0-9]|https?:\\/\\/[^\\s@]+|[a-z0-9][a-z0-9.\\-]*\\.[a-z]{2,}(?::[0-9]{1,5})?(?:\\/[^\\s@]*)?|localhost(?::[0-9]{1,5})?|127\\.0\\.0\\.1(?::[0-9]{1,5})?)$`,
+  'i',
+)
+
+// .env line helpers (re2js; anchored / first-match semantics identical to the former native /^export\s+/ and split(/\s+#/)[0]).
+const EXPORT_PREFIX_RE = compileDetectorRegex(`^export\\s+`)
+const INLINE_COMMENT_RE = compileDetectorRegex(`\\s+#`)
+
+/** True when the userinfo part of a URL carries a password that is not a whole-token placeholder. Pure. */
+function urlHasRealPassword(value: string): boolean {
+  const m = URL_USERINFO_RE.exec(value)
+  if (!m) return false
+  const info = m.groups[0] ?? ''
+  const colon = info.indexOf(':')
+  if (colon === -1) return false // user only (git@host): no password
+  const pw = info.slice(colon + 1)
+  if (pw === '') return false
+  return !isPlaceholderValue(`://u:${pw}@`)
+}
+
+/**
+ * True when a .env file carries something that could be a secret. Inverted on purpose (fail closed): ANY
+ * non-empty value flags the file unless it is a known-public shape (anon JWT, pk_ / sb_publishable_ keys, a
+ * NEXT_PUBLIC_-style variable that is not secret-named, booleans, ports, hostnames and URLs without
+ * credentials) or a whole-value placeholder. Pure.
+ */
+export function envFileHasSecret(content: string): boolean {
+  for (const raw of content.split('\n')) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#')) continue
+    const eq = line.indexOf('=')
+    if (eq <= 0) continue
+    const key = EXPORT_PREFIX_RE.replace(line.slice(0, eq), '').trim()
+    let value = line.slice(eq + 1).trim()
+    const q = value.charAt(0)
+    if ((q === '"' || q === "'") && value.indexOf(q, 1) > 0) value = value.slice(1, value.indexOf(q, 1))
+    else {
+      const c = INLINE_COMMENT_RE.exec(value)
+      value = (c ? value.slice(0, c.index) : value).trim()
+    }
+    if (value === '') continue
+    if (URL_USERINFO_RE.test(value)) {
+      if (urlHasRealPassword(value)) return true
+      continue
+    }
+    if (isPublicKeyValue(value) || isPlaceholderValue(value)) continue
+    if (value.includes('hooks.slack.com/') || value.includes('/api/webhooks/')) return true // webhook URLs are secrets
+    if (PUBLIC_PREFIX_KEY_RE.test(key) && !STRONG_SECRET_NAME_RE.test(key)) continue // shipped to the browser by design
+    if (!SECRET_KEY_NAME_RE.test(key) && PUBLIC_CONFIG_VALUE_RE.test(value)) continue
+    return true
+  }
+  return false
+}
+
 function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
   const findings: Finding[] = []
 
@@ -485,8 +590,10 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
     const { content, relativePath } = file
 
     // 1. Detect .env files tracked in git
+    let envFindingIdx = -1
     if (isDotEnvFile(relativePath)) {
       const id = 'exposed_env'
+      envFindingIdx = findings.length
       findings.push({
         id,
         title: '.env file tracked in git',
@@ -541,6 +648,8 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
         const line = lines[i]
         const match = NEXT_PUBLIC_SECRET_RE.exec(line)
         if (match && match.groups[0]) {
+          // A publishable key (Supabase anon, Stripe/Clerk pk_) or placeholder text is meant to be public.
+          if (isPublicKeyValue(assignedLiteral(line.slice(match.index))) || isPlaceholderValue(match.groups[0])) continue
           const id = 'exposed_env'
           findings.push({
             id,
@@ -618,6 +727,12 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
 
           // Extract the captured group (the secret value) for redaction
           const secretValue = lineMatch.groups[0] ?? lineMatch.match
+          // Public keys and placeholder text are not leaked secrets (see isPublicKeyValue).
+          if (isPlaceholderValue(secretValue)) continue
+          // Only a keyword-style match (`name = value`) may look past its captured slice to the full value
+          // (a JWT's capture stops at the first dot); never read a LATER value on the line for a bare-token match.
+          const isAssignMatch = lineMatch.match.includes('=') || lineMatch.match.includes(':')
+          if (isPublicKeyValue((isAssignMatch ? assignedLiteral(line.slice(lineMatch.index)) : '') || secretValue)) continue
           const secretFinding: Finding = {
             id: pattern.id,
             title: pattern.name,
@@ -636,6 +751,13 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
           }
         }
       }
+    }
+
+    // A tracked .env that holds only public or placeholder values is not an exposed-secrets file:
+    // drop the file-level finding unless the file has a real secret (a secret-named key with a real
+    // value, a credential URL) or another finding of its own.
+    if (envFindingIdx >= 0 && !envFileHasSecret(content) && !findings.slice(envFindingIdx + 1).some((f) => f.file === relativePath)) {
+      findings.splice(envFindingIdx, 1)
     }
   }
 

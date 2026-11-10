@@ -19,6 +19,7 @@ import {
 } from '../utils/fs.js'
 import { buildIgnoreRules, classifyIgnored, isShipguardArtifactPath, selfArtifactIgnorePatterns } from './ignore.js'
 import { logger } from '../utils/logger.js'
+import { assertCwdAlive } from '../utils/cwd-guard.js'
 import { secretsCheck } from '../checks/secrets.js'
 import { authCheck } from '../checks/auth.js'
 import { databaseCheck } from '../checks/database.js'
@@ -284,6 +285,8 @@ export async function scan(
     })
   }
 
+  // The folder can vanish mid-scan; every file would then be "unreadable". End with an error (exit 3).
+  assertCwdAlive()
   const files = state.files
   const skippedTooLarge = state.skippedTooLarge
   const skippedTooLargeFiles = state.skippedTooLargeFiles

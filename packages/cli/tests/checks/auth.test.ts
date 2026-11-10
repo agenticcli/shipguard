@@ -339,11 +339,11 @@ describe('Express route protection', () => {
 })
 
 describe('Next.js middleware.ts coverage', () => {
-  it('flags missing middleware.ts', () => {
+  it('does NOT flag a missing middleware.ts (Next.js documents middleware as optional)', () => {
     const findings = authCheck.run([ADMIN_PAGE_UNPROTECTED], policy)
     const f = findings.filter((f) => f.file === 'middleware.ts')
-    expect(f.length).toBe(1)
-    expect(f[0].id).toBe('public_admin_route')
+    expect(f.length).toBe(0)
+    expect(findings.some((x) => x.title === 'No Next.js middleware.ts found')).toBe(false)
   })
 
   it('flags middleware.ts that does not reference admin/dashboard routes', () => {
@@ -408,8 +408,8 @@ export const config = {
     expect(flagged("/* (?!_next static) */\nexport function proxy() { return null }")).toBe(1)
   })
 
-  it('a catch-all that EXCLUDES admin/dashboard/api prefixes does not count', () => {
-    for (const ex of ['admin', 'dashboard', 'api', 'account', 'billing', 'settings']) {
+  it('a catch-all that EXCLUDES admin/dashboard prefixes does not count', () => {
+    for (const ex of ['admin', 'dashboard', 'account', 'billing', 'settings']) {
       expect(
         flagged(`export function proxy() { return null }\nexport const config = { matcher: ["/((?!${ex}|_next/static).*)"] }`),
         ex,
@@ -487,35 +487,34 @@ router.get('/admin/users', (req, res) => res.json({}))`),
     expect(middlewareFindings.length).toBe(0)
   })
 
-  it('DOES flag missing middleware.ts for a Next.js repo (app/ path signal)', () => {
+  it('does NOT flag a missing middleware.ts for a Next.js repo (app/ path signal)', () => {
     // App Router path present → Next.js detected → middleware check runs.
     const nextFiles = [
       makeFile('app/admin/page.tsx', `export default function AdminPage() { return <div>Admin</div> }`),
     ]
     const findings = authCheck.run(nextFiles, policy)
     const middlewareFindings = findings.filter((f) => f.file === 'middleware.ts')
-    expect(middlewareFindings.length).toBe(1)
-    expect(middlewareFindings[0].id).toBe('public_admin_route')
+    expect(middlewareFindings.length).toBe(0)
   })
 
-  it('DOES flag missing middleware.ts for a Next.js repo (next.config.js signal)', () => {
+  it('does NOT flag a missing middleware.ts for a Next.js repo (next.config.js signal)', () => {
     const nextFiles = [
       makeFile('next.config.js', `module.exports = { reactStrictMode: true }`),
       makeFile('pages/index.tsx', `export default function Home() { return <div>Home</div> }`),
     ]
     const findings = authCheck.run(nextFiles, policy)
     const middlewareFindings = findings.filter((f) => f.file === 'middleware.ts')
-    expect(middlewareFindings.length).toBe(1)
+    expect(middlewareFindings.length).toBe(0)
   })
 
-  it('DOES flag missing middleware.ts for a Next.js repo (package.json with next dep)', () => {
+  it('does NOT flag a missing middleware.ts for a Next.js repo (package.json with next dep)', () => {
     const nextFiles = [
       makeFile('package.json', JSON.stringify({ dependencies: { next: '^15.0.0', react: '^18.0.0' } })),
       makeFile('pages/index.tsx', `export default function Home() { return <div>Home</div> }`),
     ]
     const findings = authCheck.run(nextFiles, policy)
     const middlewareFindings = findings.filter((f) => f.file === 'middleware.ts')
-    expect(middlewareFindings.length).toBe(1)
+    expect(middlewareFindings.length).toBe(0)
   })
 
   // ---------------------------------------------------------------------------
@@ -559,7 +558,7 @@ router.get('/admin/users', (req, res) => res.json({}))`),
     ]
     const findings = authCheck.run(files, policy)
     const middlewareFindings = findings.filter((f) => f.file === 'middleware.ts')
-    expect(middlewareFindings.length).toBe(1)  // app-router path signal still fires
+    expect(middlewareFindings.length).toBe(0)  // no middleware finding exists any more; the app-router signal still gates the other checks
   })
 })
 
@@ -740,6 +739,7 @@ describe('Lexer: conservative on uncertainty — malformed input scanned, never 
 const broken = "unterminated
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )
@@ -782,6 +782,7 @@ describe('Lexer: no ReDoS pattern — no .*? inside lookbehinds', () => {
       `import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )
@@ -800,6 +801,7 @@ export default async function AdminPage() {
 import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )
@@ -814,6 +816,7 @@ export default async function AdminPage() {
 import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )

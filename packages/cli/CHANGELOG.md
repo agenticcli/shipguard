@@ -1,5 +1,13 @@
 # @agenticcli/shipguard
 
+## 0.12.0 - 2026-11-10
+
+- Better detection: the free rules now catch more real holes in Next.js, Supabase and Stripe projects, for example pages and API routes that look protected but never actually stop a signed-out visitor, and sign-in checks that test the wrong value.
+- Far fewer false alarms: example values, placeholders and look-alike text are no longer flagged, and a rule now only fires where the problem can really happen.
+- Look-alike keys are no longer flagged: strings that only resemble a real key (test samples, docs, examples) are ignored, while real keys are still caught. A `.env` file that is tracked by git is still reported.
+- Fixed: a scan could run forever (using a lot of CPU) if the folder being scanned was deleted or moved while it ran. It now stops with an error (exit code 3), never a "safe" result.
+- Updated the bundled free rules to corpus version 28.
+
 ## 0.11.0 - 2026-11-08
 
 - Security: updated the regular-expression engine `re2js` from 2.8.3 to 2.8.7. Versions before 2.8.7 have a high-severity slow-matching flaw in lookbehind handling (GHSA-gg6h-894w-4m9c, CVE-2026-116795). ShipGuard keeps lookbehinds switched off, so it was not reachable through normal scans, but the fixed version is now the only one used. Because the engine version is part of the signed rules identity, this release needs rules bundles signed for the new engine: Pro rules published before the update are not accepted by 0.11.0, and the re-signed rules are not accepted by older versions. A rejected Pro bundle makes `shipguard scan --pro` stop with exit code 3 (or, with `--allow-degraded`, fall back to the free rules, marked degraded). The free rules are not affected.

@@ -3,6 +3,7 @@ import { dirname, basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Finding, ScanResult } from '@agenticcli/shared'
 import { effectiveRecommendation } from './verdict.js'
+import { assertCwdAlive } from '../utils/cwd-guard.js'
 
 // ---------------------------------------------------------------------------
 // Internal helpers — user-view markdown
@@ -278,6 +279,7 @@ export async function generateReport(
     runMarkdown: runMdName,
   }
 
+  assertCwdAlive()
   await mkdir(dir, { recursive: true })
   await mkdir(join(dir, RUNS_SUBDIR), { recursive: true })
   // Run-scoped files first: the pointer must never name a file that does not exist yet.

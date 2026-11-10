@@ -416,7 +416,7 @@ describe('PART 2 — Native↔re2js differential: flag decisions must be identic
         expect(nativeMatches).toBe(shouldDetectAuth)
 
         // re2js path (via authCheck): if auth is detected → NOT flagged; if not → flagged
-        const f = makeFile('app/admin/page.tsx', content)
+        const f = makeFile('app/admin/page.tsx', content + "\nif (!result && !x && !s && !session) redirect('/login')")
         const findings = authCheck.run([f, MIDDLEWARE_WITH_ADMIN], POLICY)
         const adminFindings = findings.filter((x) => x.file === 'app/admin/page.tsx')
         // If auth was found (shouldDetectAuth=true), admin page should NOT be flagged
@@ -601,14 +601,14 @@ describe('PART 3 — Property-generated inputs with native oracle', () => {
         const nativeMatches = NATIVE_AUTH_CALL_PATTERN.test(input)
         expect(nativeMatches).toBe(true)
         // Behavioral: admin page with this call should NOT be flagged
-        const f = makeFile('app/admin/page.tsx', input)
+        const f = makeFile('app/admin/page.tsx', input + "\nif (!result && !x && !s && !session) redirect('/login')")
         const findings = authCheck.run([f, MIDDLEWARE_WITH_ADMIN], POLICY)
         expect(findings.filter((x) => x.file === 'app/admin/page.tsx').length).toBe(0)
       })
       it(`matches ${fn}  (  with whitespace before paren`, () => {
-        const input = `const x = ${fn}  (`
+        const input = `const x = ${fn}  ()`
         expect(NATIVE_AUTH_CALL_PATTERN.test(input)).toBe(true)
-        const f = makeFile('app/admin/page.tsx', input)
+        const f = makeFile('app/admin/page.tsx', input + "\nif (!result && !x && !s && !session) redirect('/login')")
         const findings = authCheck.run([f, MIDDLEWARE_WITH_ADMIN], POLICY)
         expect(findings.filter((x) => x.file === 'app/admin/page.tsx').length).toBe(0)
       })
@@ -767,16 +767,16 @@ router.get('/admin/users', handler)`)
   // Dimension 2: Boundary/anchor conditions
   describe('Dimension 2 — Boundary and anchor conditions', () => {
     it('AUTH_CALL_PATTERN: auth at start of content', () => {
-      const input = `auth()`
+      const input = `const result = auth()`
       expect(NATIVE_AUTH_CALL_PATTERN.test(input)).toBe(true)
-      const f = makeFile('app/admin/page.tsx', input)
+      const f = makeFile('app/admin/page.tsx', input + "\nif (!result && !x && !s && !session) redirect('/login')")
       expect(authCheck.run([f, MIDDLEWARE_WITH_ADMIN], POLICY).filter((x) => x.file === 'app/admin/page.tsx').length).toBe(0)
     })
 
     it('AUTH_CALL_PATTERN: auth at end of content (no newline)', () => {
-      const input = `const fn = () => auth()`
+      const input = `const fn = () => auth()\nconst result = auth()`
       expect(NATIVE_AUTH_CALL_PATTERN.test(input)).toBe(true)
-      const f = makeFile('app/admin/page.tsx', input)
+      const f = makeFile('app/admin/page.tsx', input + "\nif (!result && !x && !s && !session) redirect('/login')")
       expect(authCheck.run([f, MIDDLEWARE_WITH_ADMIN], POLICY).filter((x) => x.file === 'app/admin/page.tsx').length).toBe(0)
     })
 
@@ -824,6 +824,7 @@ router.get('/admin/dashboard', handler)`)
       const protectedPage = makeFile('app/admin/page.tsx', `import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`)
       const unprotectedPage = makeFile('app/dashboard/page.tsx', `export default function DashboardPage() {
@@ -999,6 +1000,7 @@ export default async function AdminPage(req: Request) {
     const content = `import { auth } from '@/auth'
 export default async function AdminPage() {
   const msg = \`Hello \${'world'} - session: \${await auth()}\`
+  if (!msg) redirect('/login')
   return <div>{msg}</div>
 }`
     const f = makeFile('app/admin/page.tsx', content)

@@ -669,14 +669,45 @@ export function runProRules(
     }
 
     // Glob pre-filter: skip files that don't match the rule's fileGlob
-    const matched = files.filter((f) => minimatch(f.relativePath, rule.matcher.fileGlob))
+    let matched = files.filter((f) => minimatch(f.relativePath, rule.matcher.fileGlob))
+    let requiresFailClosed: string | undefined
+
+    // A `pattern` rule may carry context.requiresPattern ("only files that contain X", e.g. "use server").
+    // The pattern executor ignores it, so the rule fired on every file the glob matched (the 2026-11-09
+    // clean-control noise). Apply it here as a per-file prerequisite; fail closed on a bad pattern.
+    if (rule.matcher.type === 'pattern') {
+      const reqPattern = (rule.matcher.context as { requiresPattern?: string } | undefined)?.requiresPattern
+      if (reqPattern !== undefined) {
+        try {
+          const reqRe = compileCached(reqPattern, 0)
+          matched = matched.filter((f) => reqRe.matcher(f.content).find())
+        } catch (reqErr: unknown) {
+          // A malformed prerequisite is a corpus error. Fail closed exactly like the executor does for
+          // file-relationship rules: keep every glob-matched file and report one finding per file, so the
+          // error is visible and the scan is never silently clean (and never a crash).
+          console.error(
+            `[shipguard] requiresPattern compile error for rule ${rule.id}: ` +
+            `${reqErr instanceof Error ? reqErr.message : String(reqErr)} — fail closed`,
+          )
+          requiresFailClosed = reqPattern
+        }
+      }
+    }
 
     for (const file of matched) {
       // Run the re2js-v1 executor against this file (linear-time, ReDoS-immune).
       // The executor returns CanonicalFinding[] — one entry per match occurrence.
       let canonicalFindings
       try {
-        canonicalFindings = activeExecutor.evaluate(
+        canonicalFindings = requiresFailClosed !== undefined
+          ? ([{
+              line: 1,
+              column: 1,
+              evidence: `requiresPattern "${requiresFailClosed}" (compile error — fail closed)`,
+              suppressionState: 'active',
+              matcherType: 'pattern',
+            }] as unknown as ReturnType<typeof activeExecutor.evaluate>)
+          : activeExecutor.evaluate(
           matcherForExecutor,
           { relativePath: file.relativePath, content: file.content },
           ctx,

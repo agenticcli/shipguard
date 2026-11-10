@@ -813,3 +813,44 @@ describe('action:block blocks regardless of severity (no severity-based reconstr
   })
 })
 
+
+describe('runProRules: pattern rule context.requiresPattern (sg012 level A)', () => {
+  const rule = makeRule({
+    id: 'pattern-requires',
+    matcher: {
+      type: 'pattern',
+      fileGlob: '**/*.ts',
+      patterns: ['export\\s+async\\s+function'],
+      antiPatterns: [],
+      flags: '',
+      context: { requiresPattern: '"use server"|\'use server\'' },
+    },
+  })
+
+  it('does not fire on a file that lacks the required marker', () => {
+    const f = runProRules([rule], [makeFile('app/api/route.ts', 'export async function GET() {}')], POLICY)
+    expect(f).toHaveLength(0)
+  })
+
+  it('fires on a file that has the marker', () => {
+    const f = runProRules([rule], [makeFile('app/actions.ts', '"use server"\nexport async function save() {}')], POLICY)
+    expect(f).toHaveLength(1)
+  })
+
+  it('a malformed requiresPattern fails closed: one finding per matched file, no throw', () => {
+    const bad = makeRule({
+      id: 'pattern-requires-bad',
+      matcher: {
+        type: 'pattern',
+        fileGlob: '**/*.ts',
+        patterns: ['export'],
+        antiPatterns: [],
+        flags: '',
+        context: { requiresPattern: '(' },
+      },
+    })
+    const f = runProRules([bad], [makeFile('a.ts', 'export const a = 1')], POLICY)
+    expect(f).toHaveLength(1)
+    expect(f[0].evidence).toContain('fail closed')
+  })
+})
