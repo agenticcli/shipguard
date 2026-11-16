@@ -50,15 +50,6 @@ function hasUnsafePermissions(path: string): boolean {
   return (mode & UNSAFE_PERM_MASK) !== 0;
 }
 
-/**
- * True when this machine looks signed in: a saved login file exists, or SHIPGUARD_API_KEY is set.
- * Reads nothing from the file, calls no server and prints nothing, so a plain scan can use it to
- * decide whether to show a hint without any side effect.
- */
-export function hasSavedCredentials(): boolean {
-  return Boolean(process.env.SHIPGUARD_API_KEY) || existsSync(getCredentialsPath());
-}
-
 export function loadCredentials(): AuthCredentials | null {
   const p = getCredentialsPath();
   if (!existsSync(p)) return null;

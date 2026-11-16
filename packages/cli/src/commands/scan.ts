@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { scan } from '../core/scanner.js'
-import { hasSavedCredentials } from '../core/auth.js'
 import { generateReport } from '../core/report.js'
 import { toSarif } from '../core/sarif.js'
 import { loadPolicy } from '../core/policy.js'
@@ -225,17 +224,6 @@ export function exitMeaning(opts: { exitCode: number; strict: boolean; notSafe: 
   if (opts.strict) return 'exit 0 = scan finished and --strict found nothing that blocks.'
   if (opts.notSafe) return EXIT_NOTICE
   return 'exit 0 = scan finished. Read recommendation for the verdict; add --strict to fail on blocking findings.'
-}
-
-/** The one hint a signed-in plain scan prints (stderr in human mode, `hints` in --json). */
-export const SIGNED_IN_HINT = 'signed in: add --pro to use the full rulebook (1 credit)'
-
-/**
- * Plain `scan` never fetches the rulebook (credits are only spent with --pro). When the user is
- * signed in and did not ask for it, say so once. No hint without a login, with --pro, or offline.
- */
-export function signedInHint(opts: { signedIn: boolean; pro: boolean; offline: boolean }): string | undefined {
-  return opts.signedIn && !opts.pro && !opts.offline ? SIGNED_IN_HINT : undefined
 }
 
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const
@@ -874,9 +862,6 @@ async function runScan(ctx: {
   if (regressionBlocks) exitCode = EXIT_CODES.BLOCKED
   const notSafe = result.riskScore.blockingCount > 0 || effectiveRecommendation(result) === 'DO_NOT_SHIP'
   const showExitNotice = exitCode === EXIT_CODES.SAFE && !scanOptions.strict && notSafe
-  const signedIn = hasSavedCredentials()
-  const hint = signedInHint({ signedIn, pro: Boolean(opts.pro), offline: isOffline() })
-  if (hint) publicResult.hints = [hint]
   publicResult.exitMeaning = exitMeaning({ exitCode, strict: scanOptions.strict, notSafe, regressionBlocks })
 
   // Machine-readable output — exactly one format emitted to stdout
@@ -1013,7 +998,7 @@ async function runScan(ctx: {
     // thing on screen was a list of suggestions and the verdict was ~70 lines up.
     const topRuleId = result.findings.length > 0 ? result.findings[0].id : undefined
     // isLoggedIn: heuristic — if pro rules loaded successfully we are authenticated
-    const isLoggedIn = Boolean(opts.pro && !degraded) || signedIn
+    const isLoggedIn = Boolean(opts.pro && !degraded)
     console.log(actionFooter({
       hasFindings: result.findings.length > 0,
       topRuleId,
@@ -1032,7 +1017,6 @@ async function runScan(ctx: {
     ))
     // The exit code is deliberately verdict-neutral: say so on the last line, so a 0 is never read as "safe".
     if (showExitNotice) console.log(EXIT_NOTICE)
-    if (hint) logger.info(hint)
   }
 
   // Anonymous opt-out ping — privacy-preserving. Started here so the request overlaps with the
