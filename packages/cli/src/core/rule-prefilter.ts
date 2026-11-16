@@ -303,8 +303,32 @@ export class FileProbe {
 
 /** True when the rule might match the file behind `probe`. */
 export function mayMatch(pf: RulePrefilter, probe: FileProbe): boolean {
+  const folded = pf.folded
+  // Plain loops, no per-call closures: this runs for every (rule, file) pair.
   for (const b of pf.alts) {
-    if (b.runs.every((r) => probe.has(r, pf.folded)) && b.ors.every((set) => set.some((r) => probe.has(r, pf.folded)))) return true
+    let ok = true
+    for (const r of b.runs) {
+      if (!probe.has(r, folded)) {
+        ok = false
+        break
+      }
+    }
+    if (ok) {
+      for (const set of b.ors) {
+        let any = false
+        for (const r of set) {
+          if (probe.has(r, folded)) {
+            any = true
+            break
+          }
+        }
+        if (!any) {
+          ok = false
+          break
+        }
+      }
+    }
+    if (ok) return true
   }
   return false
 }
@@ -314,12 +338,15 @@ export function mayMatch(pf: RulePrefilter, probe: FileProbe): boolean {
  * The folded copy of the LAST input is remembered, so the several case-insensitive detectors that
  * look at one file in turn fold it once.
  */
+const MIN_FOLD_LENGTH = 256
 let lastFoldInput: string | undefined
 let lastFolded = ''
 
 export function mayMatchText(pf: RulePrefilter, text: string): boolean {
   let hay = text
   if (pf.folded) {
+    // Folding copies the text; for a short line the engine is cheaper than the copy, so just let it run.
+    if (text.length < MIN_FOLD_LENGTH) return true
     if (lastFoldInput !== text) {
       lastFolded = foldContent(text)
       lastFoldInput = text
@@ -327,7 +354,29 @@ export function mayMatchText(pf: RulePrefilter, text: string): boolean {
     hay = lastFolded
   }
   for (const b of pf.alts) {
-    if (b.runs.every((r) => hay.includes(r)) && b.ors.every((set) => set.some((r) => hay.includes(r)))) return true
+    let ok = true
+    for (const r of b.runs) {
+      if (!hay.includes(r)) {
+        ok = false
+        break
+      }
+    }
+    if (ok) {
+      for (const set of b.ors) {
+        let any = false
+        for (const r of set) {
+          if (hay.includes(r)) {
+            any = true
+            break
+          }
+        }
+        if (!any) {
+          ok = false
+          break
+        }
+      }
+    }
+    if (ok) return true
   }
   return false
 }
