@@ -11,6 +11,8 @@ function isStripeWebhookRoute(relativePath: string): boolean {
   const p = relativePath.toLowerCase()
   // Must be in an API route directory
   if (!p.includes('api/') && !p.includes('api\\')) return false
+  // A Razorpay route gets the Razorpay checks only, never a second set of Stripe findings.
+  if (p.includes('razorpay')) return false
   return (
     p.includes('webhook') ||
     p.includes('stripe')
@@ -147,49 +149,39 @@ export const payments: CheckModule = {
       // 1. Stripe webhook route missing constructEvent signature verification
       // ------------------------------------------------------------------
       if (isStripeWebhookRoute(relativePath)) {
-        if (!hasStripeConstructEvent(content)) {
+        const noConstructEvent = !hasStripeConstructEvent(content)
+        const noSignatureHeader = !hasStripeSignatureHeader(content)
+        // One unsigned webhook is ONE flaw: report it once, whichever of the two signals is missing.
+        if (noConstructEvent || noSignatureHeader) {
           const id = 'payment_webhook_without_signature_check'
           findings.push({
             id,
-            title: 'Stripe webhook missing signature verification',
+            title: noConstructEvent
+              ? 'Stripe webhook missing signature verification'
+              : 'Stripe webhook does not read stripe-signature header',
             severity: 'critical',
             category: 'payments',
             file: relativePath,
-            evidence: 'No call to stripe.webhooks.constructEvent() found',
+            evidence: noConstructEvent && noSignatureHeader
+              ? 'No call to stripe.webhooks.constructEvent() and no reference to the stripe-signature header found'
+              : noConstructEvent
+                ? 'No call to stripe.webhooks.constructEvent() found'
+                : 'No reference to stripe-signature header found',
             confidence: 'MEDIUM',
-            explanation:
-              'Without calling stripe.webhooks.constructEvent(), the webhook endpoint cannot verify that ' +
-              'requests originate from Stripe. Attackers can send forged events to trigger payment logic ' +
-              '(e.g., fake payment_intent.succeeded) without making a real payment.',
+            explanation: noConstructEvent
+              ? 'Without calling stripe.webhooks.constructEvent(), the webhook endpoint cannot verify that ' +
+                'requests originate from Stripe. Attackers can send forged events to trigger payment logic ' +
+                '(e.g., fake payment_intent.succeeded) without making a real payment.' +
+                (noSignatureHeader
+                  ? ' The stripe-signature header, which carries the proof, is not read either.'
+                  : '')
+              : 'The Stripe-Signature header carries the HMAC timestamp+hash that proves the request ' +
+                'originated from Stripe. Without reading it, signature verification is impossible.',
             recommendation:
               'Verify every incoming webhook with stripe.webhooks.constructEvent(rawBody, sig, webhookSecret). ' +
-              'Pass the raw request body — not a parsed JSON object — to prevent HMAC mismatch.',
-            blocking: isBlocking(id, policy),
-          })
-        }
-
-        // ----------------------------------------------------------------
-        // 2. Stripe webhook route missing stripe-signature header read
-        //    (separate check — constructEvent may be present but header may
-        //    be fetched incorrectly in a wrapper; also catches middleware
-        //    that skips the header entirely)
-        // ----------------------------------------------------------------
-        if (!hasStripeSignatureHeader(content)) {
-          const id = 'payment_webhook_without_signature_check'
-          findings.push({
-            id,
-            title: 'Stripe webhook does not read stripe-signature header',
-            severity: 'critical',
-            category: 'payments',
-            file: relativePath,
-            evidence: 'No reference to stripe-signature header found',
-            confidence: 'MEDIUM',
-            explanation:
-              'The Stripe-Signature header carries the HMAC timestamp+hash that proves the request ' +
-              'originated from Stripe. Without reading it, signature verification is impossible.',
-            recommendation:
+              'Pass the raw request body, not a parsed JSON object, to prevent HMAC mismatch. ' +
               'Read the header with request.headers.get("stripe-signature") (Next.js) or ' +
-              'req.headers["stripe-signature"] (Express) before calling constructEvent().',
+              'req.headers["stripe-signature"] (Express) first.',
             blocking: isBlocking(id, policy),
           })
         }
@@ -280,20 +272,21 @@ export const payments: CheckModule = {
           const id = 'missing_idempotency'
           findings.push({
             id,
-            title: 'Webhook handler lacks idempotency protection',
+            title: 'No idempotency (duplicate-delivery) check found in webhook handler',
             // Robustness, not a security hole: a duplicate delivery repeats an action, it does not open access.
             severity: 'low',
             category: 'payments',
             file: relativePath,
-            evidence: 'No idempotency key, event.id check, or duplicate-detection logic found',
+            evidence: 'No idempotency key, event.id check, or duplicate-detection logic found in this file',
             confidence: 'LOW',
             explanation:
-              'Payment providers may deliver the same webhook event more than once (retries after ' +
-              'network failure, provider-side bugs). Without idempotency guards, duplicate deliveries ' +
-              'can cause double-charges, double-fulfillments, or double-refunds.',
+              'Payment providers can send the same webhook event more than once (for example after a ' +
+              'timeout). This file has no sign of a check for events it has already handled, so a repeat ' +
+              'could run the same action twice, such as a second order fulfilment or refund. If you handle ' +
+              'repeats elsewhere (a shared helper or the database), this finding can be ignored.',
             recommendation:
-              'Record processed event IDs (e.g., store event.id in a database) before acting on the ' +
-              'event. If the ID already exists, return 200 immediately without reprocessing.',
+              'Store each processed event.id before acting on the event. If the ID is already stored, ' +
+              'return 200 right away without running the action again.',
             blocking: isBlocking(id, policy),
           })
         }
