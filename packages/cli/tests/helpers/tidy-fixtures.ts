@@ -19,6 +19,8 @@ const STRIPE_UNSIGNED = [
   '',
 ].join('\n')
 
+const STRIPE_UNSIGNED_NAMED = ["import Stripe from 'stripe'", ...STRIPE_UNSIGNED.split('\n')].join('\n')
+
 const STRIPE_SIGNED = [
   "import Stripe from 'stripe'",
   "const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '')",
@@ -45,9 +47,24 @@ const STRIPE_HEADER_ONLY_MISSING = [
 ].join('\n')
 
 const RAZORPAY_UNSIGNED = [
+  "const signature = (req: Request) => req.headers.get('x-razorpay-signature')",
   'export async function POST(req: Request) {',
   '  const body = await req.json()',
   '  return Response.json({ got: body.event })',
+  '}',
+  '',
+].join('\n')
+
+// Outgoing `axios.post(` on line 2 must not beat the exported handler on line 5.
+const AXIOS_BEFORE_HANDLER = [
+  "import axios from 'axios'",
+  "const notify = (m: string) => axios.post('https://example.test/hook', { m })",
+  '',
+  '// handler below',
+  'export async function POST(req: Request) {',
+  '  const event = await req.json()',
+  '  notify(event.type)',
+  '  return Response.json({ ok: true })',
   '}',
   '',
 ].join('\n')
@@ -75,6 +92,10 @@ export const TIDY_FIXTURES: Record<string, FileMap> = {
   'stripe-signed': { 'package.json': PKG, 'app/api/webhooks/stripe/route.ts': STRIPE_SIGNED },
   'stripe-header-missing': { 'package.json': PKG, 'app/api/webhooks/stripe/route.ts': STRIPE_HEADER_ONLY_MISSING },
   'razorpay-unsigned': { 'package.json': PKG, 'app/api/webhooks/razorpay/route.ts': RAZORPAY_UNSIGNED },
+  // A real Stripe flaw in a file whose path says razorpay: decided by content, so it must still be flagged.
+  'razorpay-path-stripe-flaw': { 'package.json': PKG, 'app/api/razorpay/webhook/route.ts': STRIPE_UNSIGNED_NAMED },
+  'razorpay-path-no-provider-words': { 'package.json': PKG, 'app/api/razorpay/webhook/route.ts': STRIPE_UNSIGNED },
+  'axios-before-handler': { 'package.json': PKG, 'app/api/webhooks/stripe/route.ts': AXIOS_BEFORE_HANDLER },
   'keys-only': {
     'package.json': '{"name":"keys"}\n',
     'src/a.ts': [

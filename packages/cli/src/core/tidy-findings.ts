@@ -14,10 +14,13 @@ import type { FileInfo, Finding } from '@agenticcli/shared'
 import { compileDetectorRegex } from './re2-detector-engine.js'
 import { looksFakeKey } from '../checks/secrets.js'
 
-// First line of a request handler: Next.js route export, Express/Fastify-style `.post(`, default export.
-const HANDLER_LINE_RE = compileDetectorRegex(
-  '\\bexport\\s+(?:async\\s+)?function\\s+POST\\b|\\bexport\\s+const\\s+POST\\b|\\.post\\s*\\(|\\bexport\\s+default\\s+(?:async\\s+)?function\\b',
+// The handler itself: Next.js route export or default export. Preferred over `.post(` calls, which
+// also match any earlier outgoing request (`axios.post(`).
+const HANDLER_DECL_RE = compileDetectorRegex(
+  '\\bexport\\s+(?:async\\s+)?function\\s+POST\\b|\\bexport\\s+const\\s+POST\\b|\\bexport\\s+default\\s+(?:async\\s+)?function\\b',
 )
+// Express/Fastify-style `.post(` registration, used only when no handler declaration exists.
+const HANDLER_CALL_RE = compileDetectorRegex('\\.post\\s*\\(')
 
 /** Findings whose natural home is the request handler rather than the top of the file. */
 const HANDLER_ANCHORED = new Set([
@@ -28,8 +31,10 @@ const HANDLER_ANCHORED = new Set([
 
 function firstHandlerLine(content: string): number | undefined {
   const lines = content.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    if (HANDLER_LINE_RE.test(lines[i])) return i + 1
+  for (const re of [HANDLER_DECL_RE, HANDLER_CALL_RE]) {
+    for (let i = 0; i < lines.length; i++) {
+      if (re.test(lines[i])) return i + 1
+    }
   }
   return undefined
 }

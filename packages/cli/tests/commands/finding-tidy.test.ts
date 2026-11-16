@@ -40,6 +40,17 @@ describe('one unsigned webhook = one finding', () => {
     expect(f[0].title).toContain('Razorpay')
   })
 
+  it('Stripe flaw in a file under a razorpay path is still flagged (decided by content, not path)', async () => {
+    const f = (await scan('razorpay-path-stripe-flaw')).filter((x) => x.id === 'payment_webhook_without_signature_check')
+    expect(f).toHaveLength(1)
+    expect(f[0].title).toContain('Stripe')
+  })
+
+  it('razorpay path, content names no provider: the Stripe flaw is still reported (never hidden by path)', async () => {
+    const f = (await scan('razorpay-path-no-provider-words')).filter((x) => x.id === 'payment_webhook_without_signature_check')
+    expect(f.some((x) => x.title.includes('Stripe'))).toBe(true)
+  })
+
   it('only the header missing: still exactly 1 finding', async () => {
     const f = (await scan('stripe-header-missing')).filter((x) => x.id === 'payment_webhook_without_signature_check')
     expect(f).toHaveLength(1)
@@ -72,6 +83,11 @@ describe('every finding with a file has a numeric line', () => {
   it('webhook finding points at the POST handler, not just line 1', async () => {
     const f = (await scan('stripe-unsigned')).find((x) => x.id === 'payment_webhook_without_signature_check')
     expect(f!.line).toBe(2)
+  })
+
+  it('handler declaration beats an earlier outgoing .post( call', async () => {
+    const f = (await scan('axios-before-handler')).find((x) => x.id === 'payment_webhook_without_signature_check')
+    expect(f!.line).toBe(5)
   })
 
   it('file-level finding (tracked .env) gets line 1', async () => {
