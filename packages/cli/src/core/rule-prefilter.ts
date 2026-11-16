@@ -309,5 +309,28 @@ export function mayMatch(pf: RulePrefilter, probe: FileProbe): boolean {
   return false
 }
 
+/**
+ * Same question for a one-off string (the detector engine calls this per input, often a short line).
+ * The folded copy of the LAST input is remembered, so the several case-insensitive detectors that
+ * look at one file in turn fold it once.
+ */
+let lastFoldInput: string | undefined
+let lastFolded = ''
+
+export function mayMatchText(pf: RulePrefilter, text: string): boolean {
+  let hay = text
+  if (pf.folded) {
+    if (lastFoldInput !== text) {
+      lastFolded = foldContent(text)
+      lastFoldInput = text
+    }
+    hay = lastFolded
+  }
+  for (const b of pf.alts) {
+    if (b.runs.every((r) => hay.includes(r)) && b.ors.every((set) => set.some((r) => hay.includes(r)))) return true
+  }
+  return false
+}
+
 /** Test hook: lets a test run the same scan with the prefilter off to prove the findings are equal. */
 export const prefilterControl = { enabled: true }
