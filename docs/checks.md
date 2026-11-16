@@ -18,9 +18,9 @@ Findings are printed with a severity (info, low, medium, high, critical), the fi
 
 Rules are matched with RE2JS, a linear-time engine, so a bad pattern cannot hang a scan.
 
-## Cloud scans
+## Full-rulebook scans
 
-After `shipguard login`, `shipguard scan --pro` fetches the full current rule set from ShipGuard's servers. Rules come down; your code never goes up. See the [FAQ](faq.md) for plan limits.
+After `shipguard login`, `shipguard scan --pro` downloads the full current rule set from the rulebook. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out). See the [FAQ](faq.md) for plan limits.
 
 ## Full list
 

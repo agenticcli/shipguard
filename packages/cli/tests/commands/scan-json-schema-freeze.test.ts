@@ -60,6 +60,8 @@ const REQUIRED_TOP_LEVEL = [
   'cliVersion',
   // Honest coverage (schemaVersion 5 → 6): what was discovered, scanned and skipped, always present.
   'coverage',
+  // 0.12: what this run's exit code means, always present. Additive (no schemaVersion bump).
+  'exitMeaning',
 ] as const
 
 /** Additional OPTIONAL top-level keys allowed (present only with --pro or on degraded scans). */
@@ -75,6 +77,8 @@ const OPTIONAL_TOP_LEVEL = [
   'coverageChanged',
   // Receipt (rec #8) — absent only when the scan read zero files.
   'treeDigest',
+  // 0.12, additive (no schemaVersion bump): `mode` is "offline" only for `--offline` scans.
+  'mode',
 ] as const
 
 const ALLOWED_TOP_LEVEL = new Set<string>([...REQUIRED_TOP_LEVEL, ...OPTIONAL_TOP_LEVEL])

@@ -115,6 +115,7 @@ export function buildSchemaContract(limits: {
         { code: 'NOT_A_PROJECT', meaning: 'the directory is not a project root; pass a path or --all' },
         { code: 'PATH_NOT_FOUND', meaning: 'the scan path does not exist or cannot be read' },
         { code: 'PATH_NOT_A_DIRECTORY', meaning: 'the scan path is a file, not a directory' },
+        { code: 'OFFLINE_WITH_PRO', meaning: '--offline (or SHIPGUARD_OFFLINE=1) cannot be combined with --pro, which downloads rules' },
       ],
     },
     exitCodes: [

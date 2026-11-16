@@ -1,4 +1,5 @@
 import { Command } from 'commander'
+import { randomUUID } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { scan } from '../core/scanner.js'
@@ -28,6 +29,7 @@ import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
 import { sendTelemetry } from '../core/telemetry.js'
 import { setExitCode } from '../utils/exit.js'
+import { OFFLINE_ANNOUNCE, isOffline, offlineRequestedByEnv, setOffline } from '../core/offline.js'
 import type { TelemetryVerdict } from '../core/telemetry.js'
 // Type-only import — deliberately NOT a value import. pro-scanner.ts (re2js, matcher-contract,
 // coderef-dispatch, etc.) is dynamically imported ONLY inside the `if (opts.pro)` branch below to
@@ -206,6 +208,24 @@ function platformUnavailableMessage(retryAfterSeconds?: number): string {
     `Please try again in a few minutes${wait}, or pass --allow-degraded to run local rules only.`
 }
 
+/**
+ * The one sentence that says what exit 0 means when the scan found something blocking and `--strict`
+ * was not passed. Printed as the last line of human output and returned as `exitMeaning` in --json.
+ */
+export const EXIT_NOTICE = 'exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.'
+
+/** `exitMeaning` for --json: what THIS run's exit code means, in one sentence. */
+export function exitMeaning(opts: { exitCode: number; strict: boolean; notSafe: boolean; regressionBlocks: boolean }): string {
+  if (opts.exitCode === EXIT_CODES.BLOCKED) {
+    return opts.regressionBlocks
+      ? 'exit 1 = blocked: --check-regressions found a rule that passed before and now fails.'
+      : 'exit 1 = blocked: --strict found a blocking finding, a scan that did not finish, or a DO_NOT_SHIP verdict.'
+  }
+  if (opts.strict) return 'exit 0 = scan finished and --strict found nothing that blocks.'
+  if (opts.notSafe) return EXIT_NOTICE
+  return 'exit 0 = scan finished. Read recommendation for the verdict; add --strict to fail on blocking findings.'
+}
+
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const
 
 /**
@@ -227,6 +247,7 @@ export function scanCommand(): Command {
     .option('--sarif', 'Output results as SARIF 2.1.0 (for GitHub Code Scanning)')
     .option('-q, --quiet', 'One-line verdict only (suppresses progress, panel, and tips)')
     .option('--pro', 'Include pro quality gate rules (requires authentication)')
+    .option('--offline', 'Agent-safe mode: send nothing (no usage ping, no rulebook download), write no files, leave .gitignore alone. Also SHIPGUARD_OFFLINE=1. Cannot be combined with --pro')
     .option('--api-url <url>', 'API server URL', 'https://agenticcli.dev')
     .option('--category <categories>', 'Comma-separated category filter for pro rules')
     .option('--beta', 'Include beta-stage rules')
@@ -299,6 +320,22 @@ ${LEARN_MORE}`)
 
       const machineOutput = Boolean(opts.json) || Boolean(opts.sarif)
       const quiet = Boolean(opts.quiet)
+
+      // Agent-safe offline mode: switch it on BEFORE anything can send or write, and say so on the
+      // first output line. Human mode: first stdout line. --json / --sarif / --quiet keep stdout clean
+      // and carry the same line on stderr.
+      if (Boolean(opts.offline) || offlineRequestedByEnv()) {
+        setOffline(true)
+        if (machineOutput || quiet) console.error(OFFLINE_ANNOUNCE)
+        else console.log(OFFLINE_ANNOUNCE)
+        if (opts.pro) {
+          const message =
+            '--offline cannot be combined with --pro: --pro downloads the full rulebook, and offline mode sends and fetches nothing. Drop one of them.'
+          logger.error(message)
+          if (machineOutput) console.log(JSON.stringify({ error: message, code: 'OFFLINE_WITH_PRO' }))
+          return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
+        }
+      }
 
       // Explicit path must exist and be a directory BEFORE anything chdir()s into it. Without this
       // guard process.chdir threw ENOENT inside the async action and surfaced as "Unhandled
@@ -448,15 +485,18 @@ async function runScan(ctx: {
   }
   const frameworkNames = detectedFrameworks.map((f) => f.name)
 
-  const { scanId, scanIdReused } = await resolveScanId({
-    cwd,
-    policy,
-    cliVersion: CLI_VERSION,
-    changedOnly,
-    categories,
-    proRequested: Boolean(opts.pro),
-    frameworks: frameworkNames,
-  })
+  // Offline mode keeps no local state: a fresh id, nothing reserved on disk.
+  const { scanId, scanIdReused } = isOffline()
+    ? { scanId: randomUUID(), scanIdReused: false }
+    : await resolveScanId({
+        cwd,
+        policy,
+        cliVersion: CLI_VERSION,
+        changedOnly,
+        categories,
+        proRequested: Boolean(opts.pro),
+        frameworks: frameworkNames,
+      })
 
   const inGitRepo = isGitRepo(cwd)
 
@@ -743,18 +783,28 @@ async function runScan(ctx: {
   // by the CLI build (see history/index.ts).
   // ---------------------------------------------------------------------------
   const proApplied = Boolean(proRules?.length) && !degraded
-  const historyOutcome = await recordScanHistory({
-    cwd,
-    scanId,
-    cliVersion: CLI_VERSION,
-    policy,
-    changedOnly: scanOptions.changedOnly,
-    categories,
-    proRules,
-    proApplied,
-    rulesVersion,
-    result,
-  })
+  // Offline mode writes no history store (and so never touches .gitignore): the regression
+  // comparison is reported as skipped, with the same "state unavailable" reason a read-only disk gives.
+  const historyOutcome = isOffline()
+    ? {
+        stateStatus: 'unavailable' as const,
+        regressionCheckSkipped: true,
+        regressionCheckSkippedReason: 'state-unavailable' as const,
+        regressions: [],
+        coverageChanged: [],
+      }
+    : await recordScanHistory({
+        cwd,
+        scanId,
+        cliVersion: CLI_VERSION,
+        policy,
+        changedOnly: scanOptions.changedOnly,
+        categories,
+        proRules,
+        proApplied,
+        rulesVersion,
+        result,
+      })
   result.stateStatus = historyOutcome.stateStatus
   result.regressionCheckSkipped = historyOutcome.regressionCheckSkipped
   if (historyOutcome.regressionCheckSkipped) {
@@ -767,14 +817,17 @@ async function runScan(ctx: {
   // The public JSON result. The skip/truncation counts used to be private `_skipped*` fields that
   // were deleted here, so the JSON never carried them. They now live in the public `coverage`
   // object, so there is nothing left to strip.
-  const publicResult = { ...result }
+  const publicResult: typeof result = { ...result }
+  if (isOffline()) publicResult.mode = 'offline'
 
   // -----------------------------------------------------------------------
   // Write the report BEFORE rendering (rec #4): the human panel embeds the report
   // path, so the path has to exist by the time the panel is built. The write is
   // unconditional-on-request and independent of output mode, exactly as before.
   // -----------------------------------------------------------------------
-  const shouldReport = scanOptions.generateReport || policy.scan.generate_report
+  // Offline mode writes no report on its own (the policy default would create .shipguard/reports);
+  // an explicit --report still does.
+  const shouldReport = scanOptions.generateReport || (policy.scan.generate_report && !isOffline())
   let reportPaths: Awaited<ReturnType<typeof generateReport>> | undefined
   if (shouldReport) {
     const reportElapsedMs = Date.now() - startTime
@@ -786,6 +839,30 @@ async function runScan(ctx: {
       logger.error(`Report generation failed: ${error instanceof Error ? error.message : error}`)
     }
   }
+
+  // Exit code resolution (A1 contract) — computed BEFORE any output so the JSON can say what the
+  // exit code means (`exitMeaning`) and the human output can end with the exit-code notice. The
+  // computation is pure; nothing here changes which code is returned.
+  let exitCode = resolveExitCode({
+    strict: scanOptions.strict,
+    blockingCount: result.riskScore.blockingCount,
+    // the hard stop must not inherit the false-safe on an
+    // unfinished scan. Uses the FINAL degraded value (post pro-fetch OR-merge).
+    degraded: result.degraded === true,
+    // CLI-2/J-3 — the hard stop must not disagree with the printed verdict:
+    // a scan can print DO_NOT_SHIP with blockingCount 0 (active non-blocking findings,
+    // degradation). effectiveRecommendation
+    // reads the SAME field the human panel / --json `recommendation` print.
+    recommendation: effectiveRecommendation(result),
+  })
+  const strictBlocked = exitCode === EXIT_CODES.BLOCKED
+  // --check-regressions (opt-in ONLY) — see the note at the exit below.
+  const regressionBlocks =
+    Boolean(opts.checkRegressions) && exitCode === EXIT_CODES.SAFE && (result.regressions?.length ?? 0) > 0
+  if (regressionBlocks) exitCode = EXIT_CODES.BLOCKED
+  const notSafe = result.riskScore.blockingCount > 0 || effectiveRecommendation(result) === 'DO_NOT_SHIP'
+  const showExitNotice = exitCode === EXIT_CODES.SAFE && !scanOptions.strict && notSafe
+  publicResult.exitMeaning = exitMeaning({ exitCode, strict: scanOptions.strict, notSafe, regressionBlocks })
 
   // Machine-readable output — exactly one format emitted to stdout
   if (opts.sarif) {
@@ -938,6 +1015,8 @@ async function runScan(ctx: {
       scanOptions.strict,
       reportPaths,
     ))
+    // The exit code is deliberately verdict-neutral: say so on the last line, so a 0 is never read as "safe".
+    if (showExitNotice) console.log(EXIT_NOTICE)
   }
 
   // Anonymous opt-out ping — privacy-preserving. Started here so the request overlaps with the
@@ -980,20 +1059,8 @@ async function runScan(ctx: {
   // ONLY thing that moves the exit code off 0. Degradation is surfaced in JSON
   // (`degraded`/`degradedReasons`), never by reusing a different exit code —
   // see resolveExitCode() doc comment above.
-  let exitCode = resolveExitCode({
-    strict: scanOptions.strict,
-    blockingCount: result.riskScore.blockingCount,
-    // the hard stop must not inherit the false-safe on an
-    // unfinished scan. Uses the FINAL degraded value (post pro-fetch OR-merge).
-    degraded: result.degraded === true,
-    // CLI-2/J-3 — the hard stop must not disagree with the printed verdict:
-    // a scan can print DO_NOT_SHIP with blockingCount 0 (active non-blocking findings,
-    // degradation). effectiveRecommendation
-    // reads the SAME field the human panel / --json `recommendation` print.
-    recommendation: effectiveRecommendation(result),
-  })
 
-  if (exitCode === EXIT_CODES.BLOCKED && !machineOutput && !quiet) {
+  if (strictBlocked && !machineOutput && !quiet) {
     if (result.degraded === true) {
       logger.warn(
         `Strict mode: this scan did not finish — ${(result.degradedReasons ?? []).map((r) => r.code).join(', ') || 'reason not recorded'} ` +
@@ -1015,11 +1082,8 @@ async function runScan(ctx: {
   // opts into using the EXISTING BLOCKED exit code (never a new one) when at least one
   // regression fired. This does NOT touch resolveExitCode()'s A1 contract above — it is
   // a separate, additive override, and only ever raises the exit code, never lowers it.
-  if (opts.checkRegressions && exitCode === EXIT_CODES.SAFE && (result.regressions?.length ?? 0) > 0) {
-    exitCode = EXIT_CODES.BLOCKED
-    if (!machineOutput && !quiet) {
-      logger.warn(`--check-regressions: ${result.regressions?.length} previously-passing rule(s) now fail — exiting with code 1`)
-    }
+  if (regressionBlocks && !machineOutput && !quiet) {
+    logger.warn(`--check-regressions: ${result.regressions?.length} previously-passing rule(s) now fail — exiting with code 1`)
   }
 
   // Let the (bounded) ping finish before we may hard-exit. sendTelemetry never rejects.

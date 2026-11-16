@@ -9,7 +9,7 @@ ShipGuard's exit code is verdict-neutral by default. The verdict is in the JSON 
 | `2` | Config error: a bad policy file, an unknown flag, or a folder that is not a project (use `--all` to scan one anyway). |
 | `3` | Runtime error: the scan could not run at all (for example, no rules applied, or `--pro` could not fetch its rules). |
 
-Exit `0` does not mean "safe". Never use it alone as a pass.
+Exit `0` does not mean "safe". Never use it alone as a pass. To make that hard to miss, when blocking findings exist and `--strict` is off the terminal output ends with `exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.`, and `--json` carries what this run's exit code means in the `exitMeaning` field. `shipguard --help` lists the four codes.
 
 ## Config errors in machine mode
 
@@ -21,6 +21,7 @@ With `--json` or `--sarif`, an exit `2` prints exactly one JSON object on stdout
 | `NOT_A_PROJECT` | The folder is not a project root. Pass a path or `--all`. |
 | `PATH_NOT_FOUND` | The scan path does not exist or cannot be read. |
 | `PATH_NOT_A_DIRECTORY` | The scan path is a file. |
+| `OFFLINE_WITH_PRO` | `--offline` (or `SHIPGUARD_OFFLINE=1`) was combined with `--pro`. Offline mode fetches nothing, `--pro` downloads rules. |
 
 ## Degraded scans
 
@@ -28,6 +29,6 @@ If ShipGuard could not read everything (an oversized file, an unreadable file, a
 
 ## JSON output
 
-`shipguard scan --json` prints one JSON object with, among others: `recommendation` (`SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`), `findings`, `riskScore`, `filesScanned`, `coverage`, `degraded`, `degradedReasons` and `schemaVersion` (`"6"`). Each finding has `id`, `title`, `severity`, `category`, `file`, an optional `line`, `explanation`, `recommendation`, `blocking` and an optional `fix`.
+`shipguard scan --json` prints one JSON object with, among others: `recommendation` (`SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`), `findings`, `riskScore`, `filesScanned`, `coverage`, `degraded`, `degradedReasons` and `exitMeaning`, `schemaVersion` (`"6"`), and, for an `--offline` scan only, `mode` (`"offline"`). Each finding has `id`, `title`, `severity`, `category`, `file`, an optional `line`, `explanation`, `recommendation`, `blocking` and an optional `fix`.
 
 Run `shipguard schema --json` to print the exact contract of the version you have installed.

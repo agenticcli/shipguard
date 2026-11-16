@@ -14,6 +14,7 @@ import { telemetryCommand } from './commands/telemetry.js'
 import { quickstartHelp } from './core/render.js'
 import { CLI_VERSION, sendLifecycleEvent } from './core/telemetry.js'
 import { installStreamErrorHandlers, exitWhenDrained } from './utils/exit.js'
+import { NETWORK_COMMANDS, OFFLINE_REFUSAL, isOffline, offlineRequestedByEnv, setOffline } from './core/offline.js'
 import {
   handleUncaughtException,
   handleUnhandledRejection,
@@ -75,6 +76,12 @@ program
   // Override default help to show branded quickstart screen
   .helpCommand(false)  // suppress built-in help subcommand; we add our own
   .addHelpText('after', `
+Exit codes:
+  0  scan completed (not "safe": read the verdict; the JSON \`recommendation\` field has it)
+  1  blocked only with --strict (a blocking finding, an unfinished scan, or DO_NOT_SHIP)
+  2  config error (bad flags, bad policy file, not a project folder)
+  3  runtime error (the scan could not run, or --pro could not fetch its rules)
+
 Learn more:
   Docs     ${goLink('docs')}
   Site     ${goLink('site')}
@@ -84,6 +91,14 @@ Learn more:
 // First command on an install: one `cli_first_run` event (opt-outs, CI and dev-build rules live in
 // sendLifecycleEvent; it never throws and is bounded). Skipped for `telemetry` so a user can opt out first.
 program.hook('preAction', async (_thisCommand, actionCommand) => {
+  // Offline mode (`scan --offline` or SHIPGUARD_OFFLINE=1) must stop the first-run ping too, so it is
+  // switched on here, before any event is sent.
+  if (offlineRequestedByEnv() || actionCommand.opts<{ offline?: boolean }>().offline) setOffline(true)
+  // A command that needs the network refuses under offline mode: exit 2, one line, nothing sent.
+  if (isOffline() && NETWORK_COMMANDS.has(actionCommand.name())) {
+    process.stderr.write(`${OFFLINE_REFUSAL}\n`)
+    process.exit(2)
+  }
   if (actionCommand.name() === 'telemetry' || actionCommand.parent?.name() === 'telemetry') return
   await sendLifecycleEvent('cli_first_run', { cliVersion: CLI_VERSION }, { projectDir: process.cwd() })
 })
