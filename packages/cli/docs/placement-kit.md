@@ -84,8 +84,30 @@ jobs:
         with:
           node-version: '20'
       - name: Run the release gate
-        run: npx --yes @agenticcli/shipguard scan --json --strict
+        env:
+          # Optional repository secret. Set it to use the full rulebook (--pro, 1 credit per run);
+          # without it this job runs the local rules only.
+          SHIPGUARD_API_KEY: ${{ secrets.SHIPGUARD_API_KEY }}
+        run: |
+          _sg_pro=""
+          if [ -n "$SHIPGUARD_API_KEY" ]; then
+            _sg_pro="--pro"
+          else
+            echo "ShipGuard: SHIPGUARD_API_KEY is not set, so this run uses the local rules only."
+          fi
+          _sg_status=0
+          npx --yes @agenticcli/shipguard scan --json --strict $_sg_pro || _sg_status=$?
+          if [ "$_sg_status" -eq 3 ] && [ -n "$_sg_pro" ]; then
+            echo "ShipGuard: the full-rulebook check could not run, so this run falls back to the local rules."
+            _sg_status=0
+            npx --yes @agenticcli/shipguard scan --json --strict || _sg_status=$?
+          fi
+          exit "$_sg_status"
 ```
+
+Without the `SHIPGUARD_API_KEY` secret the job runs the local rules only and still blocks on
+`--strict`. With it, the job uses the full rulebook (1 credit per run) and falls back to the local
+rules if the full rulebook cannot be fetched.
 
 Turn on branch protection for the **ShipGuard verdict** check. Without it the job is
 advisory: a red check that nothing requires is a suggestion, not a gate.

@@ -13,10 +13,16 @@
  *
  * NOT BUILT, deliberately: hook auto-detection magic, a
  * hook daemon, per-hook config files, or any non---strict hook.
+ *
+ * The full rulebook (`--pro`, 1 credit per scan) runs on PUSH and in CI only, never on every local
+ * check: the pre-push hook and the CI workflow add `--pro` when the machine is signed in; the
+ * pre-merge-commit hook and the Claude Code hook stay plain. Not signed in (or `--pro` cannot run,
+ * exit 3) degrades to the plain scan with one notice line, so the new flag can never become a new
+ * failure for someone who is not signed in, and never spends a credit on its own.
  */
 
 /** Bumped when the installed text changes, so a re-run visibly updates old blocks. */
-export const HOOK_BLOCK_VERSION = 1
+export const HOOK_BLOCK_VERSION = 2
 
 export const HOOK_MARKER_START = '# >>> shipguard managed block >>>'
 export const HOOK_MARKER_END = '# <<< shipguard managed block <<<'
@@ -37,9 +43,9 @@ export const GATE_COMMAND = 'shipguard scan --json --strict'
  * run, and a gate that did not run must not report a pass. That is the same rule
  * the verdict applies to a degraded scan.
  */
-function gateShellBody(indent = ''): string {
+function gateShellBody(indent = '', withPro = false): string {
   const l = (s: string) => `${indent}${s}`
-  return [
+  const resolveBinary = [
     l('if command -v shipguard >/dev/null 2>&1; then'),
     l('  _sg_run() { shipguard "$@"; }'),
     l('elif command -v npx >/dev/null 2>&1; then'),
@@ -49,11 +55,38 @@ function gateShellBody(indent = ''): string {
     l('  echo "  Install it:  npm i -g @agenticcli/shipguard" >&2'),
     l('  exit 1'),
     l('fi'),
-    l('_sg_out=$(_sg_run scan --json --strict 2>&1) || {'),
+  ]
+  if (!withPro) {
+    return [
+      ...resolveBinary,
+      l('_sg_out=$(_sg_run scan --json --strict 2>&1) || {'),
+      l('  echo "ShipGuard blocked this: the release gate did not pass." >&2'),
+      l('  printf "%s\\n" "$_sg_out" >&2'),
+      l('  exit 1'),
+      l('}'),
+    ].join('\n')
+  }
+  // Push path: the full rulebook when signed in, the plain scan (one notice) when not or when it cannot run.
+  return [
+    ...resolveBinary,
+    l('_sg_pro=""'),
+    l('if [ -n "${SHIPGUARD_API_KEY:-}" ] || [ -f "${HOME:-/nonexistent}/.config/shipguard/credentials.json" ]; then'),
+    l('  _sg_pro="--pro"'),
+    l('else'),
+    l('  echo "ShipGuard: not signed in, so this push check uses the local rules only. Run shipguard login to use the full rulebook." >&2'),
+    l('fi'),
+    l('_sg_status=0'),
+    l('_sg_out=$(_sg_run scan --json --strict $_sg_pro 2>&1) || _sg_status=$?'),
+    l('if [ "$_sg_status" -eq 3 ] && [ -n "$_sg_pro" ]; then'),
+    l('  echo "ShipGuard: the full-rulebook check could not run, so this push check falls back to the local rules." >&2'),
+    l('  _sg_status=0'),
+    l('  _sg_out=$(_sg_run scan --json --strict 2>&1) || _sg_status=$?'),
+    l('fi'),
+    l('if [ "$_sg_status" -ne 0 ]; then'),
     l('  echo "ShipGuard blocked this: the release gate did not pass." >&2'),
     l('  printf "%s\\n" "$_sg_out" >&2'),
     l('  exit 1'),
-    l('}'),
+    l('fi'),
   ].join('\n')
 }
 
@@ -87,7 +120,10 @@ export function gitHookBlock(hookName: string): string {
     '# `--no-verify` skips it. For a stop an agent cannot route around, also run:',
     '#   shipguard hook --target claude   (runs outside the model)',
     '#   shipguard hook --target ci       (server-side; pair with branch protection)',
-    gateShellBody(),
+    ...(hookName === 'pre-push'
+      ? ['# On push, signed-in machines also use the full rulebook (--pro, 1 credit per push).']
+      : []),
+    gateShellBody('', hookName === 'pre-push'),
     HOOK_MARKER_END,
   ].join('\n')
 }
@@ -143,7 +179,25 @@ jobs:
         with:
           node-version: '20'
       - name: Run the release gate
-        run: npx --yes @agenticcli/shipguard scan --json --strict
+        env:
+          # Optional repository secret. Set it to use the full rulebook (--pro, 1 credit per run);
+          # without it this job runs the local rules only.
+          SHIPGUARD_API_KEY: \${{ secrets.SHIPGUARD_API_KEY }}
+        run: |
+          _sg_pro=""
+          if [ -n "$SHIPGUARD_API_KEY" ]; then
+            _sg_pro="--pro"
+          else
+            echo "ShipGuard: SHIPGUARD_API_KEY is not set, so this run uses the local rules only."
+          fi
+          _sg_status=0
+          npx --yes @agenticcli/shipguard scan --json --strict $_sg_pro || _sg_status=$?
+          if [ "$_sg_status" -eq 3 ] && [ -n "$_sg_pro" ]; then
+            echo "ShipGuard: the full-rulebook check could not run, so this run falls back to the local rules."
+            _sg_status=0
+            npx --yes @agenticcli/shipguard scan --json --strict || _sg_status=$?
+          fi
+          exit "$_sg_status"
 # ${HOOK_MARKER_END.replace('# ', '')}
 `
 }

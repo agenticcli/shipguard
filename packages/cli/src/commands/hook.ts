@@ -198,6 +198,10 @@ What each target installs (all of them run \`${GATE_COMMAND}\`):
   --target ci      .github/workflows/shipguard.yml
                    ${BINDING_NOTES.ci}
 
+On push (the pre-push hook and the CI job) a signed-in machine also uses the full rulebook
+(--pro, 1 credit per run). Not signed in, or --pro cannot run: the plain scan runs and one
+notice line says so. The pre-merge-commit hook and the Claude Code hook stay plain.
+
 Install all three where you can. ShipGuard never blocks on its own — installing a
 hook is the deliberate act that turns the hard stop on.
 
