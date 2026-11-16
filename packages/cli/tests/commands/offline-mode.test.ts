@@ -157,3 +157,59 @@ describe('--offline with --pro is a config error', () => {
     expect(r.json?.code).toBe('OFFLINE_WITH_PRO')
   })
 })
+
+describe('commands that need the network refuse under offline mode', () => {
+  const LINE = 'offline mode: this command needs the network'
+  const cases: Array<[string, string[]]> = [
+    ['login', ['login']],
+    ['status', ['status']],
+    ['rate', ['rate', '1', 'helpful']],
+  ]
+  for (const [name, args] of cases) {
+    it(`${name}: exit 2, one line, nothing sent, nothing written`, async () => {
+      const { url, hits } = await capture()
+      const home = mkHome()
+      const r = await runCli(args, { env: pingEnv(url, home, { SHIPGUARD_OFFLINE: '1' }) })
+      expect(r.code).toBe(2)
+      expect(r.stderr.trim().split('\n')).toHaveLength(1)
+      expect(r.stderr).toContain(LINE)
+      expect(r.stdout).toBe('')
+      await new Promise((res) => setTimeout(res, 300))
+      expect(hits()).toBe(0)
+      expect(tree(home)).toEqual([])
+    })
+  }
+
+  it('without offline mode the same command is not refused', async () => {
+    const home = mkHome()
+    const r = await runCli(['status'], { env: { HOME: home, SHIPGUARD_OFFLINE: '0' } })
+    expect(r.code).toBe(0)
+    expect(r.stderr).not.toContain(LINE)
+  })
+
+  it('commands that need no network still run (schema, hook outside git is a normal config error)', async () => {
+    const home = mkHome()
+    const r = await runCli(['schema', '--json'], { env: { HOME: home, SHIPGUARD_OFFLINE: '1' } })
+    expect(r.code).toBe(0)
+    expect(r.stderr).not.toContain(LINE)
+  })
+})
+
+describe('SHIPGUARD_OFFLINE parsing fails closed (end to end)', () => {
+  for (const v of ['1', 'true', 'yes', 'on', 'banana']) {
+    it(`SHIPGUARD_OFFLINE=${v} turns offline mode on`, async () => {
+      const home = mkHome()
+      const dir = mkTree(files, { git: true })
+      const r = await runCli(['scan', dir, '--json'], { env: { HOME: home, SHIPGUARD_OFFLINE: v } })
+      expect(r.json?.mode).toBe('offline')
+    })
+  }
+  for (const v of ['0', 'false', 'no', 'off', '']) {
+    it(`SHIPGUARD_OFFLINE=${JSON.stringify(v)} leaves it off`, async () => {
+      const home = mkHome()
+      const dir = mkTree(files, { git: true })
+      const r = await runCli(['scan', dir, '--json'], { env: { HOME: home, SHIPGUARD_OFFLINE: v } })
+      expect(r.json?.mode).toBeUndefined()
+    })
+  }
+})

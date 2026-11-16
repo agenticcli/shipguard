@@ -31,7 +31,7 @@ shipguard scan            # Scan current project (rich output; verdict in JSON `
 shipguard scan --strict   # CI hard gate: exit 1 on blocking findings (opt-in)
 shipguard scan --json     # Machine-readable output for agents/CI
 shipguard scan --quiet    # One-line verdict only
-shipguard scan --pro      # Full rulebook (1 credit) — requires login
+shipguard scan --pro      # Pro rules — requires login
 shipguard scan --offline  # Agent-safe: sends nothing, writes no files
 shipguard login           # Authenticate for Pro rules
 shipguard init            # Generate .shipguard.yml policy file
@@ -50,10 +50,6 @@ shipguard hook --target claude    # Claude Code hook — runs outside the model
 shipguard hook --target ci        # GitHub Actions verdict job
 ```
 
-On push, a signed-in machine also uses the full rulebook: the pre-push hook and the CI workflow add `--pro` (1 credit per push or CI run). The pre-merge-commit hook and the Claude Code hook stay plain, so a local check never spends a credit. Not signed in, or `--pro` cannot run (no credits left, rulebook unreachable)? The hook or job runs the plain scan and prints one notice line; it never becomes a new failure. For CI, add `SHIPGUARD_API_KEY` as a repository secret to use the full rulebook there.
-
-A plain `shipguard scan` while signed in prints one hint line, `signed in: add --pro to use the full rulebook (1 credit)` (stderr in the terminal; a `hints` array in `--json`). It never spends a credit on its own.
-
 Copy-paste snippets for `AGENTS.md`, `CLAUDE.md` and CI: [docs/placement-kit.md](docs/placement-kit.md).
 
 ## Agent-safe mode: `--offline`
@@ -64,7 +60,7 @@ shipguard scan --offline          # or: SHIPGUARD_OFFLINE=1 shipguard scan
 
 Offline mode is the switch for agents and locked-down machines. It sends nothing: no usage ping, no first-run ping, no rulebook download, no login or token calls. It writes no files: nothing under `~/.config/shipguard` or `~/.shipguard`, no local history store, no report unless you pass `--report`, and your `.gitignore` stays byte-identical. The bundled rules run on your machine as usual.
 
-It says so on the first output line: the first line on stdout in the terminal, or on stderr with `--json`, `--sarif` and `--quiet` (so stdout stays one clean document). With `--json` the result also carries `"mode": "offline"`. `--offline` together with `--pro` is a config error (exit 2, `code: "OFFLINE_WITH_PRO"`), because `--pro` downloads rules.
+It says so on the first output line: the first line on stdout in the terminal, or on stderr with `--json`, `--sarif` and `--quiet` (so stdout stays one clean document). With `--json` the result also carries `"mode": "offline"`. `--offline` together with `--pro` is a config error (exit 2, `code: "OFFLINE_WITH_PRO"`), because `--pro` downloads rules. `SHIPGUARD_OFFLINE` fails closed: any non-empty value except `0`, `false`, `no` or `off` turns it on. With it set, the commands that need the network (`login`, `status`, `rate`) refuse with exit 2 and one line, `offline mode: this command needs the network`.
 
 The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out).
 

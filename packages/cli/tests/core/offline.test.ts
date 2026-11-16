@@ -24,11 +24,15 @@ afterEach(() => {
 const ENV = { SHIPGUARD_TELEMETRY: '1', SHIPGUARD_TELEMETRY_URL: 'http://127.0.0.1:1/x' } as NodeJS.ProcessEnv
 
 describe('offline flag', () => {
-  it('reads SHIPGUARD_OFFLINE: 1 and true switch it on, anything else leaves it off', () => {
-    expect(offlineRequestedByEnv({ SHIPGUARD_OFFLINE: '1' })).toBe(true)
-    expect(offlineRequestedByEnv({ SHIPGUARD_OFFLINE: 'true' })).toBe(true)
-    expect(offlineRequestedByEnv({ SHIPGUARD_OFFLINE: '0' })).toBe(false)
-    expect(offlineRequestedByEnv({ SHIPGUARD_OFFLINE: '' })).toBe(false)
+  it('fails closed: any non-empty value except 0/false/no/off switches it on', () => {
+    for (const v of ['1', 'true', 'TRUE', 'yes', 'on', 'enabled', 'anything', ' 1 ', '2']) {
+      expect(offlineRequestedByEnv({ SHIPGUARD_OFFLINE: v }), v).toBe(true)
+    }
+  })
+  it('0, false, no, off (any case), empty and unset leave it off', () => {
+    for (const v of ['0', 'false', 'False', 'no', 'NO', 'off', 'Off', ' off ', '', '   ']) {
+      expect(offlineRequestedByEnv({ SHIPGUARD_OFFLINE: v }), JSON.stringify(v)).toBe(false)
+    }
     expect(offlineRequestedByEnv({})).toBe(false)
   })
   it('is off by default', () => {

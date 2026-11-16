@@ -14,7 +14,7 @@ import { telemetryCommand } from './commands/telemetry.js'
 import { quickstartHelp } from './core/render.js'
 import { CLI_VERSION, sendLifecycleEvent } from './core/telemetry.js'
 import { installStreamErrorHandlers, exitWhenDrained } from './utils/exit.js'
-import { offlineRequestedByEnv, setOffline } from './core/offline.js'
+import { NETWORK_COMMANDS, OFFLINE_REFUSAL, isOffline, offlineRequestedByEnv, setOffline } from './core/offline.js'
 import {
   handleUncaughtException,
   handleUnhandledRejection,
@@ -94,6 +94,11 @@ program.hook('preAction', async (_thisCommand, actionCommand) => {
   // Offline mode (`scan --offline` or SHIPGUARD_OFFLINE=1) must stop the first-run ping too, so it is
   // switched on here, before any event is sent.
   if (offlineRequestedByEnv() || actionCommand.opts<{ offline?: boolean }>().offline) setOffline(true)
+  // A command that needs the network refuses under offline mode: exit 2, one line, nothing sent.
+  if (isOffline() && NETWORK_COMMANDS.has(actionCommand.name())) {
+    process.stderr.write(`${OFFLINE_REFUSAL}\n`)
+    process.exit(2)
+  }
   if (actionCommand.name() === 'telemetry' || actionCommand.parent?.name() === 'telemetry') return
   await sendLifecycleEvent('cli_first_run', { cliVersion: CLI_VERSION }, { projectDir: process.cwd() })
 })

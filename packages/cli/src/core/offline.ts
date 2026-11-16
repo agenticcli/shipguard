@@ -16,11 +16,22 @@ export const OFFLINE_ANNOUNCE =
 
 let offline = false
 
-/** True when the environment asks for offline mode (`SHIPGUARD_OFFLINE=1` or `true`). */
+/**
+ * True when the environment asks for offline mode. Fails closed: any non-empty value other than
+ * `0`, `false`, `no` or `off` (any case) switches it on, so a typo such as `yes` or `on` never
+ * silently leaves pings and downloads running.
+ */
 export function offlineRequestedByEnv(env: NodeJS.ProcessEnv = process.env): boolean {
   const v = env.SHIPGUARD_OFFLINE?.trim().toLowerCase()
-  return v === '1' || v === 'true'
+  if (!v) return false
+  return !['0', 'false', 'no', 'off'].includes(v)
 }
+
+/** Commands that cannot work without the network. Under offline mode they refuse with exit 2. */
+export const NETWORK_COMMANDS: ReadonlySet<string> = new Set(['login', 'status', 'rate'])
+
+/** The one line printed when a network command is run under offline mode. */
+export const OFFLINE_REFUSAL = 'offline mode: this command needs the network'
 
 export function setOffline(value: boolean): void {
   offline = value

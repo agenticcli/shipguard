@@ -85,7 +85,7 @@ Add this step to a GitHub Actions job. It scans the whole checkout and fails the
 - run: npx --yes @agenticcli/shipguard scan --json --strict
 ```
 
-`shipguard hook --target ci` writes this workflow for you (a slightly longer one: with a `SHIPGUARD_API_KEY` repository secret it also uses the full rulebook with `--pro`, and without it runs the local rules only). `shipguard hook` also installs a git hook (the pre-push hook uses `--pro` when you are signed in), and `shipguard hook --target claude` adds a Claude Code hook. Setup for GitLab, Claude Code, Codex and Cursor is in [CI and agent setup](docs/ci-setup.md).
+`shipguard hook --target ci` writes this workflow for you. `shipguard hook` also installs a git hook, and `shipguard hook --target claude` adds a Claude Code hook. Setup for GitLab, Claude Code, Codex and Cursor is in [CI and agent setup](docs/ci-setup.md).
 
 ## Use with pre-commit
 
