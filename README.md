@@ -27,6 +27,7 @@ No install and no account. You get a list of findings and a verdict: `SAFE_TO_SH
 npm install -g @agenticcli/shipguard   # optional: install globally
 shipguard scan --json                  # machine-readable output for agents and scripts
 shipguard scan --strict                # exit 1 if the scan blocks (opt-in hard gate)
+shipguard scan --offline               # agent-safe: sends nothing, writes no files
 shipguard hook --target ci             # write a GitHub Actions workflow for you
 ```
 
@@ -84,7 +85,7 @@ Add this step to a GitHub Actions job. It scans the whole checkout and fails the
 - run: npx --yes @agenticcli/shipguard scan --json --strict
 ```
 
-`shipguard hook --target ci` writes this workflow for you. `shipguard hook` also installs a git hook, and `shipguard hook --target claude` adds a Claude Code hook. Setup for GitLab, Claude Code, Codex and Cursor is in [CI and agent setup](docs/ci-setup.md).
+`shipguard hook --target ci` writes this workflow for you (a slightly longer one: with a `SHIPGUARD_API_KEY` repository secret it also uses the full rulebook with `--pro`, and without it runs the local rules only). `shipguard hook` also installs a git hook (the pre-push hook uses `--pro` when you are signed in), and `shipguard hook --target claude` adds a Claude Code hook. Setup for GitLab, Claude Code, Codex and Cursor is in [CI and agent setup](docs/ci-setup.md).
 
 ## Use with pre-commit
 
@@ -118,11 +119,11 @@ More answers: [docs/faq.md](docs/faq.md). Questions and ideas: [GitHub Discussio
 
 ## Free and Pro
 
-Local scans are free and unlimited, with no account, and `--strict` is free on every plan. Signing in (`shipguard login`, then `shipguard scan --pro`) adds cloud scans with the full current rule set: Free has 5 a month, Plus ($19/mo) 10, Pro ($29/mo, or $19/mo billed yearly) 100. See [plans and pricing](https://agenticcli.dev/pricing).
+Local scans are free and unlimited, with no account, and `--strict` is free on every plan. Signing in (`shipguard login`, then `shipguard scan --pro`) adds scans with the full rulebook (the current rule set): Free has 5 a month, Plus ($19/mo) 10, Pro ($29/mo, or $19/mo billed yearly) 100. See [plans and pricing](https://agenticcli.dev/pricing).
 
 ## Privacy
 
-Scans run 100% on your machine. No file contents, paths or secrets are sent to a server. Published builds send a small pseudonymous ping after a scan, once on first run, and after `shipguard login`. The first-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket` and `ci`. An optional `traffic` label is added only if you set `SHIPGUARD_TRAFFIC`. Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
+Scans run 100% on your machine. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out). No file contents, paths or secrets are sent to a server. For agents and locked-down machines, `shipguard scan --offline` (or `SHIPGUARD_OFFLINE=1`) sends nothing and writes no files, and says so on its first output line. Published builds send a small pseudonymous ping after a scan, once on first run, and after `shipguard login`. The first-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket` and `ci`. An optional `traffic` label is added only if you set `SHIPGUARD_TRAFFIC`. Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
 
 ---
 
@@ -136,7 +137,7 @@ the exit code alone.
 
 | Code | Meaning |
 |------|---------|
-| `0` | Scan completed. Verdict is in the JSON `recommendation` field — returned even if findings are blocking, and even if the scan is degraded/partial. |
+| `0` | Scan completed. Verdict is in the JSON `recommendation` field — returned even if findings are blocking, and even if the scan is degraded/partial. Not "safe": with blocking findings and no `--strict`, the output ends with `exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.` (`--json`: `exitMeaning`). |
 | `1` | Blocked — **only** with `--strict`: a blocking finding, a scan that did not finish (`degraded`), or a `DO_NOT_SHIP` verdict (the opt-in hard gate). |
 | `2` | Config error, strictly (bad policy file, bad flags, non-project directory). Never reused for a degraded-but-completed scan. |
 | `3` | Runtime error — the scan could not meaningfully run at all. |

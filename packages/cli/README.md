@@ -31,7 +31,8 @@ shipguard scan            # Scan current project (rich output; verdict in JSON `
 shipguard scan --strict   # CI hard gate: exit 1 on blocking findings (opt-in)
 shipguard scan --json     # Machine-readable output for agents/CI
 shipguard scan --quiet    # One-line verdict only
-shipguard scan --pro      # Pro rules — requires login
+shipguard scan --pro      # Full rulebook (1 credit) — requires login
+shipguard scan --offline  # Agent-safe: sends nothing, writes no files
 shipguard login           # Authenticate for Pro rules
 shipguard init            # Generate .shipguard.yml policy file
 shipguard hook            # Install the gate at the merge boundary (git / claude / ci)
@@ -49,7 +50,23 @@ shipguard hook --target claude    # Claude Code hook — runs outside the model
 shipguard hook --target ci        # GitHub Actions verdict job
 ```
 
+On push, a signed-in machine also uses the full rulebook: the pre-push hook and the CI workflow add `--pro` (1 credit per push or CI run). The pre-merge-commit hook and the Claude Code hook stay plain, so a local check never spends a credit. Not signed in, or `--pro` cannot run (no credits left, rulebook unreachable)? The hook or job runs the plain scan and prints one notice line; it never becomes a new failure. For CI, add `SHIPGUARD_API_KEY` as a repository secret to use the full rulebook there.
+
+A plain `shipguard scan` while signed in prints one hint line, `signed in: add --pro to use the full rulebook (1 credit)` (stderr in the terminal; a `hints` array in `--json`). It never spends a credit on its own.
+
 Copy-paste snippets for `AGENTS.md`, `CLAUDE.md` and CI: [docs/placement-kit.md](docs/placement-kit.md).
+
+## Agent-safe mode: `--offline`
+
+```bash
+shipguard scan --offline          # or: SHIPGUARD_OFFLINE=1 shipguard scan
+```
+
+Offline mode is the switch for agents and locked-down machines. It sends nothing: no usage ping, no first-run ping, no rulebook download, no login or token calls. It writes no files: nothing under `~/.config/shipguard` or `~/.shipguard`, no local history store, no report unless you pass `--report`, and your `.gitignore` stays byte-identical. The bundled rules run on your machine as usual.
+
+It says so on the first output line: the first line on stdout in the terminal, or on stderr with `--json`, `--sarif` and `--quiet` (so stdout stays one clean document). With `--json` the result also carries `"mode": "offline"`. `--offline` together with `--pro` is a config error (exit 2, `code: "OFFLINE_WITH_PRO"`), because `--pro` downloads rules.
+
+The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out).
 
 ## Exit codes
 
@@ -61,10 +78,12 @@ and `degraded`/`degradedReasons` fields for that.
 
 | Code | Meaning |
 |------|---------|
-| `0`  | Scan completed — verdict is in the JSON `recommendation` field. Returned even if findings are blocking, and even if the scan is degraded/partial. |
+| `0`  | Scan completed — verdict is in the JSON `recommendation` field. Returned even if findings are blocking, and even if the scan is degraded/partial. **Not "safe".** |
 | `1`  | Blocked — **only** with `--strict`, and then on either a blocking finding **or** a scan that did not finish (`degraded: true`). An unfinished scan cannot clear a hard gate. |
 | `2`  | Config error, strictly (bad policy file, bad flags, non-project directory). Never doubles as "degraded scan." |
 | `3`  | Runtime error — the scan could not meaningfully run at all. |
+
+So that a `0` is never read as "passed": when blocking findings exist and `--strict` is off, the terminal output ends with `exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.`, and `--json` carries the same sentence in `exitMeaning`. `shipguard --help` lists the codes too.
 
 A degraded/partial scan (e.g. pro rules unavailable, an oversized file skipped)
 is exit `0` with `degraded: true` and a `degradedReasons[]` array in `--json`
@@ -90,10 +109,11 @@ outside the ASCII reading, compressed archives, and string tables inside ELF, PE
 
 ## Telemetry
 
-Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run ping is never sent in CI). A scan ping carries 8 keys: `schema`, `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket` and `ci`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
+**The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out).** Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run ping is never sent in CI). A scan ping carries 8 keys: `schema`, `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket` and `ci`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
 
 Before the first ping on a machine, ShipGuard prints a one-line notice to stderr (in every mode, including `--json` and CI, so stdout stays clean). Turn pings off any of these ways:
 
+- `shipguard scan --offline` or `SHIPGUARD_OFFLINE=1` (sends nothing at all, see above)
 - `SHIPGUARD_TELEMETRY=0` or `DO_NOT_TRACK=1` in the environment (wins over everything)
 - `shipguard telemetry disable` (saved per user; `enable` turns it back on, `status` shows the state and why)
 - `telemetry: { enabled: false }` in `shipguard.policy.yml` or `.shipguard.yml` (per project)

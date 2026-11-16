@@ -2,7 +2,7 @@
 
 Use the full scan with `--strict` in CI: `npx --yes @agenticcli/shipguard scan --json --strict`. It scans the whole checkout and exits `1` when the verdict is blocking. Do not use `--changed` in CI: on a clean checkout nothing differs from `HEAD`, so it reads no files and reports "nothing to check" (`coverage.changed.nothingToCheck` is `true`, `filesScanned` is `0`). That is not a pass for the project.
 
-`--strict` is free on every plan.
+`--strict` is free on every plan. The full rulebook (`--pro`, 1 credit per run) is for push and CI: add it there, not to every local check.
 
 ## GitHub Actions
 
@@ -23,7 +23,7 @@ jobs:
       - run: npx --yes @agenticcli/shipguard scan --json --strict
 ```
 
-`shipguard hook --target ci` writes this file to `.github/workflows/shipguard.yml`. Turn on branch protection for the check so it blocks merges. For GitHub Code Scanning, `shipguard scan --sarif` produces SARIF 2.1.0.
+`shipguard hook --target ci` writes a longer version of this file to `.github/workflows/shipguard.yml`: when the `SHIPGUARD_API_KEY` repository secret is set it runs the same command with `--pro` (the full rulebook, 1 credit per run); without the secret it runs the local rules only and prints one notice line; if `--pro` cannot run (exit 3) it falls back to the local rules. Turn on branch protection for the check so it blocks merges. For GitHub Code Scanning, `shipguard scan --sarif` produces SARIF 2.1.0.
 
 ## GitLab CI
 
@@ -44,7 +44,7 @@ Any runner with Node.js 20 or newer works. Run the same command as a step and le
 shipguard hook
 ```
 
-Installs `pre-push` and `pre-merge-commit` hooks that run `shipguard scan --json --strict`. A hook binds people and well-behaved agents only: `git push --no-verify` skips it. Use CI as the check nobody can skip.
+Installs `pre-push` and `pre-merge-commit` hooks that run `shipguard scan --json --strict`. The pre-push hook adds `--pro` when you are signed in (a saved login or `SHIPGUARD_API_KEY`), so the full rulebook runs once per push, not once per commit; not signed in, or `--pro` cannot run, it runs the plain scan and prints one notice line. The pre-merge-commit hook stays plain. A hook binds people and well-behaved agents only: `git push --no-verify` skips it. Use CI as the check nobody can skip.
 
 ## Claude Code
 

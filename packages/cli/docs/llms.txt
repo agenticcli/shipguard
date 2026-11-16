@@ -13,6 +13,8 @@ shipguard scan — scan project for risks
 shipguard scan --changed — scan only changed files (not for CI: a clean checkout has nothing to compare)
 shipguard scan --strict — exit code 1 on a blocking result or an unfinished scan (opt-in hard gate, free on every plan)
 shipguard scan --report — generate Markdown report
+shipguard scan --pro — use the full rulebook (1 credit; needs shipguard login); the pre-push hook and CI workflow from `shipguard hook` add it when signed in
+shipguard scan --offline — agent-safe mode (also SHIPGUARD_OFFLINE=1): sends nothing, writes no files, says so on the first output line; cannot be combined with --pro (exit 2)
 shipguard scan --json — machine-readable output (schemaVersion 6; the `coverage` object says how many files were discovered, scanned and skipped, and why)
 shipguard scan --check-regressions — exit code 1 if a previously-passing rule now fails
 shipguard hook — install the gate as a git hook (--target claude or --target ci for Claude Code or GitHub Actions)

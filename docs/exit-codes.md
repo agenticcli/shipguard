@@ -9,7 +9,7 @@ ShipGuard's exit code is verdict-neutral by default. The verdict is in the JSON 
 | `2` | Config error: a bad policy file, an unknown flag, or a folder that is not a project (use `--all` to scan one anyway). |
 | `3` | Runtime error: the scan could not run at all (for example, no rules applied, or `--pro` could not fetch its rules). |
 
-Exit `0` does not mean "safe". Never use it alone as a pass.
+Exit `0` does not mean "safe". Never use it alone as a pass. To make that hard to miss, when blocking findings exist and `--strict` is off the terminal output ends with `exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.`, and `--json` carries what this run's exit code means in the `exitMeaning` field. `shipguard --help` lists the four codes.
 
 ## Config errors in machine mode
 
@@ -29,6 +29,6 @@ If ShipGuard could not read everything (an oversized file, an unreadable file, a
 
 ## JSON output
 
-`shipguard scan --json` prints one JSON object with, among others: `recommendation` (`SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`), `findings`, `riskScore`, `filesScanned`, `coverage`, `degraded`, `degradedReasons` and `schemaVersion` (`"6"`). Each finding has `id`, `title`, `severity`, `category`, `file`, an optional `line`, `explanation`, `recommendation`, `blocking` and an optional `fix`.
+`shipguard scan --json` prints one JSON object with, among others: `recommendation` (`SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`), `findings`, `riskScore`, `filesScanned`, `coverage`, `degraded`, `degradedReasons` and `exitMeaning`, `schemaVersion` (`"6"`), and, only when they apply, `mode` (`"offline"` for an `--offline` scan) and `hints` (one-line notices, for example when you are signed in and did not pass `--pro`). Each finding has `id`, `title`, `severity`, `category`, `file`, an optional `line`, `explanation`, `recommendation`, `blocking` and an optional `fix`.
 
 Run `shipguard schema --json` to print the exact contract of the version you have installed.
