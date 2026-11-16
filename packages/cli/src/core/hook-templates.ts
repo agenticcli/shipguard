@@ -52,7 +52,7 @@ function resolverShell(exitCode: number): string[] {
   return [
     `_sg_run() { if [ -x ${LOCAL_BIN} ]; then ${LOCAL_BIN} "$@"; elif command -v shipguard >/dev/null 2>&1; then shipguard "$@"; else npx --yes ${NPX_SPEC} "$@"; fi; }`,
     `if ! { [ -x ${LOCAL_BIN} ] || command -v shipguard >/dev/null 2>&1 || { command -v npx >/dev/null 2>&1 && npx --yes ${NPX_SPEC} --version >/dev/null 2>&1; }; }; then ` +
-      `echo "ShipGuard could not start, so the release gate did NOT run and nothing was scanned." >&2; ` +
+      `echo "ShipGuard could not start, so the security scan did NOT run and nothing was scanned." >&2; ` +
       `echo "  Fix: npm i -D @agenticcli/shipguard   (or: npm i -g @agenticcli/shipguard)." >&2; ` +
       `echo "  Without a local install, npx needs network access to fetch ${NPX_SPEC}." >&2; ` +
       `exit ${exitCode}; fi`,
@@ -68,7 +68,7 @@ function gateShellBody(indent = ''): string {
   return [
     ...resolverShell(1).map(l),
     l('_sg_out=$(_sg_run scan --json --strict 2>&1) || {'),
-    l('  echo "ShipGuard blocked this: the release gate did not pass." >&2'),
+    l('  echo "ShipGuard blocked this: the security scan did not pass." >&2'),
     l('  printf "%s\\n" "$_sg_out" >&2'),
     l('  exit 1'),
     l('}'),
@@ -99,7 +99,7 @@ export function gitHookBlock(hookName: string): string {
   return [
     HOOK_MARKER_START + ` v${HOOK_BLOCK_VERSION} (${hookName})`,
     '# Installed by `shipguard hook`. Re-run that command to update this block.',
-    `# Runs the release gate as a HARD STOP: ${GATE_COMMAND}`,
+    `# Runs ShipGuard as a HARD STOP: ${GATE_COMMAND}`,
     '#',
     '# HONEST LIMIT: a git hook binds humans and well-behaved agents only.',
     '# `--no-verify` skips it. For a stop an agent cannot route around, also run:',
@@ -125,7 +125,7 @@ export const CLAUDE_HOOK_COMMAND =
   `sh -c '_sg_in=$(cat); case "$_sg_in" in *"git merge"*|*"git push"*) ` +
   `${resolverShell(2).join('; ')}; ` +
   `_sg_out=$(_sg_run scan --json --strict 2>&1) || { ` +
-  `echo "ShipGuard blocked this merge/push: the release gate did not pass." >&2; ` +
+  `echo "ShipGuard blocked this merge/push: the security scan did not pass." >&2; ` +
   `printf "%s\\n" "$_sg_out" >&2; exit 2; };; esac; exit 0'`
 
 /** Marker used to recognise OUR entry inside an existing .claude/settings.json. */
@@ -147,7 +147,7 @@ export function ciWorkflowYaml(): string {
 #
 # This is the only layer that binds EVERYONE — it runs server-side, so nothing
 # local can skip it. Turn on branch protection for this check to make it binding.
-name: ShipGuard release gate
+name: ShipGuard security scan
 
 on:
   pull_request:
@@ -163,7 +163,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Run the release gate
+      - name: Run ShipGuard
         run: npx --yes @agenticcli/shipguard scan --json --strict
 # ${HOOK_MARKER_END.replace('# ', '')}
 `

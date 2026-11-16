@@ -113,9 +113,9 @@ describe('--json stdout purity under --pro degrade ', () => {
     expect(typeof parsed.action).toBe('string')
 
     // The warning must STILL be emitted — to STDERR, where it belongs.
-    expect(stderr).toMatch(/pro rules request failed/i)
+    expect(stderr).toMatch(/rulebook request failed/i)
     // And it must NOT be on stdout.
-    expect(stdout).not.toMatch(/pro rules request failed/i)
+    expect(stdout).not.toMatch(/rulebook request failed/i)
     expect(stdout.trimStart().startsWith('{')).toBe(true)
   })
 
@@ -140,8 +140,8 @@ describe('--json stdout purity under --pro degrade ', () => {
     expect(parsed).toHaveProperty('schemaVersion', '6')
     expect(parsed.degraded).toBe(true)
 
-    expect(stderr).toMatch(/degrading to free scan/i)
-    expect(stdout).not.toMatch(/degrading to free scan/i)
+    expect(stderr).toMatch(/degrading to a local scan/i)
+    expect(stdout).not.toMatch(/degrading to a local scan/i)
     expect(stdout.trimStart().startsWith('{')).toBe(true)
   })
 
