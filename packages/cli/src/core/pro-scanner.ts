@@ -23,6 +23,7 @@ import { re2jsV1Executor, nativeV1Executor, parseFlags } from '@agenticcli/match
 import { installRe2jsCompileCache, compileCached } from './re2js-compile-cache.js'
 import type { PatternMatcher, FilePresenceMatcher, FileRelationshipMatcher, ExecCtx, AntiPatternScope } from '@agenticcli/matcher-contract'
 import { RE2JS } from 're2js'
+import { buildPrefilter, foldContent, mayMatch, prefilterControl, type RulePrefilter } from './rule-prefilter.js'
 
 // The active executor for pro-rule evaluation. re2js-v1 provides linear-time
 // ReDoS-immune matching on all RE2-compatible patterns (222/222 corpus rules pass
@@ -589,7 +590,6 @@ export function runProRules(
     }
   }
 
-  const findings: Finding[] = []
   const allRelativePaths = files.map((f) => f.relativePath)
 
   // Pre-attestation releaseId placeholder — replaced by Phase C with the real
@@ -599,116 +599,47 @@ export function runProRules(
     releaseId: 'pre-attestation',
   }
 
-  for (const rule of rules) {
-    // Build the correct Matcher shape for the native-v1 executor based on type.
-    // Finding 3: ALL signed matcher types are dispatched — no silent skips.
-    let matcherForExecutor: PatternMatcher | FilePresenceMatcher | FileRelationshipMatcher
+  // Everything that depends only on the rule (not on the file) is prepared ONCE, in rule order.
+  const prepared = rules.map((rule) => prepareRule(rule))
 
-    if (rule.matcher.type === 'pattern') {
-      // read antiPatternScope and boundary from the delivered rule.
-      // In contract 0.5.0, these fields are part of the hash preimage and
-      // delivered in the wire ExecutableRule. Read them dynamically — QualityGateRule
-      // doesn't have typed accessors for these contract-level fields.
-      const ruleAny = rule.matcher as unknown as Record<string, unknown>
-      const antiPatternScope = ruleAny['antiPatternScope'] as AntiPatternScope | undefined
-      const boundary = ruleAny['boundary'] as 'none' | 'word' | 'token' | undefined
-      matcherForExecutor = {
-        type: 'pattern',
-        fileGlob: rule.matcher.fileGlob,
-        patterns: rule.matcher.patterns,
-        antiPatterns: rule.matcher.antiPatterns,
-        flags: rule.matcher.flags ?? '',
-        // pass through delivered values; executor defaults to 'none'/'statement'.
-        ...(boundary !== undefined && { boundary }),
-        ...(antiPatternScope !== undefined && { antiPatternScope }),
-      } satisfies PatternMatcher
-    } else if (rule.matcher.type === 'file-presence') {
-      // file-presence: the fileGlob is the dangerous-file glob; presenceRule defaults
-      // to 'must-not-exist' (standard corpus semantic: "this file must not be committed").
-      // WHY 'as any': QualityGateRule.matcher does not carry presenceRule (it is an
-      // ExecutableRule field); we default to must-not-exist which is the only corpus use.
-      const presenceRule = (rule.matcher as unknown as { presenceRule?: string }).presenceRule
-        ?? 'must-not-exist'
-      matcherForExecutor = {
-        type: 'file-presence',
-        fileGlob: rule.matcher.fileGlob,
-        presenceRule: presenceRule as 'must-exist' | 'must-not-exist',
-      } satisfies FilePresenceMatcher
-    } else if (rule.matcher.type === 'file-relationship') {
-      // For requiresPattern-only (no requiresFile) rules, the executor evaluates
-      // requiresPattern as a self-referential prerequisite on the primary file, then
-      // runs primary patterns + antiPatterns. Forward those fields so the executor
-      // can perform the content-based evaluation (FIX: requiresPattern self-referential).
-      const frAny = rule.matcher as unknown as Record<string, unknown>
-      const frFlags = (frAny['flags'] as string | undefined) ?? ''
-      const frPatterns = (rule.matcher.patterns as string[] | undefined) ?? []
-      const frAntiPatterns = (rule.matcher.antiPatterns as string[] | undefined) ?? []
-      // Build the matcher with extended optional fields (read by evaluateFileRelationship
-      // when performing the self-referential pattern evaluation).
-      // WHY 'as unknown as FileRelationshipMatcher': FileRelationshipMatcher contract type
-      // does not carry patterns/antiPatterns/flags — these are extra fields the executor
-      // reads dynamically via Record cast to implement the self-referential semantics.
-      matcherForExecutor = {
-        type: 'file-relationship',
-        fileGlob: rule.matcher.fileGlob,
-        context: {
-          requiresFile: rule.matcher.context?.requiresFile,
-          requiresPattern: rule.matcher.context?.requiresPattern,
-        },
-        // Extended fields for self-referential requiresPattern evaluation:
-        patterns: frPatterns,
-        antiPatterns: frAntiPatterns,
-        flags: frFlags,
-      } as unknown as FileRelationshipMatcher
-    } else {
-      // Should be unreachable — pre-check above guards this.
-      throw new RunProRulesFatalError(
-        `Unreachable: unsupported matcher type "${(rule.matcher as { type: string }).type}" ` +
-        `on rule "${rule.id}"`,
-      )
-    }
+  // Files are the OUTER loop so per-file work (case-folded copy for the prefilter, line split for
+  // suppression) is done at most once per file, not once per rule. Findings are collected per rule
+  // and joined in rule order at the end, so the output order is the same as the old
+  // rules-outer / files-inner loop (rule, then file, then occurrence).
+  for (const file of files) {
+    let folded: string | undefined
+    let lines: string[] | undefined
 
-    // Glob pre-filter: skip files that don't match the rule's fileGlob
-    let matched = files.filter((f) => minimatch(f.relativePath, rule.matcher.fileGlob))
-    let requiresFailClosed: string | undefined
+    for (const p of prepared) {
+      const { rule } = p
+      // Glob pre-filter: skip files that don't match the rule's fileGlob
+      if (!minimatch(file.relativePath, rule.matcher.fileGlob)) continue
 
-    // A `pattern` rule may carry context.requiresPattern ("only files that contain X", e.g. "use server").
-    // The pattern executor ignores it, so the rule fired on every file the glob matched (the 2026-11-09
-    // clean-control noise). Apply it here as a per-file prerequisite; fail closed on a bad pattern.
-    if (rule.matcher.type === 'pattern') {
-      const reqPattern = (rule.matcher.context as { requiresPattern?: string } | undefined)?.requiresPattern
-      if (reqPattern !== undefined) {
-        try {
-          const reqRe = compileCached(reqPattern, 0)
-          matched = matched.filter((f) => reqRe.matcher(f.content).find())
-        } catch (reqErr: unknown) {
-          // A malformed prerequisite is a corpus error. Fail closed exactly like the executor does for
-          // file-relationship rules: keep every glob-matched file and report one finding per file, so the
-          // error is visible and the scan is never silently clean (and never a crash).
-          console.error(
-            `[shipguard] requiresPattern compile error for rule ${rule.id}: ` +
-            `${reqErr instanceof Error ? reqErr.message : String(reqErr)} — fail closed`,
-          )
-          requiresFailClosed = reqPattern
-        }
+      // Cheap required-text check: skip the regex engine when this rule provably cannot match the
+      // file (see rule-prefilter.ts). Never applied to the fail-closed requiresPattern path, which
+      // reports every glob-matched file whatever its content.
+      if (p.prefilter !== undefined && p.requiresFailClosed === undefined && prefilterControl.enabled) {
+        if (p.prefilter.folded && folded === undefined) folded = foldContent(file.content)
+        if (!mayMatch(p.prefilter, file.content, folded ?? '')) continue
       }
-    }
 
-    for (const file of matched) {
+      // A `pattern` rule may carry context.requiresPattern ("only files that contain X", e.g. "use server").
+      if (p.requiresRe !== undefined && !p.requiresRe.matcher(file.content).find()) continue
+
       // Run the re2js-v1 executor against this file (linear-time, ReDoS-immune).
       // The executor returns CanonicalFinding[] — one entry per match occurrence.
       let canonicalFindings
       try {
-        canonicalFindings = requiresFailClosed !== undefined
+        canonicalFindings = p.requiresFailClosed !== undefined
           ? ([{
               line: 1,
               column: 1,
-              evidence: `requiresPattern "${requiresFailClosed}" (compile error — fail closed)`,
+              evidence: `requiresPattern "${p.requiresFailClosed}" (compile error — fail closed)`,
               suppressionState: 'active',
               matcherType: 'pattern',
             }] as unknown as ReturnType<typeof activeExecutor.evaluate>)
           : activeExecutor.evaluate(
-          matcherForExecutor,
+          p.matcher,
           { relativePath: file.relativePath, content: file.content },
           ctx,
         )
@@ -732,7 +663,7 @@ export function runProRules(
       for (const cf of canonicalFindings) {
         // Per-occurrence suppression: check the shipguard-ignore comment mechanism
         // (isLineSuppressed) on top of the adapter's per-line anti-pattern suppression.
-        const lines = file.content.split('\n')
+        lines ??= file.content.split('\n')
         const lineIndex = cf.line - 1
         const commentSuppressed = lineIndex >= 0
           ? isLineSuppressed(lines, lineIndex, rule.id)
@@ -742,7 +673,7 @@ export function runProRules(
         // matched the occurrence's line. We also check the comment suppression.
         const isSuppressed = cf.suppressionState === 'suppressed' || commentSuppressed
 
-        findings.push({
+        p.findings.push({
           id: rule.id,
           title: rule.explanation.split('.')[0],
           severity: rule.severity,
@@ -770,7 +701,118 @@ export function runProRules(
     }
   }
 
-  return findings
+  return prepared.flatMap((p) => p.findings)
+}
+
+interface PreparedRule {
+  rule: QualityGateRule
+  matcher: PatternMatcher | FilePresenceMatcher | FileRelationshipMatcher
+  /** Compiled context.requiresPattern of a `pattern` rule (a per-file prerequisite). */
+  requiresRe?: RE2JS
+  /** Set when requiresPattern did not compile: the rule then fails closed on every glob-matched file. */
+  requiresFailClosed?: string
+  /** Required-text check for `pattern` rules; undefined = always run the rule. */
+  prefilter?: RulePrefilter
+  findings: Finding[]
+}
+
+function prepareRule(rule: QualityGateRule): PreparedRule {
+  // Build the correct Matcher shape for the native-v1 executor based on type.
+  // Finding 3: ALL signed matcher types are dispatched — no silent skips.
+  let matcherForExecutor: PatternMatcher | FilePresenceMatcher | FileRelationshipMatcher
+
+  if (rule.matcher.type === 'pattern') {
+    // read antiPatternScope and boundary from the delivered rule.
+    // In contract 0.5.0, these fields are part of the hash preimage and
+    // delivered in the wire ExecutableRule. Read them dynamically — QualityGateRule
+    // doesn't have typed accessors for these contract-level fields.
+    const ruleAny = rule.matcher as unknown as Record<string, unknown>
+    const antiPatternScope = ruleAny['antiPatternScope'] as AntiPatternScope | undefined
+    const boundary = ruleAny['boundary'] as 'none' | 'word' | 'token' | undefined
+    matcherForExecutor = {
+      type: 'pattern',
+      fileGlob: rule.matcher.fileGlob,
+      patterns: rule.matcher.patterns,
+      antiPatterns: rule.matcher.antiPatterns,
+      flags: rule.matcher.flags ?? '',
+      // pass through delivered values; executor defaults to 'none'/'statement'.
+      ...(boundary !== undefined && { boundary }),
+      ...(antiPatternScope !== undefined && { antiPatternScope }),
+    } satisfies PatternMatcher
+  } else if (rule.matcher.type === 'file-presence') {
+    // file-presence: the fileGlob is the dangerous-file glob; presenceRule defaults
+    // to 'must-not-exist' (standard corpus semantic: "this file must not be committed").
+    // WHY 'as any': QualityGateRule.matcher does not carry presenceRule (it is an
+    // ExecutableRule field); we default to must-not-exist which is the only corpus use.
+    const presenceRule = (rule.matcher as unknown as { presenceRule?: string }).presenceRule
+      ?? 'must-not-exist'
+    matcherForExecutor = {
+      type: 'file-presence',
+      fileGlob: rule.matcher.fileGlob,
+      presenceRule: presenceRule as 'must-exist' | 'must-not-exist',
+    } satisfies FilePresenceMatcher
+  } else if (rule.matcher.type === 'file-relationship') {
+    // For requiresPattern-only (no requiresFile) rules, the executor evaluates
+    // requiresPattern as a self-referential prerequisite on the primary file, then
+    // runs primary patterns + antiPatterns. Forward those fields so the executor
+    // can perform the content-based evaluation (FIX: requiresPattern self-referential).
+    const frAny = rule.matcher as unknown as Record<string, unknown>
+    const frFlags = (frAny['flags'] as string | undefined) ?? ''
+    const frPatterns = (rule.matcher.patterns as string[] | undefined) ?? []
+    const frAntiPatterns = (rule.matcher.antiPatterns as string[] | undefined) ?? []
+    // Build the matcher with extended optional fields (read by evaluateFileRelationship
+    // when performing the self-referential pattern evaluation).
+    // WHY 'as unknown as FileRelationshipMatcher': FileRelationshipMatcher contract type
+    // does not carry patterns/antiPatterns/flags — these are extra fields the executor
+    // reads dynamically via Record cast to implement the self-referential semantics.
+    matcherForExecutor = {
+      type: 'file-relationship',
+      fileGlob: rule.matcher.fileGlob,
+      context: {
+        requiresFile: rule.matcher.context?.requiresFile,
+        requiresPattern: rule.matcher.context?.requiresPattern,
+      },
+      // Extended fields for self-referential requiresPattern evaluation:
+      patterns: frPatterns,
+      antiPatterns: frAntiPatterns,
+      flags: frFlags,
+    } as unknown as FileRelationshipMatcher
+  } else {
+    // Should be unreachable — pre-check above guards this.
+    throw new RunProRulesFatalError(
+      `Unreachable: unsupported matcher type "${(rule.matcher as { type: string }).type}" ` +
+      `on rule "${rule.id}"`,
+    )
+  }
+
+  // A `pattern` rule may carry context.requiresPattern ("only files that contain X", e.g. "use server").
+  // The pattern executor ignores it, so the rule fired on every file the glob matched (the 2026-11-09
+  // clean-control noise). It is applied per file in runProRules; fail closed on a bad pattern.
+  let requiresRe: RE2JS | undefined
+  let requiresFailClosed: string | undefined
+  if (rule.matcher.type === 'pattern') {
+    const reqPattern = (rule.matcher.context as { requiresPattern?: string } | undefined)?.requiresPattern
+    if (reqPattern !== undefined) {
+      try {
+        requiresRe = compileCached(reqPattern, 0)
+      } catch (reqErr: unknown) {
+        // A malformed prerequisite is a corpus error. Fail closed exactly like the executor does for
+        // file-relationship rules: keep every glob-matched file and report one finding per file, so the
+        // error is visible and the scan is never silently clean (and never a crash).
+        console.error(
+          `[shipguard] requiresPattern compile error for rule ${rule.id}: ` +
+          `${reqErr instanceof Error ? reqErr.message : String(reqErr)} — fail closed`,
+        )
+        requiresFailClosed = reqPattern
+      }
+    }
+  }
+
+  const prefilter = rule.matcher.type === 'pattern'
+    ? buildPrefilter(rule.matcher.patterns, rule.matcher.flags ?? '')
+    : undefined
+
+  return { rule, matcher: matcherForExecutor, requiresRe, requiresFailClosed, prefilter, findings: [] }
 }
 
 // ---------------------------------------------------------------------------
