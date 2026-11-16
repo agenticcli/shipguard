@@ -326,7 +326,7 @@ export function decideTelemetry(
 /** The one-line stderr notice printed before the first ping on an install. */
 export const NOTICE_TEXT =
   'shipguard: usage pings: on (turn off: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, or `shipguard telemetry disable`). ' +
-  'A pseudonymous ping after each scan, once on first run and after login: version, verdict, duration bucket, which coding agent runs it (or none), whether stdout is a terminal, the output kind, a random install id outside CI; never code, paths or your account. ' + goLink('telemetry')
+  'A pseudonymous ping after each scan, once on first run and after login. Every ping carries the version, build type, a CI flag and a random install id outside CI; a scan ping also carries the verdict, a duration bucket, which coding agent runs it (or none), whether stdout is a terminal and the output kind. Never code, paths or your account. ' + goLink('telemetry')
 
 /**
  * The `telemetry` field of every scan JSON result: "off" when an opt-out is set (env, user config,
