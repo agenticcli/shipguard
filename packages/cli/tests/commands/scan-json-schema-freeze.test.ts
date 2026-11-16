@@ -45,6 +45,8 @@ const REQUIRED_TOP_LEVEL = [
   'policyUsed',
   'recommendation',
   'schemaVersion',
+  // Usage pings: "on" | "off" (S2).
+  'telemetry',
   'degraded',
   'creditsWarning',
   // schemaVersion 2 → 3: the local history store's persistence outcome and whether the

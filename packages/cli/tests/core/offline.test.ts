@@ -45,7 +45,7 @@ describe('offline mode: zero network calls and no config-dir writes', () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
     setOffline(true)
-    await sendTelemetry({ cliVersion: '0.12.0', verdict: 'safe', durationMs: 5 }, { env: ENV, configDir, published: true })
+    await sendTelemetry({ cliVersion: '0.12.0', verdict: 'safe', durationMs: 5, output: 'json' as const }, { env: ENV, configDir, published: true })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(readdirSync(configDir)).toEqual([])
   })
@@ -62,7 +62,7 @@ describe('offline mode: zero network calls and no config-dir writes', () => {
   it('control: with the mode off the same call does reach fetch', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(new Response('ok'))
     vi.stubGlobal('fetch', fetchSpy)
-    await sendTelemetry({ cliVersion: '0.12.0', verdict: 'safe', durationMs: 5 }, { env: ENV, configDir, published: true })
+    await sendTelemetry({ cliVersion: '0.12.0', verdict: 'safe', durationMs: 5, output: 'json' as const }, { env: ENV, configDir, published: true })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 

@@ -24,6 +24,7 @@ const URL_RE = /https?:\/\/(?:www\.)?agenticcli\.dev[^\s'"`)\]<>,]*/g
 /** Lines in src/ that are API endpoints, trust anchors or comments, not links a person follows. */
 const API_LINE = [
   /DEFAULT_API_URL\s*=/,
+  /PROD_TELEMETRY_ENDPOINT\s*=/,
   /JWKS_URL\s*=/,
   /\.option\('--api-url/,
   /^\s*(\*|\/\/)/, // comments

@@ -18,7 +18,7 @@ import { DEAD_TELEMETRY_URL, withTelemetryOff } from '../setup/telemetry-env.js'
 
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const distCli = resolve(pkgRoot, 'dist/cli.js')
-const PROD_HOST = 'cheery-toucan-348.convex.site'
+const PROD_HOST = 'agenticcli.dev'
 
 let work: string
 let project: string
@@ -107,7 +107,7 @@ describe('spawned CLI never attempts a telemetry send from tests', () => {
         NODE_OPTIONS: nodeOpts(),
         SHIPGUARD_TELEMETRY: '1',
         DO_NOT_TRACK: '0',
-        SHIPGUARD_TELEMETRY_URL: `https://${PROD_HOST}/cli-telemetry`,
+        SHIPGUARD_TELEMETRY_URL: `https://${PROD_HOST}/api/cli-telemetry`,
       },
     })
     expect(attempts()).toEqual([])
@@ -131,6 +131,6 @@ describe('in-process guards', () => {
   })
 
   it('global fetch throws for the production telemetry host', () => {
-    expect(() => fetch(`https://${PROD_HOST}/cli-telemetry`, { method: 'POST' })).toThrow(/test-guard/)
+    expect(() => fetch(`https://${PROD_HOST}/api/cli-telemetry`, { method: 'POST' })).toThrow(/test-guard/)
   })
 })
