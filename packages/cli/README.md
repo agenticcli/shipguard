@@ -1,4 +1,4 @@
-# @agenticcli/shipguard
+# ShipGuard by AgenticCLI (`@agenticcli/shipguard`)
 
 **The security scanner your coding agent runs before every commit. On your machine. Flat price, no seats.**
 
@@ -6,7 +6,7 @@ Same code, same answer: same diff, same verdict, a real exit code your agent can
 
 Checks for leaked secrets, auth gaps, payment webhook risks, destructive migrations, and deployment misconfigurations — before your code ships.
 
-## 30-second quickstart
+## Quickstart
 
 ```bash
 # Zero install — scan right now
@@ -22,7 +22,7 @@ shipguard scan
 > **PATH gotcha:** `npm install` (without `-g`) does NOT put `shipguard` on your PATH.
 > Use `npx @agenticcli/shipguard scan` or install with `npm install -g @agenticcli/shipguard`.
 
-ShipGuard is the deterministic check that runs inside your agent loop (it also works as a release gate in CI), not a code reviewer and not a general security scanner. It runs on your machine, uses plain pattern rules (no AI model), and your code never leaves your computer. Source: [github.com/agenticcli/shipguard](https://github.com/agenticcli/shipguard).
+ShipGuard is a security scanner, not a code reviewer and not a full SAST tool. It runs on your machine and uses plain pattern rules (no AI model). Rules come down; your code never goes up. Source: [github.com/agenticcli/shipguard](https://github.com/agenticcli/shipguard).
 
 ## Usage
 
@@ -31,14 +31,14 @@ shipguard scan            # Scan current project (rich output; verdict in JSON `
 shipguard scan --strict   # CI hard gate: exit 1 on blocking findings (opt-in)
 shipguard scan --json     # Machine-readable output for agents/CI
 shipguard scan --quiet    # One-line verdict only
-shipguard scan --pro      # Pro rules — requires login
-shipguard login           # Authenticate for Pro rules
+shipguard scan --pro      # Download the full current rulebook for this scan (needs login)
+shipguard login           # Sign in to run rulebook scans
 shipguard init            # Generate .shipguard.yml policy file
-shipguard hook            # Install the gate at the merge boundary (git / claude / ci)
+shipguard hook            # Install the hook at the merge boundary (git / claude / ci)
 shipguard schema --json   # The machine-readable contract: verdict values, exit codes, limits
 ```
 
-### Put the gate where merges happen
+### Run it where merges happen
 
 ShipGuard never blocks on its own. Installing a hook is the deliberate act that turns the
 hard stop on:
@@ -70,7 +70,7 @@ and `degraded`/`degradedReasons` fields for that.
 
 So that a `0` is never read as "passed": when blocking findings exist and `--strict` is off, the terminal output ends with `exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.`, and `--json` carries the same sentence in `exitMeaning`. `shipguard --help` lists the codes too.
 
-A degraded/partial scan (e.g. pro rules unavailable, an oversized file skipped)
+A degraded/partial scan (e.g. rulebook unavailable, an oversized file skipped)
 is exit `0` with `degraded: true` and a `degradedReasons[]` array in `--json`
 output — it never hijacks exit `2`, which is reserved for genuine config errors.
 
@@ -118,4 +118,4 @@ See the [ShipGuard docs](https://agenticcli.dev/shipguard/docs?utm_source=npm_re
 
 ## License
 
-[Elastic License 2.0](LICENSE). Source-available, free to use commercially; you may not offer it as a hosted service or resell it.
+[Elastic License 2.0](LICENSE). Source-available, free to use commercially; you may not offer it as a hosted or managed service or resell it.

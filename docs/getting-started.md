@@ -1,6 +1,6 @@
 # Getting started with ShipGuard
 
-ShipGuard is the deterministic check that runs inside your agent loop, and it also works as a release gate in CI. This page gets you from zero to a first scan. For the full guide, see the [ShipGuard docs](https://agenticcli.dev/shipguard/docs).
+ShipGuard by AgenticCLI is the security scanner your coding agent runs before every commit. This page gets you from zero to a first scan. For the full guide, see the [ShipGuard docs](https://agenticcli.dev/shipguard/docs).
 
 ## 1. Run a scan (no install, no account)
 
@@ -37,7 +37,7 @@ ShipGuard informs; you choose whether it blocks. Add `--strict` to make it exit 
 shipguard scan --strict
 ```
 
-Or let ShipGuard install the gate for you:
+Or let ShipGuard install a hook for you:
 
 ```bash
 shipguard hook                    # git pre-push and pre-merge-commit hooks
