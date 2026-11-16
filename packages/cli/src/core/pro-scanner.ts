@@ -23,7 +23,7 @@ import { re2jsV1Executor, nativeV1Executor, parseFlags } from '@agenticcli/match
 import { installRe2jsCompileCache, compileCached } from './re2js-compile-cache.js'
 import type { PatternMatcher, FilePresenceMatcher, FileRelationshipMatcher, ExecCtx, AntiPatternScope } from '@agenticcli/matcher-contract'
 import { RE2JS } from 're2js'
-import { buildPrefilter, foldContent, mayMatch, prefilterControl, type RulePrefilter } from './rule-prefilter.js'
+import { buildPrefilter, FileProbe, mayMatch, prefilterControl, type RulePrefilter } from './rule-prefilter.js'
 
 // The active executor for pro-rule evaluation. re2js-v1 provides linear-time
 // ReDoS-immune matching on all RE2-compatible patterns (222/222 corpus rules pass
@@ -602,12 +602,12 @@ export function runProRules(
   // Everything that depends only on the rule (not on the file) is prepared ONCE, in rule order.
   const prepared = rules.map((rule) => prepareRule(rule))
 
-  // Files are the OUTER loop so per-file work (case-folded copy for the prefilter, line split for
+  // Files are the OUTER loop so per-file work (the prefilter's text probe, line split for
   // suppression) is done at most once per file, not once per rule. Findings are collected per rule
   // and joined in rule order at the end, so the output order is the same as the old
   // rules-outer / files-inner loop (rule, then file, then occurrence).
   for (const file of files) {
-    let folded: string | undefined
+    const probe = new FileProbe(file.content)
     let lines: string[] | undefined
 
     for (const p of prepared) {
@@ -619,8 +619,7 @@ export function runProRules(
       // file (see rule-prefilter.ts). Never applied to the fail-closed requiresPattern path, which
       // reports every glob-matched file whatever its content.
       if (p.prefilter !== undefined && p.requiresFailClosed === undefined && prefilterControl.enabled) {
-        if (p.prefilter.folded && folded === undefined) folded = foldContent(file.content)
-        if (!mayMatch(p.prefilter, file.content, folded ?? '')) continue
+        if (!mayMatch(p.prefilter, probe)) continue
       }
 
       // A `pattern` rule may carry context.requiresPattern ("only files that contain X", e.g. "use server").

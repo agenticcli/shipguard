@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { RE2JS } from 're2js'
-import { buildPrefilter, foldContent, mayMatch, type RulePrefilter } from '../../src/core/rule-prefilter.js'
+import { buildPrefilter, FileProbe, mayMatch, type RulePrefilter } from '../../src/core/rule-prefilter.js'
 
 const pf = (patterns: string[], flags = ''): RulePrefilter | undefined => buildPrefilter(patterns, flags)
-const passes = (f: RulePrefilter, content: string): boolean => mayMatch(f, content, foldContent(content))
+const passes = (f: RulePrefilter, content: string): boolean => mayMatch(f, new FileProbe(content))
 
 describe('buildPrefilter: what is required', () => {
   it('keeps the text every match must contain', () => {
@@ -214,7 +214,7 @@ describe('differential soundness against re2js', () => {
         if (!compiled.matcher(s).find()) continue
         checkedMatches++
         if (f !== undefined) {
-          expect(mayMatch(f, s, foldContent(s)), `pattern ${JSON.stringify(pattern)} flags ${ci ? 'i' : ''} matched ${JSON.stringify(s)} but the prefilter dropped it: ${JSON.stringify(f)}`).toBe(true)
+          expect(mayMatch(f, new FileProbe(s)), `pattern ${JSON.stringify(pattern)} flags ${ci ? 'i' : ''} matched ${JSON.stringify(s)} but the prefilter dropped it: ${JSON.stringify(f)}`).toBe(true)
         }
       }
     }
