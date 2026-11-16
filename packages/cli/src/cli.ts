@@ -14,6 +14,7 @@ import { telemetryCommand } from './commands/telemetry.js'
 import { quickstartHelp } from './core/render.js'
 import { CLI_VERSION, sendLifecycleEvent } from './core/telemetry.js'
 import { installStreamErrorHandlers, exitWhenDrained } from './utils/exit.js'
+import { offlineRequestedByEnv, setOffline } from './core/offline.js'
 import {
   handleUncaughtException,
   handleUnhandledRejection,
@@ -84,6 +85,9 @@ Learn more:
 // First command on an install: one `cli_first_run` event (opt-outs, CI and dev-build rules live in
 // sendLifecycleEvent; it never throws and is bounded). Skipped for `telemetry` so a user can opt out first.
 program.hook('preAction', async (_thisCommand, actionCommand) => {
+  // Offline mode (`scan --offline` or SHIPGUARD_OFFLINE=1) must stop the first-run ping too, so it is
+  // switched on here, before any event is sent.
+  if (offlineRequestedByEnv() || actionCommand.opts<{ offline?: boolean }>().offline) setOffline(true)
   if (actionCommand.name() === 'telemetry' || actionCommand.parent?.name() === 'telemetry') return
   await sendLifecycleEvent('cli_first_run', { cliVersion: CLI_VERSION }, { projectDir: process.cwd() })
 })

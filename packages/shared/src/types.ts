@@ -375,6 +375,12 @@ export interface ScanResult {
   scanIdReused?: boolean
   /** What was actually scanned, skipped and ignored (schemaVersion 6). */
   coverage?: ScanCoverage
+  /** `"offline"` when the scan ran with `--offline` / `SHIPGUARD_OFFLINE=1` (nothing sent, nothing written). Absent otherwise. */
+  mode?: 'offline'
+  /** One-line notices for the caller (for example "signed in: add --pro ..."). Present only when there is one. */
+  hints?: string[]
+  /** What this run's exit code means, in one sentence. Read it next to `recommendation`; exit 0 is not "safe". */
+  exitMeaning?: string
 }
 
 export interface ScanOptions {

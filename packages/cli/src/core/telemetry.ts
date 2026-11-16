@@ -80,6 +80,7 @@ export function resolveEndpoint(
 import { randomUUID } from 'node:crypto'
 import { logger } from '../utils/logger.js'
 import { goLink } from './links.js'
+import { isOffline } from './offline.js'
 import {
   UUID_V4,
   firstRunHandled,
@@ -310,6 +311,8 @@ function debugEnabled(env: NodeJS.ProcessEnv): boolean {
  * drop the in-flight ping). Never rejects, never throws, never writes to stdout.
  */
 export function sendTelemetry(input: TelemetryInput, opts: SendOptions = {}): Promise<void> {
+  // Offline mode (--offline / SHIPGUARD_OFFLINE=1): send nothing and touch no config file.
+  if (isOffline()) return Promise.resolve()
   try {
     const env = opts.env ?? process.env
     const configDir = opts.configDir ?? getConfigDir()
@@ -457,6 +460,8 @@ export function validateLifecyclePayload(payload: unknown): payload is Lifecycle
  *    without sending, so upgrades are not counted as new installs.
  */
 export function sendLifecycleEvent(event: LifecycleEvent, input: { cliVersion: string }, opts: SendOptions = {}): Promise<void> {
+  // Offline mode (--offline / SHIPGUARD_OFFLINE=1): send nothing and touch no config file.
+  if (isOffline()) return Promise.resolve()
   try {
     const env = opts.env ?? process.env
     const configDir = opts.configDir ?? getConfigDir()
