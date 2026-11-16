@@ -145,18 +145,18 @@ export function buildSchemaContract(limits: {
         name: 'RUNTIME_ERROR',
         meaning:
           'The scan could not meaningfully run at all — zero rules applied, or an explicit ' +
-          '--pro request whose rule fetch failed (pass --allow-degraded to opt into a free ' +
+          '--pro request whose rule fetch failed (pass --allow-degraded to opt into a local ' +
           'scan fallback instead).',
       },
     ],
     degradeCodes: [
       { code: 'FILE_TOO_LARGE', meaning: 'One or more files exceeded the per-file size cap and were not scanned.' },
       { code: 'OUTPUT_TRUNCATED', meaning: 'The file-count or total-bytes ceiling was reached; collection stopped early.' },
-      { code: 'CODEREF_SKIPPED', meaning: 'One or more Pro coderef rules need a newer CLI and were skipped.' },
-      { code: 'PRO_RULES_UNAVAILABLE', meaning: 'Pro rules could not be fetched (auth, credits, rate limit, network).' },
+      { code: 'CODEREF_SKIPPED', meaning: 'One or more rulebook coderef rules need a newer CLI and were skipped.' },
+      { code: 'PRO_RULES_UNAVAILABLE', meaning: 'The full rulebook could not be downloaded (auth, credits, rate limit, network).' },
       { code: 'INVALID_UTF8', meaning: 'One or more files were not valid UTF-8 and were skipped rather than mangled.' },
       { code: 'UNREADABLE_FILE', meaning: 'One or more files could not be read from disk.' },
-      { code: 'COMPILE_FAILURE', meaning: 'A Pro rule bundle failed to compile; the whole bundle was refused rather than partly run.' },
+      { code: 'COMPILE_FAILURE', meaning: 'A rulebook bundle failed to compile; the whole bundle was refused rather than partly run.' },
       { code: 'SYMLINK_SKIPPED', meaning: 'One or more symlinks were not followed (privacy) and were not scanned.' },
       { code: 'UNSCANNED_UNKNOWN_BINARY', meaning: 'One or more files hold NUL or control data that no text reading explains and show no sign of a known binary format; they were not scanned. Add their paths to ignore.paths if they are safe.' },
       { code: 'NO_FILES_SCANNED', meaning: 'Zero files were scanned (empty tree, everything ignored or binary, or --changed where every changed file was ignored or unreadable). A scan that read nothing is never SAFE_TO_SHIP. Exception: --changed when git reports no changed files is not degraded; it sets coverage.changed.nothingToCheck: true.' },

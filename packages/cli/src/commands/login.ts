@@ -10,7 +10,7 @@ const SIGN_IN_TIMED_OUT = 'Sign-in timed out. Run `shipguard login` again.'
 
 export function loginCommand(): Command {
   return new Command('login')
-    .description('Authenticate with ShipGuard for pro features')
+    .description('Sign in to run rulebook scans with the full current rulebook')
     .option('--api-url <url>', 'API server URL', DEFAULT_API_URL)
     .action(async (opts) => {
       const apiUrl = opts.apiUrl

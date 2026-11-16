@@ -179,9 +179,9 @@ export function proFetchActionHint(code: ProFetchErrorCode, retryAfterSeconds?: 
     case 'PLATFORM_UNAVAILABLE':
       return platformUnavailableMessage(retryAfterSeconds)
     case 'BUNDLE_INVALID':
-      return 'The pro rule bundle failed validation (server-side issue) — retry, or pass --allow-degraded to run local rules only. If this persists, contact support.'
+      return 'The rulebook download failed validation (server-side issue) — retry, or pass --allow-degraded to run local rules only. If this persists, contact support.'
     case 'NO_ACTIVE_RELEASE':
-      return 'The Pro rule server has no active rule release yet — this is a server-side configuration gap, not something a retry or re-login will fix. Check ' + goLink('docs') + ' or contact support, or pass --allow-degraded to run local rules only in the meantime.'
+      return 'The rulebook server has no active rule release yet — this is a server-side configuration gap, not something a retry or re-login will fix. Check ' + goLink('docs') + ' or contact support, or pass --allow-degraded to run local rules only in the meantime.'
     default:
       return 'Retry the scan, or pass --allow-degraded to run local rules only.'
   }
@@ -226,13 +226,13 @@ export function scanCommand(): Command {
     .option('--json', 'Output results as JSON (machine-readable; suppresses all decoration)')
     .option('--sarif', 'Output results as SARIF 2.1.0 (for GitHub Code Scanning)')
     .option('-q, --quiet', 'One-line verdict only (suppresses progress, panel, and tips)')
-    .option('--pro', 'Include pro quality gate rules (requires authentication)')
+    .option('--pro', 'Download the full current rulebook for this scan (needs `shipguard login`; any plan, Free included; uses 1 credit)')
     .option('--api-url <url>', 'API server URL', 'https://agenticcli.dev')
-    .option('--category <categories>', 'Comma-separated category filter for pro rules')
+    .option('--category <categories>', 'Comma-separated category filter for rulebook rules')
     .option('--beta', 'Include beta-stage rules')
     .option('--all', 'Scan any directory, even without package.json or .git')
-    .option('--allow-degraded', 'With --pro: fall back to local-only rules if the pro rule fetch fails, instead of failing loud (opt-in; restores the pre-2026-07-14 fallback behavior — see exit code 3 below)')
-    .option('--check-regressions', 'Opt-in hard gate: exit 1 if a previously-passing blocking rule now fails under the same scan scope + corpus release (informational-only in --json unless this flag is set)')
+    .option('--allow-degraded', 'With --pro: fall back to local-only rules if the rulebook download fails, instead of failing loud (opt-in; restores the pre-2026-07-14 fallback behavior — see exit code 3 below)')
+    .option('--check-regressions', 'Opt-in hard gate: exit 1 if a previously-passing blocking rule now fails under the same scan scope + rulebook release (informational-only in --json unless this flag is set)')
     .addHelpText('after', `
 Output modes:
   (default)         Verbose: live progress (TTY), categorized findings, gamified verdict panel
@@ -248,8 +248,8 @@ Examples:
   shipguard scan ./my-app         Scan a specific directory
   shipguard scan --changed        Scan only git-diff files (faster)
   shipguard scan --json           Machine-readable output for CI/agents
-  shipguard scan --pro            Include pro quality gate rules (requires login)
-  shipguard scan --pro --allow-degraded  Fall back to local rules if the pro fetch fails (opt-in)
+  shipguard scan --pro            Download the full current rulebook (needs login; uses 1 credit)
+  shipguard scan --pro --allow-degraded  Fall back to local rules if the rulebook download fails (opt-in)
   shipguard scan --all            Scan any directory regardless of project markers
   shipguard scan --strict         CI hard gate: exit 1 on blocking findings
   shipguard scan --check-regressions  CI hard gate: exit 1 if a previously-passing rule now fails
@@ -284,7 +284,7 @@ Local history: every scan is recorded to a local SQLite store
 shipguard.policy.yml or SHIPGUARD_HISTORY_PATH). \`stateStatus\` in --json
 reports whether that recording succeeded (complete/unavailable/corrupt) —
 a regression is only ever claimed when it's \`complete\` for both runs
-being compared. A corpus/rule update is reported as \`coverageChanged\`,
+being compared. A rulebook or rule update is reported as \`coverageChanged\`,
 never as a regression.
 
 ${LEARN_MORE}`)
@@ -516,7 +516,7 @@ async function runScan(ctx: {
         for (const fw of frameworks) {
           logger.info(`  + ${fw.name}${fw.version ? ` ${fw.version}` : ''}`)
         }
-        logger.info('Fetching pro rules...')
+        logger.info('Downloading the full rulebook...')
       }
 
       // ScanId idempotency (scanId idempotency): pass the per-scan stable scanId (minted once in
@@ -558,7 +558,7 @@ async function runScan(ctx: {
         (err as { code?: string })?.code === 'NO_RULES_APPLIED'
       if (isNoRulesApplied) {
         if (!machineOutput) {
-          logger.error(`Pro rules unavailable (fail-closed): ${errMsg}`)
+          logger.error(`Rulebook unavailable (fail-closed): ${errMsg}`)
           logger.error('This scan applied ZERO rules — it checked nothing. Refusing to report a clean pass.')
         } else {
           console.log(JSON.stringify({ error: errMsg, code: 'NO_RULES_APPLIED' }))
@@ -589,11 +589,11 @@ async function runScan(ctx: {
       if (opts.allowDegraded) {
         // Opt-in: restores the pre-2026-07-14 fallback — free scan, degraded:true,
         // verdict-neutral exit (resolveExitCode is unaffected by this branch).
-        logger.warn('--allow-degraded set — degrading to free scan; pro rules will not be applied')
+        logger.warn('--allow-degraded set — degrading to a local scan; the full rulebook will not be applied')
         degraded = true
         proFetchDegradeReason = {
           code: 'PRO_RULES_UNAVAILABLE',
-          detail: `[${proErrorCode}] Pro rules could not be fetched: ${errMsg}`,
+          detail: `[${proErrorCode}] The rulebook could not be downloaded: ${errMsg}`,
         }
       } else {
         // Default (amended A1, explicit-Pro-failure path only — see the
@@ -608,7 +608,7 @@ async function runScan(ctx: {
           // don't prefix it with the raw server string.
           logger.error(action)
         } else {
-          logger.error(`Pro rules request failed [${proErrorCode}]: ${errMsg}`)
+          logger.error(`Rulebook request failed [${proErrorCode}]: ${errMsg}`)
           logger.error(action)
           logger.error('Pass --allow-degraded to fall back to a free (local-rules-only) scan instead.')
         }
@@ -897,7 +897,7 @@ async function runScan(ctx: {
     }
 
     if (degraded) {
-      logger.warn('Scan ran in degraded mode — pro rules were unavailable')
+      logger.warn('Scan ran in degraded mode — the full rulebook was unavailable')
     }
 
     // Truncation warning — loud, actionable
