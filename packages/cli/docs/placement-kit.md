@@ -23,7 +23,7 @@ does not**, which is why section 2 exists as well — an `AGENTS.md`-only setup 
 callers uncovered.
 
 ```markdown
-## Release gate — ShipGuard
+## Security scan — ShipGuard
 
 Before you merge, push, or tell the user something is ready to ship, run:
 
@@ -67,7 +67,7 @@ If you would rather not import the whole file, paste the section-1 block directl
 installing, or add it by hand:
 
 ```yaml
-name: ShipGuard release gate
+name: ShipGuard security scan
 
 on:
   pull_request:
@@ -83,7 +83,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Run the release gate
+      - name: Run ShipGuard
         run: npx --yes @agenticcli/shipguard scan --json --strict
 ```
 
