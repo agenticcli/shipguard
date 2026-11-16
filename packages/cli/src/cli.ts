@@ -76,6 +76,12 @@ program
   // Override default help to show branded quickstart screen
   .helpCommand(false)  // suppress built-in help subcommand; we add our own
   .addHelpText('after', `
+Exit codes:
+  0  scan completed (not "safe": read the verdict; the JSON \`recommendation\` field has it)
+  1  blocked only with --strict (a blocking finding, an unfinished scan, or DO_NOT_SHIP)
+  2  config error (bad flags, bad policy file, not a project folder)
+  3  runtime error (the scan could not run, or --pro could not fetch its rules)
+
 Learn more:
   Docs     ${goLink('docs')}
   Site     ${goLink('site')}

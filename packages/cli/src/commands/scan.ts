@@ -208,6 +208,24 @@ function platformUnavailableMessage(retryAfterSeconds?: number): string {
     `Please try again in a few minutes${wait}, or pass --allow-degraded to run local rules only.`
 }
 
+/**
+ * The one sentence that says what exit 0 means when the scan found something blocking and `--strict`
+ * was not passed. Printed as the last line of human output and returned as `exitMeaning` in --json.
+ */
+export const EXIT_NOTICE = 'exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.'
+
+/** `exitMeaning` for --json: what THIS run's exit code means, in one sentence. */
+export function exitMeaning(opts: { exitCode: number; strict: boolean; notSafe: boolean; regressionBlocks: boolean }): string {
+  if (opts.exitCode === EXIT_CODES.BLOCKED) {
+    return opts.regressionBlocks
+      ? 'exit 1 = blocked: --check-regressions found a rule that passed before and now fails.'
+      : 'exit 1 = blocked: --strict found a blocking finding, a scan that did not finish, or a DO_NOT_SHIP verdict.'
+  }
+  if (opts.strict) return 'exit 0 = scan finished and --strict found nothing that blocks.'
+  if (opts.notSafe) return EXIT_NOTICE
+  return 'exit 0 = scan finished. Read recommendation for the verdict; add --strict to fail on blocking findings.'
+}
+
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const
 
 /**
@@ -822,6 +840,30 @@ async function runScan(ctx: {
     }
   }
 
+  // Exit code resolution (A1 contract) — computed BEFORE any output so the JSON can say what the
+  // exit code means (`exitMeaning`) and the human output can end with the exit-code notice. The
+  // computation is pure; nothing here changes which code is returned.
+  let exitCode = resolveExitCode({
+    strict: scanOptions.strict,
+    blockingCount: result.riskScore.blockingCount,
+    // the hard stop must not inherit the false-safe on an
+    // unfinished scan. Uses the FINAL degraded value (post pro-fetch OR-merge).
+    degraded: result.degraded === true,
+    // CLI-2/J-3 — the hard stop must not disagree with the printed verdict:
+    // a scan can print DO_NOT_SHIP with blockingCount 0 (active non-blocking findings,
+    // degradation). effectiveRecommendation
+    // reads the SAME field the human panel / --json `recommendation` print.
+    recommendation: effectiveRecommendation(result),
+  })
+  const strictBlocked = exitCode === EXIT_CODES.BLOCKED
+  // --check-regressions (opt-in ONLY) — see the note at the exit below.
+  const regressionBlocks =
+    Boolean(opts.checkRegressions) && exitCode === EXIT_CODES.SAFE && (result.regressions?.length ?? 0) > 0
+  if (regressionBlocks) exitCode = EXIT_CODES.BLOCKED
+  const notSafe = result.riskScore.blockingCount > 0 || effectiveRecommendation(result) === 'DO_NOT_SHIP'
+  const showExitNotice = exitCode === EXIT_CODES.SAFE && !scanOptions.strict && notSafe
+  publicResult.exitMeaning = exitMeaning({ exitCode, strict: scanOptions.strict, notSafe, regressionBlocks })
+
   // Machine-readable output — exactly one format emitted to stdout
   if (opts.sarif) {
     console.log(JSON.stringify(toSarif(publicResult), null, 2))
@@ -973,6 +1015,8 @@ async function runScan(ctx: {
       scanOptions.strict,
       reportPaths,
     ))
+    // The exit code is deliberately verdict-neutral: say so on the last line, so a 0 is never read as "safe".
+    if (showExitNotice) console.log(EXIT_NOTICE)
   }
 
   // Anonymous opt-out ping — privacy-preserving. Started here so the request overlaps with the
@@ -1015,20 +1059,8 @@ async function runScan(ctx: {
   // ONLY thing that moves the exit code off 0. Degradation is surfaced in JSON
   // (`degraded`/`degradedReasons`), never by reusing a different exit code —
   // see resolveExitCode() doc comment above.
-  let exitCode = resolveExitCode({
-    strict: scanOptions.strict,
-    blockingCount: result.riskScore.blockingCount,
-    // the hard stop must not inherit the false-safe on an
-    // unfinished scan. Uses the FINAL degraded value (post pro-fetch OR-merge).
-    degraded: result.degraded === true,
-    // CLI-2/J-3 — the hard stop must not disagree with the printed verdict:
-    // a scan can print DO_NOT_SHIP with blockingCount 0 (active non-blocking findings,
-    // degradation). effectiveRecommendation
-    // reads the SAME field the human panel / --json `recommendation` print.
-    recommendation: effectiveRecommendation(result),
-  })
 
-  if (exitCode === EXIT_CODES.BLOCKED && !machineOutput && !quiet) {
+  if (strictBlocked && !machineOutput && !quiet) {
     if (result.degraded === true) {
       logger.warn(
         `Strict mode: this scan did not finish — ${(result.degradedReasons ?? []).map((r) => r.code).join(', ') || 'reason not recorded'} ` +
@@ -1050,11 +1082,8 @@ async function runScan(ctx: {
   // opts into using the EXISTING BLOCKED exit code (never a new one) when at least one
   // regression fired. This does NOT touch resolveExitCode()'s A1 contract above — it is
   // a separate, additive override, and only ever raises the exit code, never lowers it.
-  if (opts.checkRegressions && exitCode === EXIT_CODES.SAFE && (result.regressions?.length ?? 0) > 0) {
-    exitCode = EXIT_CODES.BLOCKED
-    if (!machineOutput && !quiet) {
-      logger.warn(`--check-regressions: ${result.regressions?.length} previously-passing rule(s) now fail — exiting with code 1`)
-    }
+  if (regressionBlocks && !machineOutput && !quiet) {
+    logger.warn(`--check-regressions: ${result.regressions?.length} previously-passing rule(s) now fail — exiting with code 1`)
   }
 
   // Let the (bounded) ping finish before we may hard-exit. sendTelemetry never rejects.

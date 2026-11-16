@@ -21,6 +21,7 @@ With `--json` or `--sarif`, an exit `2` prints exactly one JSON object on stdout
 | `NOT_A_PROJECT` | The folder is not a project root. Pass a path or `--all`. |
 | `PATH_NOT_FOUND` | The scan path does not exist or cannot be read. |
 | `PATH_NOT_A_DIRECTORY` | The scan path is a file. |
+| `OFFLINE_WITH_PRO` | `--offline` (or `SHIPGUARD_OFFLINE=1`) was combined with `--pro`. Offline mode fetches nothing, `--pro` downloads rules. |
 
 ## Degraded scans
 
