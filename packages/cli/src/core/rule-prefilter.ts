@@ -277,11 +277,34 @@ export function foldContent(content: string): string {
   return content.toLowerCase().replaceAll('\u017f', 's')
 }
 
-/** True when the rule might match `content`. `foldedContent` is only read when `pf.folded`. */
-export function mayMatch(pf: RulePrefilter, content: string, foldedContent: string): boolean {
-  const hay = pf.folded ? foldedContent : content
+/**
+ * One file's text plus memoised "does it contain X" answers. Many rules ask about the same short
+ * text (`(`, `req.`, `=`), so each distinct question scans the file once, not once per rule. The
+ * folded copy is built only if a case-insensitive rule asks, and dies with the probe.
+ */
+export class FileProbe {
+  private readonly raw = new Map<string, boolean>()
+  private readonly fold = new Map<string, boolean>()
+  private foldedText: string | undefined
+
+  constructor(private readonly content: string) {}
+
+  has(needle: string, folded: boolean): boolean {
+    const memo = folded ? this.fold : this.raw
+    let found = memo.get(needle)
+    if (found === undefined) {
+      const hay = folded ? (this.foldedText ??= foldContent(this.content)) : this.content
+      found = hay.includes(needle)
+      memo.set(needle, found)
+    }
+    return found
+  }
+}
+
+/** True when the rule might match the file behind `probe`. */
+export function mayMatch(pf: RulePrefilter, probe: FileProbe): boolean {
   for (const b of pf.alts) {
-    if (b.runs.every((r) => hay.includes(r)) && b.ors.every((set) => set.some((r) => hay.includes(r)))) return true
+    if (b.runs.every((r) => probe.has(r, pf.folded)) && b.ors.every((set) => set.some((r) => probe.has(r, pf.folded)))) return true
   }
   return false
 }
