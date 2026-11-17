@@ -51,3 +51,13 @@ jobs:
       # `pnpm test` runs matcher-contract (incl. the re2js-v1 freeze test) then the CLI suite.
       - name: Test
         run: pnpm test
+
+      # Rebuild check (REBUILD.md): the publish build must be byte-identical twice, and every source map
+      # must resolve to a real file under src/. Runs last: it overwrites dist/ with the publish build.
+      - name: Publish build is reproducible, source maps resolve
+        run: |
+          pnpm --filter @agenticcli/shipguard run build:publish
+          node packages/cli/scripts/check-sourcemaps.mjs packages/cli/dist
+          cp -r packages/cli/dist "$RUNNER_TEMP/dist-first"
+          pnpm --filter @agenticcli/shipguard run build:publish
+          node packages/cli/scripts/compare-dist.mjs "$RUNNER_TEMP/dist-first" packages/cli/dist

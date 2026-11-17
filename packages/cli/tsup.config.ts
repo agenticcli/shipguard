@@ -20,7 +20,7 @@ export default defineConfig({
   target: 'node20',
   noExternal: [/^@agenticcli\/.*/],
   dts: false,
-  sourcemap: false,
+  sourcemap: true,
   clean: true,
   define: {
     __SHIPGUARD_VERSION__: JSON.stringify(version),

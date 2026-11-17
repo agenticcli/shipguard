@@ -106,6 +106,10 @@ To see exactly what would be sent without sending it: `SHIPGUARD_TELEMETRY_DEBUG
 
 Details: [docs/privacy.md](https://github.com/agenticcli/shipguard/blob/main/docs/privacy.md) and [agenticcli.dev/privacy](https://agenticcli.dev/privacy?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen).
 
+## Verify this package
+
+The package ships source maps (`dist/*.js.map`) with the real source files embedded. To rebuild it from its tag and compare hashes, and for the list of every network call in the CLI, see [REBUILD.md](https://github.com/agenticcli/shipguard/blob/main/REBUILD.md).
+
 ## Documentation
 
 See the [ShipGuard docs](https://agenticcli.dev/shipguard/docs?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen) for policy configuration, CI setup, and agent integration. Product page: [agenticcli.dev/shipguard](https://agenticcli.dev/shipguard?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen).
