@@ -12,6 +12,7 @@ import {
   verdictPanel,
   renderFindingsSummary,
   renderNothingToCheck,
+  renderNothingScanned,
   findingsByCategoryTable,
   coverageLine,
   coverageSummaryLine,
@@ -860,6 +861,8 @@ async function runScan(ctx: {
     // Findings summary — categorized by severity + confidence/FP labels
     if (result.coverage?.changed?.nothingToCheck) {
       console.log(renderNothingToCheck())
+    } else if (coverage && coverage.scanned === 0) {
+      console.log(renderNothingScanned())
     } else {
       console.log(renderFindingsSummary(result.findings))
     }
@@ -919,7 +922,7 @@ async function runScan(ctx: {
     }
 
     if (coverage?.changed?.nothingToCheck) {
-      logger.info('Nothing to check: git reports no changed files. Run `shipguard scan` to check the whole tree.')
+      logger.warn('Nothing to check: git reports no changed files, so nothing was scanned (verdict: not safe, scan incomplete). Run `shipguard scan` to check the whole tree.')
     } else if (coverage && coverage.scanned === 0) {
       logger.warn(
         `Nothing was scanned (0 of ${coverage.discovered} candidate file(s) could be read). A scan that read nothing is DO_NOT_SHIP, never safe.`

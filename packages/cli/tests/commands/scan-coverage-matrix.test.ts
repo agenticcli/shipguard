@@ -155,17 +155,17 @@ describe('B6: nothing was scanned is never SAFE', () => {
     expect((await scanJson(dir)).code).toBe(0)
   })
 
-  it('--changed on a clean checkout: nothing to check, not degraded (own test file has the full matrix); hint on stderr only', async () => {
+  it('--changed on a clean checkout: nothing scanned, degraded, never SAFE (own test file has the full matrix); hint on stderr only', async () => {
     const dir = mkTree({ 'a.js': 'const a = 1\n' }, { git: true })
     execSync('git add . && git commit -q -m init', { cwd: dir })
     const json = await scanJson(dir, ['--changed', '--strict'])
-    expect(degradeCodes(json.json)).toEqual([])
-    expect(json.json!.recommendation).toBe('SAFE_TO_SHIP')
+    expect(degradeCodes(json.json)).toEqual(['NO_FILES_SCANNED'])
+    expect(json.json!.recommendation).toBe('DO_NOT_SHIP')
     expect(json.json!.coverage.changed.nothingToCheck).toBe(true)
-    expect(json.code).toBe(0)
+    expect(json.code).toBe(1)
     expect(json.stdout.trim().startsWith('{')).toBe(true)
     expect(json.stdout).not.toMatch(/clean checkout/i)
     const human = await runCli(['scan', dir, '--changed'])
-    expect(human.stderr).toMatch(/nothing to check/i)
+    expect(human.stderr).toMatch(/nothing to check.*not safe/i)
   })
 })

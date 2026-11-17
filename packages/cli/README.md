@@ -87,9 +87,9 @@ turned into spaces. Real binaries (images, fonts, archives) are counted and are 
 problem. A scan that read **nothing** (`NO_FILES_SCANNED`, for example an empty folder or a
 `--changed` scan where every changed file was ignored), an unknown binary blob (`UNSCANNED_UNKNOWN_BINARY`), and a
 truncated scan are `degraded` and so `DO_NOT_SHIP`. To clear a blob you trust, add its path to
-`ignore.paths`. `--changed` when nothing changed at all is different: there is nothing to
-check, so it is not degraded and `coverage.changed.nothingToCheck` is `true` (`filesScanned` is
-`0`). Do not use that as proof a project is safe: run a full `shipguard scan` for that. Some formats are counted but their contents are not scanned: SQLite files
+`ignore.paths`. `--changed` when nothing changed at all is the same: nothing was scanned, so it is `degraded`
+(`NO_FILES_SCANNED`, `DO_NOT_SHIP`, `--strict` exits `1`) and also sets `coverage.changed.nothingToCheck: true`
+(`filesScanned` is `0`). It is never a pass: run a full `shipguard scan` for that. Some formats are counted but their contents are not scanned: SQLite files
 outside the ASCII reading, compressed archives, and string tables inside ELF, PE, class and WASM files.
 
 ## Telemetry

@@ -96,7 +96,7 @@ describe('#5 — shipguard hook --target git', () => {
     await runCli(['hook'], repo)
     const body = readFileSync(join(repo, '.git', 'hooks', 'pre-push'), 'utf-8')
     // Fail-closed: a gate that did not run must not report a pass (same rule as rec #1).
-    expect(body).toContain('the release gate did not run')
+    expect(body).toContain('the release gate did NOT run')
     expect(body).toMatch(/exit 1/)
   })
 

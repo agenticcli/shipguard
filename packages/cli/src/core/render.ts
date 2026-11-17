@@ -96,7 +96,7 @@ export function quickstartHelp(isTTY: boolean): string {
     lines.push(`    ${chalk.cyan('hook')}      ${chalk.dim('--target')} Install the gate at the merge boundary`)
     lines.push(`    ${chalk.cyan('schema')}    ${chalk.dim('--json')}   Print the machine-readable scan contract`)
     lines.push(`    ${chalk.cyan('feedback')}           Where to send feedback (GitHub issues)`)
-    lines.push(`    ${chalk.cyan('rate')}      ${chalk.dim('<id> up|down')}  Rate a rule finding`)
+    lines.push(`    ${chalk.cyan('rate')}      ${chalk.dim('<n> helpful|not-helpful')}  Rate a rule finding`)
     lines.push(`    ${chalk.cyan('telemetry')} ${chalk.dim('status')}   Show or change the pseudonymous usage ping`)
     lines.push(`    ${chalk.cyan('help')}  ${chalk.dim('/ ?')}        Show this screen`)
     lines.push('')
@@ -131,7 +131,7 @@ export function quickstartHelp(isTTY: boolean): string {
     lines.push('    hook      --target     Install the gate at the merge boundary')
     lines.push('    schema    --json       Machine-readable scan contract')
     lines.push('    feedback               Where to send feedback (GitHub issues)')
-    lines.push('    rate      <id> up|down Rate a finding')
+    lines.push('    rate      <n> helpful|not-helpful  Rate finding number n')
     lines.push('    telemetry status|enable|disable|reset  Pseudonymous usage ping')
     lines.push('    help / ?              Show this screen')
     lines.push('')
@@ -226,9 +226,14 @@ const SEVERITY_COLORS: Record<string, (s: string) => string> = {
 
 // Local alias — SEVERITY_ICONS is already exported at top of file
 
-/** `--changed` found nothing changed (see coverage.changed.nothingToCheck): say so, never "clean scan". */
+/** `--changed` found nothing changed (see coverage.changed.nothingToCheck): say so, never "clean scan" and never safe. */
 export function renderNothingToCheck(): string {
-  return chalk.green('  ✓  Nothing to check: no files changed, so nothing was scanned.')
+  return chalk.yellow('  ⚠  Nothing was scanned: no files changed. This is NOT a safe-to-ship result.')
+}
+
+/** A scan that read zero files (empty folder, everything ignored): say so, never "clean scan". */
+export function renderNothingScanned(): string {
+  return chalk.yellow('  ⚠  Nothing to scan: no readable files were found. This is NOT a clean result.')
 }
 
 /**
@@ -635,13 +640,13 @@ export function actionFooter(opts: {
 
   lines.push(chalk.bold('  ── What now? ──────────────────────────────────────────────'))
   lines.push('')
-  lines.push(`  ${chalk.cyan('shipguard report')}                    ${chalk.dim('# open the full report')}`)
+  lines.push(`  ${chalk.cyan('shipguard hook --target git')}         ${chalk.dim('# run this gate before every push')}`)
 
   if (hasFindings && topRuleId) {
-    lines.push(`  ${chalk.cyan(`shipguard rate ${topRuleId} up`)}           ${chalk.dim('# was this finding helpful?')}`)
-    lines.push(`  ${chalk.cyan(`shipguard rate ${topRuleId} down`)}         ${chalk.dim('# false positive?')}`)
+    lines.push(`  ${chalk.cyan(`shipguard rate 1 helpful`)}                ${chalk.dim('# was this finding helpful?')}`)
+    lines.push(`  ${chalk.cyan(`shipguard rate 1 not-helpful`)}            ${chalk.dim('# false positive?')}`)
   } else if (hasFindings) {
-    lines.push(`  ${chalk.cyan('shipguard rate <ruleId> up')}          ${chalk.dim('# rate a finding')}`)
+    lines.push(`  ${chalk.cyan('shipguard rate <n> helpful')}          ${chalk.dim('# rate a finding (or not-helpful)')}`)
   }
 
   lines.push(`  ${chalk.cyan('shipguard feedback "<thoughts>"')}     ${chalk.dim('# what do you think?')}`)
@@ -748,7 +753,7 @@ export function quietVerdict(result: ScanResult, strict?: boolean): string {
   const colorFn = recommendation === 'SAFE_TO_SHIP' ? chalk.green : recommendation === 'DO_NOT_SHIP' ? chalk.red : chalk.yellow
   // A one-line verdict that hides "this scan was incomplete" is the false-safe in
   // miniature — say it on the same line (rec #1).
-  const degradedNote = degraded ? '  incomplete=yes' : ''
+  const degradedNote = (degraded ? '  incomplete=yes' : '') + (result.coverage?.scanned === 0 ? '  nothing-scanned=yes' : '')
   const suffix = blockingCount > 0 && !strict ? '  (informational — exit 0; use --strict to enforce)' : ''
   return colorFn(`${icon} ${recommendation.replace(/_/g, ' ')}  score=${score}/100  findings=${totalFindings}  blocking=${blockingCount}${degradedNote}${suffix}`)
 }

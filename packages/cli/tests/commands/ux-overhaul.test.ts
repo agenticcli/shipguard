@@ -334,8 +334,10 @@ describe('severityBar', () => {
 // ---------------------------------------------------------------------------
 
 describe('actionFooter', () => {
-  it('contains shipguard report command', () => {
-    expect(stripAnsi(actionFooter({ hasFindings: false }))).toContain('shipguard report')
+  it('suggests only commands that exist (no `shipguard report`; hook --target git)', () => {
+    const footer = stripAnsi(actionFooter({ hasFindings: false }))
+    expect(footer).not.toContain('shipguard report')
+    expect(footer).toContain('shipguard hook --target git')
   })
 
   it('contains feedback command', () => {
@@ -344,9 +346,10 @@ describe('actionFooter', () => {
 
   it('contains rate command with topRuleId when findings present', () => {
     const footer = stripAnsi(actionFooter({ hasFindings: true, topRuleId: 'hardcoded_secret' }))
-    expect(footer).toContain('shipguard rate hardcoded_secret')
-    expect(footer).toContain('up')
-    expect(footer).toContain('down')
+    // `rate` takes a finding NUMBER and helpful|not-helpful (commands/feedback.ts)
+    expect(footer).toContain('shipguard rate 1 helpful')
+    expect(footer).toContain('shipguard rate 1 not-helpful')
+    expect(footer).not.toMatch(/rate \S+ (up|down)\b/)
   })
 
   it('contains login nudge when not logged in', () => {
@@ -522,13 +525,14 @@ describe('scan command — action footer wired', () => {
     vi.mocked(mockScan).mockResolvedValue(makeScanResult())
   })
 
-  it('verbose output includes "shipguard report" in action footer', async () => {
+  it('verbose output includes the hook command in the action footer', async () => {
     const dir = makeProjectDir()
     const orig = process.cwd()
     process.chdir(dir)
     try {
       const { stdout } = await captureOutput([])
-      expect(stdout).toContain('shipguard report')
+      expect(stdout).toContain('shipguard hook --target git')
+      expect(stdout).not.toContain('shipguard report')
     } finally {
       process.chdir(orig)
     }

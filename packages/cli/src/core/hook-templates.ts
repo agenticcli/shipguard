@@ -30,25 +30,43 @@ export type HookTarget = 'git' | 'claude' | 'ci'
 export const GATE_COMMAND = 'shipguard scan --json --strict'
 
 /**
+ * The scoped package, pinned to a major. The UNSCOPED npm package `shipguard` is a different,
+ * unrelated project: never resolve it. (tests/core/hook-templates-resolver.test.ts keeps the pinned
+ * major equal to this package's own major.)
+ */
+export const NPX_SPEC = '@agenticcli/shipguard@0'
+
+/** Local bin first, then a bin on PATH, then npx (downloads the pinned scoped package if needed). */
+const LOCAL_BIN = './node_modules/.bin/shipguard'
+
+/**
+ * Shell that defines `_sg_run` (runs ShipGuard through the resolver) and stops with a clear fix
+ * message when ShipGuard cannot be started at all. No single quotes inside: the same text is
+ * embedded in the Claude hook's `sh -c '...'`.
+ *
+ * Fail-closed on a missing tool: if ShipGuard cannot be found or fetched, the gate did not run, and
+ * a gate that did not run must not report a pass. But it never blocks silently: the message says
+ * that nothing was scanned and how to fix it. `exitCode` is 1 for git hooks, 2 for Claude Code.
+ */
+function resolverShell(exitCode: number): string[] {
+  return [
+    `_sg_run() { if [ -x ${LOCAL_BIN} ]; then ${LOCAL_BIN} "$@"; elif command -v shipguard >/dev/null 2>&1; then shipguard "$@"; else npx --yes ${NPX_SPEC} "$@"; fi; }`,
+    `if ! { [ -x ${LOCAL_BIN} ] || command -v shipguard >/dev/null 2>&1 || { command -v npx >/dev/null 2>&1 && npx --yes ${NPX_SPEC} --version >/dev/null 2>&1; }; }; then ` +
+      `echo "ShipGuard could not start, so the release gate did NOT run and nothing was scanned." >&2; ` +
+      `echo "  Fix: npm i -D @agenticcli/shipguard   (or: npm i -g @agenticcli/shipguard)." >&2; ` +
+      `echo "  Without a local install, npx needs network access to fetch ${NPX_SPEC}." >&2; ` +
+      `exit ${exitCode}; fi`,
+  ]
+}
+
+/**
  * Shared shell body. Runs the gate, stays quiet on success, prints the machine
  * output only when the gate blocks — so a passing push is not buried in JSON.
- *
- * Fail-closed on a missing binary: if ShipGuard cannot be found, the gate did not
- * run, and a gate that did not run must not report a pass. That is the same rule
- * the verdict applies to a degraded scan.
  */
 function gateShellBody(indent = ''): string {
   const l = (s: string) => `${indent}${s}`
   return [
-    l('if command -v shipguard >/dev/null 2>&1; then'),
-    l('  _sg_run() { shipguard "$@"; }'),
-    l('elif command -v npx >/dev/null 2>&1; then'),
-    l('  _sg_run() { npx --no-install shipguard "$@"; }'),
-    l('else'),
-    l('  echo "ShipGuard: not installed, so the release gate did not run — refusing to pass." >&2'),
-    l('  echo "  Install it:  npm i -g @agenticcli/shipguard" >&2'),
-    l('  exit 1'),
-    l('fi'),
+    ...resolverShell(1).map(l),
     l('_sg_out=$(_sg_run scan --json --strict 2>&1) || {'),
     l('  echo "ShipGuard blocked this: the release gate did not pass." >&2'),
     l('  printf "%s\\n" "$_sg_out" >&2'),
@@ -105,12 +123,15 @@ export const GIT_HOOK_NAMES = ['pre-push', 'pre-merge-commit'] as const
  */
 export const CLAUDE_HOOK_COMMAND =
   `sh -c '_sg_in=$(cat); case "$_sg_in" in *"git merge"*|*"git push"*) ` +
-  `_sg_out=$(${GATE_COMMAND} 2>&1) || { ` +
+  `${resolverShell(2).join('; ')}; ` +
+  `_sg_out=$(_sg_run scan --json --strict 2>&1) || { ` +
   `echo "ShipGuard blocked this merge/push: the release gate did not pass." >&2; ` +
   `printf "%s\\n" "$_sg_out" >&2; exit 2; };; esac; exit 0'`
 
 /** Marker used to recognise OUR entry inside an existing .claude/settings.json. */
-export const CLAUDE_HOOK_FINGERPRINT = 'shipguard scan --json --strict'
+// Matches both the current command ("_sg_run scan ...") and the pre-resolver one ("shipguard scan ..."),
+// so re-running `shipguard hook --target claude` upgrades an old entry in place.
+export const CLAUDE_HOOK_FINGERPRINT = ' scan --json --strict'
 
 /**
  * GitHub Actions verdict job.

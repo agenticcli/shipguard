@@ -503,7 +503,7 @@ export async function scan(
   }
 
   // Nothing at all was scanned: never SAFE. Evaluated last so the detail can name every cause.
-  if (state.acceptedPaths === 0 && !nothingToCheck) {
+  if (state.acceptedPaths === 0) {
     const parts: string[] = []
     const add = (n: number, label: string): void => {
       if (n > 0) parts.push(`${n} ${label}`)
@@ -518,9 +518,11 @@ export async function scan(
     add(state.notReached, 'not reached')
     degradedReasons.push({
       code: 'NO_FILES_SCANNED',
-      detail:
-        `0 files were scanned (${state.discovered} candidate file(s)${parts.length > 0 ? `: ${parts.join(', ')}` : ''}, 0 readable). ` +
-        `A scan that read nothing cannot report that shipping is safe.`,
+      detail: nothingToCheck
+        ? '--changed: git reports no changed files, so nothing was scanned. This is NOT a safe-to-ship result: ' +
+          'run `shipguard scan` (without --changed) to check the whole tree.'
+        : `0 files were scanned (${state.discovered} candidate file(s)${parts.length > 0 ? `: ${parts.join(', ')}` : ''}, 0 readable). ` +
+          `A scan that read nothing cannot report that shipping is safe.`,
     })
   }
 
