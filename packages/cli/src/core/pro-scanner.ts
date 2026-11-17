@@ -82,6 +82,9 @@ export class NoRulesAppliedError extends Error {
  * disabled. That is temporary and entirely on the server's side. Unmapped it fell into the generic
  * SERVER_ERROR bucket, so the user saw "Pro rules request failed [SERVER_ERROR]" and could not
  * tell it from their own network trouble.
+ *
+ * FRESHNESS_EXPIRED: the signed freshness token that comes with the Pro rules has run out. Pro rules
+ * cannot be trusted right now; the user sees one plain "temporarily unavailable" message (exit 3).
  */
 export type ProFetchErrorCode =
   | 'AUTH_FAILED'
@@ -91,6 +94,7 @@ export type ProFetchErrorCode =
   | 'BUNDLE_INVALID'
   | 'NO_ACTIVE_RELEASE'
   | 'PLATFORM_UNAVAILABLE'
+  | 'FRESHNESS_EXPIRED'
 
 export class ProFetchError extends Error {
   readonly code: ProFetchErrorCode
@@ -109,6 +113,7 @@ import {
   isPlatformUnavailable,
   parseRetryAfterSeconds,
   PLATFORM_UNAVAILABLE_DEFAULT_MESSAGE,
+  PRO_RULES_UNAVAILABLE_MESSAGE,
 } from './platform-status.js'
 
 /**
@@ -297,6 +302,12 @@ export async function fetchProRules(
     )
 
     if (!verifyResult.ok) {
+      if (verifyResult.freshnessExpired) {
+        throw new ProFetchError(
+          'FRESHNESS_EXPIRED',
+          `${PRO_RULES_UNAVAILABLE_MESSAGE} (${verifyResult.reason})`,
+        )
+      }
       throw new ProFetchError(
         'BUNDLE_INVALID',
         `Attested bundle verification failed: ${verifyResult.reason}` +

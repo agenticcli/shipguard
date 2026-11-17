@@ -34,6 +34,7 @@ import type { TelemetryOutput, TelemetryVerdict } from '../core/telemetry.js'
 // coderef-dispatch, etc.) is dynamically imported ONLY inside the `if (opts.pro)` branch below to
 // keep non-pro scans fast; a value import here would force it to load eagerly on every scan.
 import type { ProFetchErrorCode } from '../core/pro-scanner.js'
+import { PRO_RULES_UNAVAILABLE_MESSAGE } from '../core/platform-status.js'
 
 const LEARN_MORE = `Docs ${goLink('docs')} · Site ${goLink('site')} · Pricing ${goLink('pricing')} · Issues https://github.com/agenticcli/shipguard/issues`
 
@@ -179,6 +180,8 @@ export function proFetchActionHint(code: ProFetchErrorCode, retryAfterSeconds?: 
       return 'This looks like a transient server/network issue — retry the scan, or pass --allow-degraded to run local rules only.'
     case 'PLATFORM_UNAVAILABLE':
       return platformUnavailableMessage(retryAfterSeconds)
+    case 'FRESHNESS_EXPIRED':
+      return PRO_RULES_UNAVAILABLE_MESSAGE
     case 'BUNDLE_INVALID':
       return 'The pro rule bundle failed validation (server-side issue) — retry, or pass --allow-degraded to run local rules only. If this persists, contact support.'
     case 'NO_ACTIVE_RELEASE':
@@ -603,7 +606,7 @@ async function runScan(ctx: {
       // ---------------------------------------------------------------------
       const rawErrCode = (err as { code?: unknown })?.code
       const KNOWN_PRO_FETCH_ERROR_CODES: readonly ProFetchErrorCode[] = [
-        'AUTH_FAILED', 'INSUFFICIENT_CREDITS', 'RATE_LIMITED', 'SERVER_ERROR', 'BUNDLE_INVALID', 'NO_ACTIVE_RELEASE', 'PLATFORM_UNAVAILABLE',
+        'AUTH_FAILED', 'INSUFFICIENT_CREDITS', 'RATE_LIMITED', 'SERVER_ERROR', 'BUNDLE_INVALID', 'NO_ACTIVE_RELEASE', 'PLATFORM_UNAVAILABLE', 'FRESHNESS_EXPIRED',
       ]
       const proErrorCode: ProFetchErrorCode =
         typeof rawErrCode === 'string' && (KNOWN_PRO_FETCH_ERROR_CODES as string[]).includes(rawErrCode)
@@ -628,7 +631,7 @@ async function runScan(ctx: {
         // green. Structured, machine-readable, and includes what the caller
         // can do next.
         const action = proFetchActionHint(proErrorCode, retryAfterSeconds)
-        if (proErrorCode === 'PLATFORM_UNAVAILABLE') {
+        if (proErrorCode === 'PLATFORM_UNAVAILABLE' || proErrorCode === 'FRESHNESS_EXPIRED') {
           // The action text IS the calm message (it already carries the --allow-degraded hint) —
           // don't prefix it with the raw server string.
           logger.error(action)

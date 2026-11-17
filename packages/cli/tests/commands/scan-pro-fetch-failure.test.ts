@@ -328,3 +328,44 @@ describe('platform-unavailable-20261018 — PLATFORM_UNAVAILABLE human + JSON ou
     expect(errorLines()).not.toMatch(/on our side/)
   })
 })
+
+describe('freshness token expired — FRESHNESS_EXPIRED message, exit 3', () => {
+  const MESSAGE = 'Pro rules are temporarily unavailable. Retry later, or run with --allow-degraded to scan with local rules only.'
+
+  it('human mode: prints exactly the plain message once, exit 3 (no raw bundle text)', async () => {
+    mockFetchProRules.mockRejectedValue(new FakeProFetchError('FRESHNESS_EXPIRED', `${MESSAGE} (freshness token expired (expiresAt=1))`))
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+      throw new Error(`__EXIT_${code}__`)
+    })
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    let exitCode: number | undefined
+    try {
+      await scanCommand().parseAsync(['node', 'scan', '--pro'])
+      exitCode = takeExitCode()
+    } catch (err) {
+      const m = (err instanceof Error ? err.message : String(err)).match(/__EXIT_(\d+)__/)
+      if (m) exitCode = Number(m[1])
+      else throw err
+    } finally {
+      exitSpy.mockRestore()
+      logSpy.mockRestore()
+    }
+    expect(exitCode).toBe(3)
+    const lines = vi.mocked(logger.error).mock.calls.map((c) => String(c[0]))
+    expect(lines).toEqual([MESSAGE])
+  })
+
+  it('--json: code FRESHNESS_EXPIRED, action is the plain message, exit 3', async () => {
+    mockFetchProRules.mockRejectedValue(new FakeProFetchError('FRESHNESS_EXPIRED', MESSAGE))
+    const { exitCode, stdoutJson } = await runProScan([])
+    expect(exitCode).toBe(3)
+    expect(stdoutJson).toMatchObject({ code: 'FRESHNESS_EXPIRED', degraded: false, action: MESSAGE })
+  })
+
+  it('--allow-degraded: falls back to a degraded free scan', async () => {
+    mockFetchProRules.mockRejectedValue(new FakeProFetchError('FRESHNESS_EXPIRED', MESSAGE))
+    const { exitCode, stdoutJson } = await runProScan(['--allow-degraded'])
+    expect(exitCode).toBeUndefined()
+    expect(stdoutJson).toMatchObject({ degraded: true })
+  })
+})
