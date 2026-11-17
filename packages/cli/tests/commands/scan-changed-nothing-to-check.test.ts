@@ -1,7 +1,7 @@
 /**
- * 2026-11-06 bug: `shipguard scan --changed` on a clean checkout reported DO_NOT_SHIP with no
- * explanation. 2026-11-08 "fix" swung to the opposite, worse error: SAFE_TO_SHIP (risk 0) on a repo
- * that has a critical issue, because nothing was scanned (FINDINGS 2026-11-17, release blocker).
+ * Earlier bug: `shipguard scan --changed` on a clean checkout reported DO_NOT_SHIP with no
+ * explanation. The next fix swung to the opposite, worse error: SAFE_TO_SHIP (risk 0) on a repo
+ * that has a critical issue, because nothing was scanned.
  *
  * Contract now: when git ran fine and nothing but ShipGuard's own files changed, NOTHING WAS
  * SCANNED. That is never SAFE_TO_SHIP. The result is degraded NO_FILES_SCANNED (verdict DO_NOT_SHIP,

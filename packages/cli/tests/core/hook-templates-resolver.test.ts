@@ -1,6 +1,6 @@
 /**
  * Hook templates must resolve the SCOPED package, never the unrelated unscoped npm `shipguard`
- * (FINDINGS 2026-11-17, release blocker), and must never block a push without saying how to fix it.
+ *, and must never block a push without saying how to fix it.
  *
  * Behavioral: the generated shell is run with a restricted PATH and stub binaries.
  */
