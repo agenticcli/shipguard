@@ -22,7 +22,6 @@ import {
   validatePayload,
   type TelemetryPayload,
 } from '../../src/core/telemetry.js'
-import { setOffline } from '../../src/core/offline.js'
 
 const GOOD: TelemetryPayload = {
   schema: 4,
@@ -132,7 +131,6 @@ describe('sendTelemetry sends schema 4 with the detected agent', () => {
     rmSync(dir, { recursive: true, force: true })
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
-    setOffline(false)
   })
   const input = { cliVersion: '0.12.0', verdict: 'safe' as const, durationMs: 10, output: 'sarif' as const }
   const body = () => JSON.parse((fetchMock.mock.calls[0] as [string, { body: string }])[1].body)
@@ -187,7 +185,6 @@ describe('telemetryState (the JSON `telemetry` field)', () => {
   })
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true })
-    setOffline(false)
   })
   it('on by default', () => {
     expect(telemetryState({ env: {}, configDir: dir })).toBe('on')
@@ -200,10 +197,6 @@ describe('telemetryState (the JSON `telemetry` field)', () => {
   })
   it('off when the project policy opts out', () => {
     expect(telemetryState({ env: {}, configDir: dir, policy: { telemetry: { enabled: false } } })).toBe('off')
-  })
-  it('off in offline mode, whatever else is set', () => {
-    setOffline(true)
-    expect(telemetryState({ env: {}, configDir: dir })).toBe('off')
   })
 })
 

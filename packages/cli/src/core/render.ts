@@ -14,7 +14,6 @@ import { ensureSecureDir, writeSecureFileSync } from '../utils/secure-fs.js'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { goLink } from './links.js'
-import { isOffline } from './offline.js'
 import type { Finding, ScanResult, Confidence, ScanCoverage } from '@agenticcli/shared'
 import { effectiveRecommendation } from './verdict.js'
 import { bundledRulesMeta } from './bundled-rules.js'
@@ -678,8 +677,6 @@ function getShipguardConfigDir(): string {
  * @returns banner string (non-empty on first call; empty string thereafter)
  */
 export function welcomeBanner(configDir?: string): string {
-  // Offline mode writes no file, so no marker and no banner.
-  if (isOffline()) return ''
   const dir = configDir ?? getShipguardConfigDir()
   const marker = join(dir, '.welcomed')
 

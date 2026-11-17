@@ -32,7 +32,6 @@ shipguard scan --strict   # CI hard gate: exit 1 on blocking findings (opt-in)
 shipguard scan --json     # Machine-readable output for agents/CI
 shipguard scan --quiet    # One-line verdict only
 shipguard scan --pro      # Pro rules — requires login
-shipguard scan --offline  # Agent-safe: sends nothing, writes no files
 shipguard login           # Authenticate for Pro rules
 shipguard init            # Generate .shipguard.yml policy file
 shipguard hook            # Install the gate at the merge boundary (git / claude / ci)
@@ -52,17 +51,7 @@ shipguard hook --target ci        # GitHub Actions verdict job
 
 Copy-paste snippets for `AGENTS.md`, `CLAUDE.md` and CI: [docs/placement-kit.md](docs/placement-kit.md).
 
-## Agent-safe mode: `--offline`
-
-```bash
-shipguard scan --offline          # or: SHIPGUARD_OFFLINE=1 shipguard scan
-```
-
-Offline mode is the switch for agents and locked-down machines. It sends nothing: no usage ping, no first-run ping, no rulebook download, no login or token calls. It writes no files: nothing under `~/.config/shipguard` or `~/.shipguard`, no local history store, no report unless you pass `--report`, and your `.gitignore` stays byte-identical. The bundled rules run on your machine as usual.
-
-It says so on the first output line: the first line on stdout in the terminal, or on stderr with `--json`, `--sarif` and `--quiet` (so stdout stays one clean document). With `--json` the result also carries `"mode": "offline"`. `--offline` together with `--pro` is a config error (exit 2, `code: "OFFLINE_WITH_PRO"`), because `--pro` downloads rules. `SHIPGUARD_OFFLINE` fails closed: any non-empty value except `0`, `false`, `no` or `off` turns it on. With it set, the commands that need the network (`login`, `status`, `rate`) refuse with exit 2 and one line, `offline mode: this command needs the network`.
-
-The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out).
+The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below).
 
 ## Exit codes
 
@@ -105,11 +94,10 @@ outside the ASCII reading, compressed archives, and string tables inside ELF, PE
 
 ## Telemetry
 
-**The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out).** Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run ping is never sent in CI). A scan ping carries 11 keys: `schema` (`4`), `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket`, `ci`, and three about how ShipGuard was run: `agent` (`claude_code`, `codex`, `cursor`, `gemini_cli`, `copilot`, `opencode`, `other_agent` or `none`, from the variables the agent itself sets in your environment; only the label is sent, never a value), `interactive` (is the output a terminal) and `output` (`json`, `human` or `sarif`). Pings go to `agenticcli.dev/api/cli-telemetry` (host agenticcli.dev). Every `--json` result shows `"telemetry": "on"` or `"off"`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
+**The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below).** Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run ping is never sent in CI). A scan ping carries 11 keys: `schema` (`4`), `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket`, `ci`, and three about how ShipGuard was run: `agent` (`claude_code`, `codex`, `cursor`, `gemini_cli`, `copilot`, `opencode`, `other_agent` or `none`, from the variables the agent itself sets in your environment; only the label is sent, never a value), `interactive` (is the output a terminal) and `output` (`json`, `human` or `sarif`). Pings go to `agenticcli.dev/api/cli-telemetry` (host agenticcli.dev). Every `--json` result shows `"telemetry": "on"` or `"off"`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
 
 Before the first ping on a machine, ShipGuard prints a one-line notice to stderr (in every mode, including `--json` and CI, so stdout stays clean). Turn pings off any of these ways:
 
-- `shipguard scan --offline` or `SHIPGUARD_OFFLINE=1` (sends nothing at all, see above)
 - `SHIPGUARD_TELEMETRY=0` or `DO_NOT_TRACK=1` in the environment (wins over everything)
 - `shipguard telemetry disable` (saved per user; `enable` turns it back on, `status` shows the state and why)
 - `telemetry: { enabled: false }` in `shipguard.policy.yml` or `.shipguard.yml` (per project)

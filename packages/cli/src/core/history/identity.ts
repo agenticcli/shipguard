@@ -6,7 +6,6 @@ import type { RepoIdKind } from '@agenticcli/shared'
 import { DEFAULT_REPO_ID_FALLBACK_PATH } from '@agenticcli/shared'
 import { logger } from '../../utils/logger.js'
 import { assertCwdAlive } from '../../utils/cwd-guard.js'
-import { isOffline } from '../offline.js'
 
 export interface RepoIdentity {
   repoId: string
@@ -29,8 +28,6 @@ function tryGit(cwd: string, args: string[]): string | undefined {
  * .gitignore doesn't get the courtesy line and history.db/repo-id could get committed.
  */
 export function ensureGitignored(cwd: string, entry: string): void {
-  // Offline mode never edits the user's files.
-  if (isOffline()) return
   try {
     const gitignorePath = join(cwd, '.gitignore')
     const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : ''
