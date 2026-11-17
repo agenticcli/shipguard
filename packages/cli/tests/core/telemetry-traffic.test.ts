@@ -16,7 +16,7 @@ let dir: string
 let fetchMock: ReturnType<typeof vi.fn>
 const env = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => ({ SHIPGUARD_TELEMETRY_URL: URL_, ...extra })
 const scan = (e: NodeJS.ProcessEnv, published = true) =>
-  sendTelemetry({ cliVersion: '0.8.1', verdict: 'safe', durationMs: 10 }, { published, env: e, configDir: dir })
+  sendTelemetry({ cliVersion: '0.8.1', verdict: 'safe', durationMs: 10, output: 'json' }, { published, env: e, configDir: dir })
 const life = (e: NodeJS.ProcessEnv, published = true) =>
   sendLifecycleEvent('cli_login', { cliVersion: '0.8.1' }, { published, env: e, configDir: dir })
 const bodies = () => fetchMock.mock.calls.map((c) => JSON.parse((c[1] as { body: string }).body))
@@ -34,11 +34,11 @@ afterEach(() => {
 })
 
 describe('SHIPGUARD_TRAFFIC', () => {
-  it.each(['test', 'internal'])('sends traffic=%s in schema 2 and 3', async (v) => {
+  it.each(['test', 'internal'])('sends traffic=%s in schema 4 and 3', async (v) => {
     await scan(env({ SHIPGUARD_TRAFFIC: v }))
     await life(env({ SHIPGUARD_TRAFFIC: v }))
     const [a, b] = bodies()
-    expect(a).toMatchObject({ schema: 2, traffic: v })
+    expect(a).toMatchObject({ schema: 4, traffic: v })
     expect(b).toMatchObject({ schema: 3, traffic: v })
     expect(validatePayload(a)).toBe(true)
     expect(validateLifecyclePayload(b)).toBe(true)

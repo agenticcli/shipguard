@@ -471,6 +471,51 @@ export function isPlaceholderValue(value: string): boolean {
   return PLACEHOLDER_VALUE_RE.test(value)
 }
 
+// Words that mark a value as documentation or a stand-in, wherever they sit inside it.
+const FAKE_MARKER_RE = compileDetectorRegex(
+  'example|sample|dummy|fake|not[_\\-]?real|placeholder|replace[_\\-]?me|change[_\\-]?me|your[_\\-]?(?:api|key|secret|token)|test[_\\-]?key|insert[_\\-]?(?:key|here)',
+  'i',
+)
+// Walks of the alphabet or digits that people type as a stand-in key.
+const SEQUENCE_RUNS = [
+  '01234567890123456789',
+  'abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz',
+  '0123456789abcdef0123456789abcdef',
+  'qwertyuiopasdfghjklzxcvbnm',
+]
+
+/**
+ * True when a key-shaped value is obviously a stand-in: a placeholder (what `isPlaceholderValue`
+ * already skips), a documentation marker (`EXAMPLE`, `dummy`...), one or two repeated characters,
+ * a short unit repeated end to end (`1234567890` x4), or a plain keyboard/alphabet/digit run.
+ * It only ever LOWERS a finding's confidence: a random-looking key is never matched here and no
+ * finding is dropped. Pure.
+ */
+export function looksFakeKey(value: string): boolean {
+  const v = value.trim()
+  if (v === '') return false
+  if (isPlaceholderValue(v) || FAKE_MARKER_RE.test(v)) return true
+  // Drop the provider prefix (`sk-proj-`, `sk_live_`, `sk-ant-api03-`) and judge the body.
+  let body = v
+  for (;;) {
+    const dash = body.indexOf('-')
+    const under = body.indexOf('_')
+    const sep = dash < 0 ? under : under < 0 ? dash : Math.min(dash, under)
+    if (sep < 1 || sep > 10) break
+    body = body.slice(sep + 1)
+  }
+  if (body.length < 8) return false
+  if (isPlaceholderValue(body)) return true
+  if (new Set(body.toLowerCase()).size <= 2) return true
+  for (let unit = 1; unit <= 10 && unit * 2 <= body.length; unit++) {
+    if (body.length % unit !== 0) continue
+    const chunk = body.slice(0, unit)
+    if (chunk.repeat(body.length / unit) === body) return true
+  }
+  const lower = body.toLowerCase()
+  return lower.length >= 10 && SEQUENCE_RUNS.some((run) => run.includes(lower))
+}
+
 /** The literal written after `=` or `:` in `rest`, up to the next quote, space, `;` or `,` ('' if none). */
 function assignedLiteral(rest: string): string {
   const m = ASSIGNED_LITERAL_RE.exec(rest)
@@ -741,7 +786,7 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
             file: relativePath,
             line: i + 1,
             evidence: `...${redact(secretValue)}...`,
-            confidence: pattern.confidence,
+            confidence: looksFakeKey(secretValue) ? 'LOW' : pattern.confidence,
             explanation: pattern.explanation,
             recommendation: pattern.recommendation,
             blocking: policy.block.includes(pattern.id),

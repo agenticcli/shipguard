@@ -21,7 +21,7 @@ import {
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 })
 
-const PROD = 'https://cheery-toucan-348.convex.site/cli-telemetry'
+const PROD = 'https://agenticcli.dev/api/cli-telemetry'
 const ON = { SHIPGUARD_TELEMETRY: '1', DO_NOT_TRACK: '0' }
 
 describe('resolveEndpoint (unit)', () => {

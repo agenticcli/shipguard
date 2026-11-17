@@ -1,9 +1,9 @@
 /**
- * ShipGuard CLI telemetry — pseudonymous, opt-out, fire-and-forget. Schema v2
- * (cli-telemetry contract v2).
+ * ShipGuard CLI telemetry — pseudonymous, opt-out, fire-and-forget. Run ping schema v4
+ * (cli-telemetry contract v4; lifecycle events stay schema v3).
  *
  * WHAT IS SENT (always and only, exactly these keys):
- *   schema         — 2
+ *   schema         — 4
  *   eventId        — random v4 UUID per ping (lets the relay drop retries)
  *   installId      — random v4 UUID kept in ~/.config/shipguard/telemetry.json; null in CI
  *   cliVersion     — semver string, e.g. "0.7.0"
@@ -11,6 +11,11 @@
  *   verdict        — "safe" | "review" | "blocked" | "error"
  *   durationBucket — "lt1s" | "1to5s" | "5to30s" | "gt30s"
  *   ci             — boolean, from well-known CI environment variables being present
+ *   agent          — "claude_code" | "codex" | "cursor" | "gemini_cli" | "copilot" | "opencode" | "other_agent" | "none";
+ *                    from the agent's own environment markers (see AGENT_MARKERS); only the label is sent, never
+ *                    a marker value, path or text
+ *   interactive    — boolean, whether stdout is a terminal
+ *   output         — "json" | "human" | "sarif", the output kind of this run (--quiet counts as "human")
  *   traffic        — OPTIONAL, "test" | "internal" from SHIPGUARD_TRAFFIC (dev builds default to "test"); omitted otherwise
  *
  * The install id is pseudonymous, not anonymous: random, never derived from the machine, user or repo,
@@ -50,7 +55,7 @@ export function getProvenance(published: boolean = IS_PUBLISHED_BUILD): Telemetr
   return published ? 'published' : 'dev'
 }
 
-export const PROD_TELEMETRY_ENDPOINT = 'https://cheery-toucan-348.convex.site/cli-telemetry'
+export const PROD_TELEMETRY_ENDPOINT = 'https://agenticcli.dev/api/cli-telemetry'
 
 /** True for http(s) URLs whose host is this machine (127.0.0.1, localhost, ::1). */
 export function isLoopbackUrl(raw: string | undefined): boolean {
@@ -80,6 +85,7 @@ export function resolveEndpoint(
 import { randomUUID } from 'node:crypto'
 import { logger } from '../utils/logger.js'
 import { goLink } from './links.js'
+import { isOffline } from './offline.js'
 import {
   UUID_V4,
   firstRunHandled,
@@ -109,9 +115,37 @@ export function resolveTraffic(env: NodeJS.ProcessEnv, published: boolean): Traf
 export type TelemetryVerdict = 'safe' | 'review' | 'blocked' | 'error'
 export type DurationBucket = 'lt1s' | '1to5s' | '5to30s' | 'gt30s'
 
-/** The v2 wire payload. Exactly these keys, all required. */
+export const TELEMETRY_AGENTS = ['claude_code', 'codex', 'cursor', 'gemini_cli', 'copilot', 'opencode', 'other_agent', 'none'] as const
+export type TelemetryAgent = (typeof TELEMETRY_AGENTS)[number]
+export const TELEMETRY_OUTPUTS = ['json', 'human', 'sarif'] as const
+export type TelemetryOutput = (typeof TELEMETRY_OUTPUTS)[number]
+
+/**
+ * Environment variables whose mere presence names the coding agent running this process. Only the
+ * presence is tested: values are never read, stored or sent. First match wins; a specific agent beats
+ * the generic markers. A variable the agent's own tool sets in the shell it spawns, never one a user
+ * normally sets by hand (that is why CODEX_HOME or CURSOR_TRACE_ID are not listed).
+ * Any other generic agent marker -> "other_agent"; nothing -> "none".
+ */
+export const AGENT_MARKERS: ReadonlyArray<readonly [Exclude<TelemetryAgent, 'other_agent' | 'none'>, readonly string[]]> = [
+  ['claude_code', ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT']],
+  ['codex', ['CODEX_SANDBOX', 'CODEX_SANDBOX_NETWORK_DISABLED']],
+  ['cursor', ['CURSOR_AGENT']],
+  ['gemini_cli', ['GEMINI_CLI']],
+  ['copilot', ['COPILOT_CLI', 'COPILOT_AGENT_RUNNER_TYPE']],
+  ['opencode', ['OPENCODE']],
+]
+/** Generic markers of an agent we have no label for. */
+export const OTHER_AGENT_MARKERS: readonly string[] = ['AI_AGENT', 'AGENT', 'GOOSE_TERMINAL']
+
+export function detectAgent(env: NodeJS.ProcessEnv = process.env): TelemetryAgent {
+  for (const [agent, vars] of AGENT_MARKERS) if (vars.some((k) => env[k] !== undefined && env[k] !== '')) return agent
+  return OTHER_AGENT_MARKERS.some((k) => env[k] !== undefined && env[k] !== '') ? 'other_agent' : 'none'
+}
+
+/** The v4 wire payload. Exactly these keys, all required. */
 export interface TelemetryPayload {
-  schema: 2
+  schema: 4
   eventId: string
   installId: string | null
   cliVersion: string
@@ -119,6 +153,9 @@ export interface TelemetryPayload {
   verdict: TelemetryVerdict
   durationBucket: DurationBucket
   ci: boolean
+  agent: TelemetryAgent
+  interactive: boolean
+  output: TelemetryOutput
   /** Optional traffic label (test | internal). Omitted for ordinary users. */
   traffic?: TrafficClass
 }
@@ -128,6 +165,7 @@ export interface TelemetryInput {
   cliVersion: string
   verdict: TelemetryVerdict
   durationMs: number
+  output: TelemetryOutput
 }
 
 const ALLOWED_KEYS: ReadonlyArray<keyof TelemetryPayload> = [
@@ -139,6 +177,9 @@ const ALLOWED_KEYS: ReadonlyArray<keyof TelemetryPayload> = [
   'verdict',
   'durationBucket',
   'ci',
+  'agent',
+  'interactive',
+  'output',
 ]
 
 const VERSION_RE = /^(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})(-[0-9A-Za-z.-]{1,24})?$/
@@ -202,12 +243,12 @@ function envOptOut(env: NodeJS.ProcessEnv): 'env:SHIPGUARD_TELEMETRY' | 'env:DO_
 }
 
 /**
- * Build the v2 payload. Guaranteed to contain ONLY the allowed keys: the input is copied field by
+ * Build the v4 payload. Guaranteed to contain ONLY the allowed keys: the input is copied field by
  * field, so extra properties on it can never leak in.
  */
 export function buildPayload(input: TelemetryPayload): TelemetryPayload {
-  const { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci, traffic } = input
-  const out: TelemetryPayload = { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci }
+  const { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci, agent, interactive, output, traffic } = input
+  const out: TelemetryPayload = { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci, agent, interactive, output }
   if (traffic === 'test' || traffic === 'internal') out.traffic = traffic
   return out
 }
@@ -230,7 +271,7 @@ export function validatePayload(payload: unknown): payload is TelemetryPayload {
   if (!isTrafficOk(obj, keys.length, ALLOWED_KEYS.length)) return false
   for (const k of ALLOWED_KEYS) if (!(k in obj)) return false
 
-  if (obj.schema !== 2) return false
+  if (obj.schema !== 4) return false
   if (typeof obj.eventId !== 'string' || !UUID_V4.test(obj.eventId)) return false
   if (typeof obj.ci !== 'boolean') return false
   if (obj.ci) {
@@ -242,6 +283,9 @@ export function validatePayload(payload: unknown): payload is TelemetryPayload {
   if (obj.provenance !== 'published' && obj.provenance !== 'dev') return false
   if (!['safe', 'review', 'blocked', 'error'].includes(obj.verdict as string)) return false
   if (!DURATION_BUCKETS.includes(obj.durationBucket as string)) return false
+  if (!(TELEMETRY_AGENTS as readonly unknown[]).includes(obj.agent)) return false
+  if (typeof obj.interactive !== 'boolean') return false
+  if (!(TELEMETRY_OUTPUTS as readonly unknown[]).includes(obj.output)) return false
   return true
 }
 
@@ -281,8 +325,24 @@ export function decideTelemetry(
 
 /** The one-line stderr notice printed before the first ping on an install. */
 export const NOTICE_TEXT =
-  'shipguard: sends a pseudonymous usage ping after each scan, once on first run and after login (version, verdict, duration bucket, a random install id outside CI; never code, paths or your account). ' +
-  'Turn it off: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, or `shipguard telemetry disable`. ' + goLink('telemetry')
+  'shipguard: usage pings: on (turn off: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, or `shipguard telemetry disable`). ' +
+  'A pseudonymous ping after each scan, once on first run and after login. Every ping carries the version, build type, a CI flag and a random install id outside CI; a scan ping also carries the verdict, a duration bucket, which coding agent runs it (or none), whether stdout is a terminal and the output kind. Never code, paths or your account. ' + goLink('telemetry')
+
+/**
+ * The `telemetry` field of every scan JSON result: "off" when an opt-out is set (env, user config,
+ * project policy) or offline mode is on, else "on". Reads settings only; sends and writes nothing.
+ */
+export function telemetryState(
+  opts: { env?: NodeJS.ProcessEnv; configDir?: string; policy?: unknown; projectDir?: string } = {},
+): 'on' | 'off' {
+  if (isOffline()) return 'off'
+  try {
+    return decideTelemetry(opts).enabled ? 'on' : 'off'
+  } catch (err) {
+    logger.debug(`telemetry: state check failed, reporting off: ${err instanceof Error ? err.message : String(err)}`)
+    return 'off'
+  }
+}
 
 /** Hard ceiling on how long a caller waits for the ping (abort fires at 1 s; this covers slow teardown). */
 export const PING_WAIT_MS = 1500
@@ -297,6 +357,8 @@ export interface SendOptions {
   projectDir?: string
   env?: NodeJS.ProcessEnv
   configDir?: string
+  /** Override "stdout is a terminal" (tests). Default: process.stdout.isTTY. */
+  interactive?: boolean
 }
 
 function debugEnabled(env: NodeJS.ProcessEnv): boolean {
@@ -310,6 +372,8 @@ function debugEnabled(env: NodeJS.ProcessEnv): boolean {
  * drop the in-flight ping). Never rejects, never throws, never writes to stdout.
  */
 export function sendTelemetry(input: TelemetryInput, opts: SendOptions = {}): Promise<void> {
+  // Offline mode (--offline / SHIPGUARD_OFFLINE=1): send nothing and touch no config file.
+  if (isOffline()) return Promise.resolve()
   try {
     const env = opts.env ?? process.env
     const configDir = opts.configDir ?? getConfigDir()
@@ -325,13 +389,16 @@ export function sendTelemetry(input: TelemetryInput, opts: SendOptions = {}): Pr
     const endpoint = resolveEndpoint(published, env)
     const ci = detectCi(env)
     const base = {
-      schema: 2 as const,
+      schema: 4 as const,
       eventId: randomUUID(),
       cliVersion: input.cliVersion,
       provenance: getProvenance(published),
       verdict: input.verdict,
       durationBucket: durationBucket(input.durationMs),
       ci,
+      agent: detectAgent(env),
+      interactive: opts.interactive ?? Boolean(process.stdout.isTTY),
+      output: input.output,
       traffic: resolveTraffic(env, published),
     }
 
@@ -457,6 +524,8 @@ export function validateLifecyclePayload(payload: unknown): payload is Lifecycle
  *    without sending, so upgrades are not counted as new installs.
  */
 export function sendLifecycleEvent(event: LifecycleEvent, input: { cliVersion: string }, opts: SendOptions = {}): Promise<void> {
+  // Offline mode (--offline / SHIPGUARD_OFFLINE=1): send nothing and touch no config file.
+  if (isOffline()) return Promise.resolve()
   try {
     const env = opts.env ?? process.env
     const configDir = opts.configDir ?? getConfigDir()

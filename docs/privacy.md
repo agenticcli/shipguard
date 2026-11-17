@@ -1,18 +1,25 @@
 # Privacy
 
 - **Your code stays on your machine.** A scan reads your files locally. File contents, file paths and secrets are never sent to a server. The local scan does not upload anything.
-- **Cloud scans** (after `shipguard login`) download rules over a signed-in session. Rules come down; code never goes up.
-- **Pings.** Published builds send three kinds of small pseudonymous ping: one after each scan, one the first time ShipGuard runs on an install (never in CI), and one after a successful `shipguard login`. First-run and login pings carry 7 keys: `schema`, `event`, `eventId` (random, per ping), `installId` (random, null in CI), `cliVersion`, `provenance` (published or dev build) and `ci` (true/false). A scan ping carries 8 keys: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket` (a coarse range, not the exact time) and `ci`; it has no `event`. An optional `traffic` key is added only if you set `SHIPGUARD_TRAFFIC` (see below). Never file contents, paths, repo names, branches, commits or your identity.
+- **Full-rulebook scans** (after `shipguard login`, with `--pro`) download rules over a signed-in session. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out).
+- **Pings.** Published builds send three kinds of small pseudonymous ping: one after each scan, one the first time ShipGuard runs on an install (never in CI), and one after a successful `shipguard login`. First-run and login pings carry 7 keys: `schema`, `event`, `eventId` (random, per ping), `installId` (random, null in CI), `cliVersion`, `provenance` (published or dev build) and `ci` (true/false). A scan ping carries 11 keys: `schema` (`4`), `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket` (a coarse range, not the exact time), `ci`, and three that say how ShipGuard was run: `agent` (which coding agent started it: `claude_code`, `codex`, `cursor`, `gemini_cli`, `copilot`, `opencode`, `other_agent` or `none`), `interactive` (true or false: is the output a terminal) and `output` (`json`, `human` or `sarif`; `--quiet` counts as `human`). `agent` is worked out on your machine from the environment variables the agent itself sets (for example `CLAUDECODE`, `CODEX_SANDBOX`, `CURSOR_AGENT`, `GEMINI_CLI`, `COPILOT_CLI`, `OPENCODE`, or a generic `AI_AGENT` / `AGENT` for an agent we have no label for); only the label is sent, never a variable's value, a path or any text. The scan ping has no `event`. An optional `traffic` key is added only if you set `SHIPGUARD_TRAFFIC` (see below). Never file contents, paths, repo names, branches, commits or your identity.
+- **Where pings go.** To `https://agenticcli.dev/api/cli-telemetry` and nowhere else. If the request fails, ShipGuard does nothing: no retry, no other host.
+- **See the state.** Every `--json` scan result has `"telemetry": "on"` or `"off"` (off when you have opted out, or with `--offline`). The first-run notice line starts with `usage pings: on` and says how to turn them off.
 
 ## Turn the pings off
 
 Any one of these turns off all three kinds:
 
+- `shipguard scan --offline` or `SHIPGUARD_OFFLINE=1` (also sends nothing else and writes no files; see below)
 - `SHIPGUARD_TELEMETRY=0` or `DO_NOT_TRACK=1` in the environment
 - `shipguard telemetry disable`
 - `telemetry: { enabled: false }` in your policy file
 
 `shipguard telemetry status` shows the current setting and why. `SHIPGUARD_TELEMETRY_DEBUG=1 shipguard scan` prints exactly what would be sent, without sending it.
+
+## Offline mode for agents
+
+`shipguard scan --offline` (or `SHIPGUARD_OFFLINE=1`) sends nothing: no usage ping, no first-run ping, no rulebook download, no login or token calls. It writes nothing outside your project and nothing inside it unless you pass `--report`: no `~/.config/shipguard`, no `~/.shipguard`, no local history store, and your `.gitignore` stays byte-identical. It prints that it is on as the first output line (`--json` also sets `"mode": "offline"`). Combining it with `--pro` is a config error (exit 2).
 
 ## Testing ShipGuard yourself
 
