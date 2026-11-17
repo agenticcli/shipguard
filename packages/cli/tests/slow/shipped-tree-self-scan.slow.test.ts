@@ -84,7 +84,12 @@ describe('shipped tree self-scan (slow lane)', () => {
     const everything = join(stage, 'everything')
     stageCopy(everything, (rel) => (rel.startsWith('dist/') ? `shipped-${rel}` : rel))
     const b = await run(everything, [])
-    expect(b.json.filesScanned, 'a packed file was skipped by the scanner').toBe(shipped.length)
+    // Source maps (dist/*.js.map, shipped since 0.12.1) are skipped by the scanner by design (generated
+    // files). They hold nothing but the repo's own src/ files: scripts/check-sourcemaps.mjs (release gate
+    // G5b) proves every embedded source equals the file on disk, so nothing is hidden in them.
+    const scannable = shipped.filter((p) => !p.endsWith('.js.map'))
+    expect(shipped.length - scannable.length, 'maps are expected in the pack').toBeGreaterThan(0)
+    expect(b.json.filesScanned, 'a packed file was skipped by the scanner').toBe(scannable.length)
     const nonDistBlockers = blockersOf(b.json).filter((f) => !f.file.startsWith('shipped-dist/'))
     expect(nonDistBlockers, `non-dist shipped file blocks: ${JSON.stringify(nonDistBlockers)}`).toEqual([])
 
