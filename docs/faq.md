@@ -4,10 +4,7 @@
 The deterministic check that runs inside your agent loop: same diff, same verdict, a real exit code your agent can read. It also works as a release gate in CI. It checks your project for leaked secrets, unprotected routes, destructive migrations, unverified payment webhooks and risky deploy settings before you ship. It is not a code reviewer and not a general security scanner.
 
 ## Does my code leave my machine?
-No. Scans run locally. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out). See [privacy](privacy.md).
-
-## Can I run it with nothing sent and nothing written?
-Yes: `shipguard scan --offline` (or `SHIPGUARD_OFFLINE=1`). It sends no usage ping and makes no rulebook, login or token call, writes no files, and leaves `.gitignore` alone. It cannot be combined with `--pro`, and `login`, `status` and `rate` refuse to run while `SHIPGUARD_OFFLINE` is on.
+No. Scans run locally. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs in the privacy page). See [privacy](privacy.md).
 
 ## Do I need an account?
 No. Local scans need no account. A free sign-in unlocks full-rulebook scans (`--pro`).

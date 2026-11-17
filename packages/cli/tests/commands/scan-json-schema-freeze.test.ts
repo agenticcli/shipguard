@@ -79,8 +79,6 @@ const OPTIONAL_TOP_LEVEL = [
   'coverageChanged',
   // Receipt (rec #8) — absent only when the scan read zero files.
   'treeDigest',
-  // 0.12, additive (no schemaVersion bump): `mode` is "offline" only for `--offline` scans.
-  'mode',
 ] as const
 
 const ALLOWED_TOP_LEVEL = new Set<string>([...REQUIRED_TOP_LEVEL, ...OPTIONAL_TOP_LEVEL])

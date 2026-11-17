@@ -365,12 +365,4 @@ describe('S2: schema 4 on the wire and the `telemetry` field in the scan JSON', 
     expect(json(r).telemetry).toBe('off')
     expect(r.attempts).toEqual([])
   })
-
-  it('--offline and SHIPGUARD_OFFLINE: "telemetry":"off"', async () => {
-    const a = await dev.run(['scan', dev.project, '--json', '--offline'], { env: ON })
-    expect(json(a).telemetry).toBe('off')
-    expect(a.attempts).toEqual([])
-    const b = await dev.run(['scan', dev.project, '--json'], { env: { ...ON, SHIPGUARD_OFFLINE: '1' } })
-    expect(json(b).telemetry).toBe('off')
-  })
 })

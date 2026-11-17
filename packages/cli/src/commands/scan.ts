@@ -1,5 +1,4 @@
 import { Command } from 'commander'
-import { randomUUID } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { scan } from '../core/scanner.js'
@@ -29,7 +28,6 @@ import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
 import { sendTelemetry, telemetryState } from '../core/telemetry.js'
 import { setExitCode } from '../utils/exit.js'
-import { OFFLINE_ANNOUNCE, isOffline, offlineRequestedByEnv, setOffline } from '../core/offline.js'
 import type { TelemetryOutput, TelemetryVerdict } from '../core/telemetry.js'
 // Type-only import — deliberately NOT a value import. pro-scanner.ts (re2js, matcher-contract,
 // coderef-dispatch, etc.) is dynamically imported ONLY inside the `if (opts.pro)` branch below to
@@ -247,7 +245,6 @@ export function scanCommand(): Command {
     .option('--sarif', 'Output results as SARIF 2.1.0 (for GitHub Code Scanning)')
     .option('-q, --quiet', 'One-line verdict only (suppresses progress, panel, and tips)')
     .option('--pro', 'Include pro quality gate rules (requires authentication)')
-    .option('--offline', 'Agent-safe mode: send nothing (no usage ping, no rulebook download), write no files, leave .gitignore alone. Also SHIPGUARD_OFFLINE=1. Cannot be combined with --pro')
     .option('--api-url <url>', 'API server URL', 'https://agenticcli.dev')
     .option('--category <categories>', 'Comma-separated category filter for pro rules')
     .option('--beta', 'Include beta-stage rules')
@@ -320,22 +317,6 @@ ${LEARN_MORE}`)
 
       const machineOutput = Boolean(opts.json) || Boolean(opts.sarif)
       const quiet = Boolean(opts.quiet)
-
-      // Agent-safe offline mode: switch it on BEFORE anything can send or write, and say so on the
-      // first output line. Human mode: first stdout line. --json / --sarif / --quiet keep stdout clean
-      // and carry the same line on stderr.
-      if (Boolean(opts.offline) || offlineRequestedByEnv()) {
-        setOffline(true)
-        if (machineOutput || quiet) console.error(OFFLINE_ANNOUNCE)
-        else console.log(OFFLINE_ANNOUNCE)
-        if (opts.pro) {
-          const message =
-            '--offline cannot be combined with --pro: --pro downloads the full rulebook, and offline mode sends and fetches nothing. Drop one of them.'
-          logger.error(message)
-          if (machineOutput) console.log(JSON.stringify({ error: message, code: 'OFFLINE_WITH_PRO' }))
-          return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd(), outputKind(opts))
-        }
-      }
 
       // Explicit path must exist and be a directory BEFORE anything chdir()s into it. Without this
       // guard process.chdir threw ENOENT inside the async action and surfaced as "Unhandled
@@ -491,18 +472,15 @@ async function runScan(ctx: {
   }
   const frameworkNames = detectedFrameworks.map((f) => f.name)
 
-  // Offline mode keeps no local state: a fresh id, nothing reserved on disk.
-  const { scanId, scanIdReused } = isOffline()
-    ? { scanId: randomUUID(), scanIdReused: false }
-    : await resolveScanId({
-        cwd,
-        policy,
-        cliVersion: CLI_VERSION,
-        changedOnly,
-        categories,
-        proRequested: Boolean(opts.pro),
-        frameworks: frameworkNames,
-      })
+  const { scanId, scanIdReused } = await resolveScanId({
+    cwd,
+    policy,
+    cliVersion: CLI_VERSION,
+    changedOnly,
+    categories,
+    proRequested: Boolean(opts.pro),
+    frameworks: frameworkNames,
+  })
 
   const inGitRepo = isGitRepo(cwd)
 
@@ -789,28 +767,18 @@ async function runScan(ctx: {
   // by the CLI build (see history/index.ts).
   // ---------------------------------------------------------------------------
   const proApplied = Boolean(proRules?.length) && !degraded
-  // Offline mode writes no history store (and so never touches .gitignore): the regression
-  // comparison is reported as skipped, with the same "state unavailable" reason a read-only disk gives.
-  const historyOutcome = isOffline()
-    ? {
-        stateStatus: 'unavailable' as const,
-        regressionCheckSkipped: true,
-        regressionCheckSkippedReason: 'state-unavailable' as const,
-        regressions: [],
-        coverageChanged: [],
-      }
-    : await recordScanHistory({
-        cwd,
-        scanId,
-        cliVersion: CLI_VERSION,
-        policy,
-        changedOnly: scanOptions.changedOnly,
-        categories,
-        proRules,
-        proApplied,
-        rulesVersion,
-        result,
-      })
+  const historyOutcome = await recordScanHistory({
+    cwd,
+    scanId,
+    cliVersion: CLI_VERSION,
+    policy,
+    changedOnly: scanOptions.changedOnly,
+    categories,
+    proRules,
+    proApplied,
+    rulesVersion,
+    result,
+  })
   result.stateStatus = historyOutcome.stateStatus
   result.regressionCheckSkipped = historyOutcome.regressionCheckSkipped
   if (historyOutcome.regressionCheckSkipped) {
@@ -824,7 +792,6 @@ async function runScan(ctx: {
   // were deleted here, so the JSON never carried them. They now live in the public `coverage`
   // object, so there is nothing left to strip.
   const publicResult: typeof result = { ...result }
-  if (isOffline()) publicResult.mode = 'offline'
   publicResult.telemetry = telemetryState({ policy, projectDir: cwd })
 
   // -----------------------------------------------------------------------
@@ -832,9 +799,7 @@ async function runScan(ctx: {
   // path, so the path has to exist by the time the panel is built. The write is
   // unconditional-on-request and independent of output mode, exactly as before.
   // -----------------------------------------------------------------------
-  // Offline mode writes no report on its own (the policy default would create .shipguard/reports);
-  // an explicit --report still does.
-  const shouldReport = scanOptions.generateReport || (policy.scan.generate_report && !isOffline())
+  const shouldReport = scanOptions.generateReport || policy.scan.generate_report
   let reportPaths: Awaited<ReturnType<typeof generateReport>> | undefined
   if (shouldReport) {
     const reportElapsedMs = Date.now() - startTime

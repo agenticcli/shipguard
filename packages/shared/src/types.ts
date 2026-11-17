@@ -375,9 +375,7 @@ export interface ScanResult {
   scanIdReused?: boolean
   /** What was actually scanned, skipped and ignored (schemaVersion 6). */
   coverage?: ScanCoverage
-  /** `"offline"` when the scan ran with `--offline` / `SHIPGUARD_OFFLINE=1` (nothing sent, nothing written). Absent otherwise. */
-  mode?: 'offline'
-  /** Usage pings: `"on"` or `"off"` (off when an opt-out is set or the run is offline). Present on every scan result. */
+  /** Usage pings: `"on"` or `"off"` (off when an opt-out is set). Present on every scan result. */
   telemetry?: 'on' | 'off'
   /** What this run's exit code means, in one sentence. Read it next to `recommendation`; exit 0 is not "safe". */
   exitMeaning?: string

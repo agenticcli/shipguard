@@ -27,7 +27,6 @@ No install and no account. You get a list of findings and a verdict: `SAFE_TO_SH
 npm install -g @agenticcli/shipguard   # optional: install globally
 shipguard scan --json                  # machine-readable output for agents and scripts
 shipguard scan --strict                # exit 1 if the scan blocks (opt-in hard gate)
-shipguard scan --offline               # agent-safe: sends nothing, writes no files
 shipguard hook --target ci             # write a GitHub Actions workflow for you
 ```
 
@@ -123,7 +122,7 @@ Local scans are free and unlimited, with no account, and `--strict` is free on e
 
 ## Privacy
 
-Scans run 100% on your machine. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out). No file contents, paths or secrets are sent to a server. For agents and locked-down machines, `shipguard scan --offline` (or `SHIPGUARD_OFFLINE=1`) sends nothing and writes no files, and says so on its first output line. Published builds send a small pseudonymous ping after a scan, once on first run, and after `shipguard login`. The first-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket` and `ci`. An optional `traffic` label is added only if you set `SHIPGUARD_TRAFFIC`. Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
+Scans run 100% on your machine. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below). No file contents, paths or secrets are sent to a server. Published builds send a small pseudonymous ping after a scan, once on first run, and after `shipguard login`. The first-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`. The scan ping carries 8: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket` and `ci`. An optional `traffic` label is added only if you set `SHIPGUARD_TRAFFIC`. Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
 
 ---
 

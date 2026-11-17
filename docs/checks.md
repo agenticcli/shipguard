@@ -20,7 +20,7 @@ Rules are matched with RE2JS, a linear-time engine, so a bad pattern cannot hang
 
 ## Full-rulebook scans
 
-After `shipguard login`, `shipguard scan --pro` downloads the full current rule set from the rulebook. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with `--offline` or the existing opt-out). See the [FAQ](faq.md) for plan limits.
+After `shipguard login`, `shipguard scan --pro` downloads the full current rule set from the rulebook. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs in [privacy](privacy.md)). See the [FAQ](faq.md) for plan limits.
 
 ## Full list
 

@@ -16,7 +16,7 @@ type F = { id: string; file: string; line?: number | null; confidence?: string; 
 
 async function scan(name: string): Promise<F[]> {
   const dir = mkTree(TIDY_FIXTURES[name])
-  const r = await scanJson(dir, ['--offline'])
+  const r = await scanJson(dir)
   expect(r.json, r.stdout + r.stderr).toBeDefined()
   return r.json!.findings as F[]
 }
