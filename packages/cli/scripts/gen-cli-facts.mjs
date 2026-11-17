@@ -352,7 +352,7 @@ const facts = {
   degradeCodes,
   severities,
   categories,
-  installSnippet: 'npx @agenticcli/shipguard scan --changed --strict --json',
+  installSnippet: 'npx @agenticcli/shipguard scan --strict --json',
   re2Engine: true,
   generatedAt: new Date().toISOString(),
 }
