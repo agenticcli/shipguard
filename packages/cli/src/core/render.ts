@@ -77,8 +77,8 @@ export function quickstartHelp(isTTY: boolean): string {
   if (isTTY) {
     lines.push('')
     lines.push(chalk.bold.cyan('  ╭─────────────────────────────────────────────────────────────────────────╮'))
-    lines.push(chalk.bold.cyan('  │') + chalk.bold('  🛡  ShipGuard — CLI-first release gate for AI-built apps          ') + chalk.bold.cyan('  │'))
-    lines.push(chalk.bold.cyan('  │') + '     Catches secrets, auth gaps, and deployment issues before you ship  ' + chalk.bold.cyan('  │'))
+    lines.push(chalk.bold.cyan('  │') + chalk.bold('  🛡  ShipGuard by AgenticCLI                                          ') + chalk.bold.cyan('  │'))
+    lines.push(chalk.bold.cyan('  │') + '     The security scanner your coding agent runs before every commit.  ' + chalk.bold.cyan('  │'))
     lines.push(chalk.bold.cyan('  ╰─────────────────────────────────────────────────────────────────────────╯'))
     lines.push('')
     lines.push(chalk.bold('  Get started in 2 commands:'))
@@ -90,10 +90,10 @@ export function quickstartHelp(isTTY: boolean): string {
     lines.push('')
     lines.push(`    ${chalk.cyan('scan')}      ${chalk.dim('[path]')}   Scan a project for high-risk issues`)
     lines.push(`    ${chalk.cyan('init')}               Generate a .shipguard.yml policy file`)
-    lines.push(`    ${chalk.cyan('login')}              Sign in to scan with the full rule corpus`)
+    lines.push(`    ${chalk.cyan('login')}              Sign in to run rulebook scans`)
     lines.push(`    ${chalk.cyan('logout')}             Remove saved credentials`)
     lines.push(`    ${chalk.cyan('status')}             Show auth status and credits`)
-    lines.push(`    ${chalk.cyan('hook')}      ${chalk.dim('--target')} Install the gate at the merge boundary`)
+    lines.push(`    ${chalk.cyan('hook')}      ${chalk.dim('--target')} Install the hook at the merge boundary`)
     lines.push(`    ${chalk.cyan('schema')}    ${chalk.dim('--json')}   Print the machine-readable scan contract`)
     lines.push(`    ${chalk.cyan('feedback')}           Where to send feedback (GitHub issues)`)
     lines.push(`    ${chalk.cyan('rate')}      ${chalk.dim('<n> helpful|not-helpful')}  Rate a rule finding`)
@@ -114,8 +114,8 @@ export function quickstartHelp(isTTY: boolean): string {
   } else {
     // Plain text for non-TTY (piped, CI)
     lines.push('')
-    lines.push('  ShipGuard — CLI-first release gate for AI-built apps')
-    lines.push('  Catches secrets, auth gaps, and deployment issues before you ship')
+    lines.push('  ShipGuard by AgenticCLI')
+    lines.push('  The security scanner your coding agent runs before every commit.')
     lines.push('')
     lines.push('  Get started in 2 commands:')
     lines.push('')
@@ -128,7 +128,7 @@ export function quickstartHelp(isTTY: boolean): string {
     lines.push('    login                 Authenticate')
     lines.push('    logout                Remove credentials')
     lines.push('    status                Auth status + credits')
-    lines.push('    hook      --target     Install the gate at the merge boundary')
+    lines.push('    hook      --target     Install the hook at the merge boundary')
     lines.push('    schema    --json       Machine-readable scan contract')
     lines.push('    feedback               Where to send feedback (GitHub issues)')
     lines.push('    rate      <n> helpful|not-helpful  Rate finding number n')
@@ -343,9 +343,9 @@ export function coverageLine(): string {
   const bundled = bundledRulesMeta()
   return (
     chalk.dim(
-      `  Coverage: ${bundled.ruleCount} bundled rules from the maintained corpus, plus local checks\n` +
+      `  Coverage: ${bundled.ruleCount} bundled rules, plus local checks\n` +
       '  for secrets, auth, payments, database and deployment. Runs offline, no account needed.\n' +
-      '  `shipguard login` scans against the full current corpus, not just the offline subset.\n' +
+      '  `shipguard login` runs rulebook scans with the full current rulebook, not just the built-in rules.\n' +
       `  Plans: ${chalk.underline(PRICING_URL)}`
     )
   )
@@ -527,7 +527,7 @@ export function verdictPanel(
   lines.push(boxTop())
 
   // Title
-  lines.push(boxLine(chalk.bold('  ShipGuard — Release Gate Report')))
+  lines.push(boxLine(chalk.bold('  ShipGuard — Security Scan Report')))
 
   // Severity bar
   lines.push(boxSection())
@@ -656,8 +656,8 @@ export function actionFooter(opts: {
     // Truth check (2026-08-04): logging in does not unlock a separate "Pro rules" set —
     // it serves the FULL CURRENT corpus, the same content every paid tier gets, metered by
     // the plan's included credits. Say that, not the old claim.
-    lines.push(`  ${chalk.yellow('shipguard login')}                    ${chalk.dim('# sign in for the full rule corpus')}`)
-    lines.push(`  ${chalk.yellow('shipguard scan --pro')}               ${chalk.dim('# scan with it (uses one scan credit)')}`)
+    lines.push(`  ${chalk.yellow('shipguard login')}                    ${chalk.dim('# sign in to run rulebook scans')}`)
+    lines.push(`  ${chalk.yellow('shipguard scan --pro')}               ${chalk.dim('# download the full rulebook for this scan (1 credit)')}`)
   }
 
   lines.push('')
@@ -715,13 +715,13 @@ export function welcomeBanner(configDir?: string): string {
   return [
     '',
     top,
-    bannerLine('ShipGuard is a CLI-first release gate for AI-built apps.'),
-    bannerLine('It catches secrets, auth flaws, and deployment issues before'),
-    bannerLine('they ship — deterministic, fast, privacy-preserving.'),
+    bannerLine('ShipGuard by AgenticCLI'),
+    bannerLine('The security scanner your coding agent runs before every commit.'),
+    bannerLine('Rules come down. Code never goes up.'),
     empty,
     bannerLine(chalk.bold('Quick start:')),
     bannerLine(`  ${chalk.green('shipguard scan <path>')}    Run a scan on your project`),
-    bannerLine(`  ${chalk.green('shipguard login')}           Scan with the full rule corpus`),
+    bannerLine(`  ${chalk.green('shipguard login')}           Run rulebook scans (sign in)`),
     bannerLine(`  ${chalk.green('shipguard scan --json')}     Machine-readable output for CI/agents`),
     empty,
     bannerLine(`Docs: ${chalk.underline(DOCS_URL)}`),

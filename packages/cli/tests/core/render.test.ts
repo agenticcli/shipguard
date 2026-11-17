@@ -558,7 +558,7 @@ describe('coverageLine', () => {
   it('points at shipguard login as the way to get the full corpus', () => {
     const line = coverageLine()
     expect(line).toMatch(/login/i)
-    expect(line).toMatch(/full current corpus/i)
+    expect(line).toMatch(/full current rulebook/i)
   })
 
   // TRUTH GUARD (2026-08-04). This line used to read "Deeper agentic rules available via

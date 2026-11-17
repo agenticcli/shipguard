@@ -20,8 +20,8 @@ describe('npm package positioning', () => {
     expect(pkg.description.length).toBeLessThanOrEqual(250)
   })
 
-  it('description names what it checks and that it runs locally', () => {
-    for (const w of ['secrets', 'routes', 'migrations', 'webhooks', 'deploy', 'locally']) {
+  it('description names what it checks and that it runs on your machine', () => {
+    for (const w of ['secrets', 'routes', 'migrations', 'webhooks', 'deploy', 'on your machine']) {
       expect(pkg.description.toLowerCase(), w).toContain(w)
     }
   })
