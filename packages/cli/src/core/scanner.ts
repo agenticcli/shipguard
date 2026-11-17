@@ -32,6 +32,7 @@ import { applySuppressions, isLineSuppressed } from './suppression.js'
 import { loadBundledRules } from './bundled-rules.js'
 import { dedupeLegacyAgainstCorpus } from './legacy-corpus-map.js'
 import { collapseSameIssueFindings } from './collapse-findings.js'
+import { fillMissingLines, lowerFakeKeyConfidence } from './tidy-findings.js'
 import { redactFindingsEvidence } from './redact.js'
 
 const CHECK_MODULES = [secretsCheck, authCheck, databaseCheck, payments, deploymentCheck]
@@ -399,6 +400,11 @@ export async function scan(
     )
   }
   allFindings = collapsed.findings
+
+  // Tidy-up on the final list: a line for every file finding, LOW confidence for stand-in keys.
+  // Before redaction: judging a key needs the matched text.
+  fillMissingLines(allFindings, files)
+  lowerFakeKeyConfidence(allFindings)
 
   // Redact secrets in every finding's evidence — the ONE central point (core/redact.ts).
   // Runs on the fully assembled list (legacy checks + bundled corpus + Pro rules) BEFORE
