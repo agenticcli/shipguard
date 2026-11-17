@@ -281,7 +281,7 @@ export interface ScanCoverage {
   /**
    * `--changed` only. `listed` = every path git reported; `outsideScope` = those outside the scan folder.
    * `nothingToCheck` is present (always `true`) only when git ran fine and nothing but ShipGuard's own
-   * files changed: nothing was scanned because there was nothing to scan. That scan is not degraded.
+   * files changed: nothing was scanned because there was nothing to scan. That scan is still degraded (NO_FILES_SCANNED) and never SAFE_TO_SHIP.
    */
   changed?: { listed: number; outsideScope: number; nothingToCheck?: true }
   /** Project-relative names, sorted, each list capped at 50 (the counts above are exact). */
