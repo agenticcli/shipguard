@@ -23,7 +23,7 @@ import {
   userConfigUnreadable,
 } from '../../src/core/telemetry-config.js'
 
-const PAYLOAD: TelemetryInput = { cliVersion: '9.9.9', verdict: 'safe', durationMs: 12 }
+const PAYLOAD: TelemetryInput = { cliVersion: '9.9.9', verdict: 'safe', durationMs: 12, output: 'json' }
 let dir: string
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'sg-tel-cfg-'))
@@ -191,7 +191,7 @@ describe('sendTelemetry honours the decision', () => {
     const m = text.match(/payload=(\{.*\})/)
     expect(m, text).not.toBeNull()
     const sent = JSON.parse(m![1])
-    expect(sent).toMatchObject({ schema: 2, cliVersion: '9.9.9', provenance: 'published', verdict: 'safe', durationBucket: 'lt1s', ci: false })
+    expect(sent).toMatchObject({ schema: 4, cliVersion: '9.9.9', provenance: 'published', verdict: 'safe', durationBucket: 'lt1s', ci: false })
     expect(existsSync(join(dir, 'telemetry.json'))).toBe(false) // debug never saves an install id
     expect(noticeShown(dir)).toBe(false) // nothing was sent, so the "first ping" notice is not consumed
   })

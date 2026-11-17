@@ -106,6 +106,7 @@ vi.mock('../../src/core/pro-scanner.js', () => ({
 
 vi.mock('../../src/core/telemetry.js', () => ({
   sendTelemetry: vi.fn(),
+  telemetryState: () => 'on',
 }))
 
 const { fetchProRules: mockFetchProRules } = await import('../../src/core/pro-scanner.js')

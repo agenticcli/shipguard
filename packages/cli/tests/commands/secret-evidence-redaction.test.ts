@@ -259,7 +259,7 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
     expect(Object.keys(json).sort()).toEqual([
       'cliVersion', 'coverage', 'creditsWarning', 'degraded', 'exitMeaning', 'filesScanned', 'findings', 'policyUsed',
       'recommendation', 'regressionCheckSkipped', 'regressionCheckSkippedReason', 'riskScore',
-      'runId', 'scanIdReused', 'schemaVersion', 'stateStatus', 'timestamp', 'treeDigest',
+      'runId', 'scanIdReused', 'schemaVersion', 'stateStatus', 'telemetry', 'timestamp', 'treeDigest',
     ])
     const ALLOWED_FINDING_KEYS = [
       'aiCodeTarget', 'blocking', 'category', 'column', 'confidence', 'cwe', 'evidence',

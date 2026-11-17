@@ -22,7 +22,7 @@ describe('cli_first_run (built CLI)', () => {
       const second = await cli.run(['status'], { env: ON })
       expect(second.attempts).toEqual([])
       const scan = await cli.run(['scan', cli.project, '--json'], { env: ON })
-      expect(bodies(scan).map((b) => b.schema)).toEqual([2])
+      expect(bodies(scan).map((b) => b.schema)).toEqual([4])
     } finally {
       cli.cleanup()
     }

@@ -27,10 +27,10 @@ import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation } from
 import { recordScanHistory, resolveScanId } from '../core/history/index.js'
 import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
-import { sendTelemetry } from '../core/telemetry.js'
+import { sendTelemetry, telemetryState } from '../core/telemetry.js'
 import { setExitCode } from '../utils/exit.js'
 import { OFFLINE_ANNOUNCE, isOffline, offlineRequestedByEnv, setOffline } from '../core/offline.js'
-import type { TelemetryVerdict } from '../core/telemetry.js'
+import type { TelemetryOutput, TelemetryVerdict } from '../core/telemetry.js'
 // Type-only import — deliberately NOT a value import. pro-scanner.ts (re2js, matcher-contract,
 // coderef-dispatch, etc.) is dynamically imported ONLY inside the `if (opts.pro)` branch below to
 // keep non-pro scans fast; a value import here would force it to load eagerly on every scan.
@@ -333,7 +333,7 @@ ${LEARN_MORE}`)
             '--offline cannot be combined with --pro: --pro downloads the full rulebook, and offline mode sends and fetches nothing. Drop one of them.'
           logger.error(message)
           if (machineOutput) console.log(JSON.stringify({ error: message, code: 'OFFLINE_WITH_PRO' }))
-          return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
+          return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd(), outputKind(opts))
         }
       }
 
@@ -348,7 +348,7 @@ ${LEARN_MORE}`)
           if (machineOutput) {
             console.log(JSON.stringify({ error: pathProblem.message, code: pathProblem.code }))
           }
-          return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
+          return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd(), outputKind(opts))
         }
       }
 
@@ -368,7 +368,7 @@ ${LEARN_MORE}`)
         } else {
           console.log(`\n${LEARN_MORE}`)
         }
-        return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
+        return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd(), outputKind(opts))
       }
 
       // Change working directory to the resolved scan root so scanner uses it as cwd
@@ -387,6 +387,11 @@ ${LEARN_MORE}`)
     })
 }
 
+/** Output kind for the usage ping. Same precedence as the output switch below: --sarif, then --json, else human (--quiet is human). */
+function outputKind(opts: Record<string, unknown>): TelemetryOutput {
+  return opts.sarif ? 'sarif' : opts.json ? 'json' : 'human'
+}
+
 /**
  * The ONE exit path for every scan error (config 2 / runtime 3): sends a single telemetry ping with
  * verdict "error" (all opt-outs honoured inside sendTelemetry; it never rejects), awaited so the hard
@@ -397,11 +402,12 @@ async function exitWithError(
   exitCode: number,
   startTime: number,
   projectDir: string,
+  output: TelemetryOutput,
   policy?: unknown,
 ): Promise<void> {
   try {
     await sendTelemetry(
-      { cliVersion: CLI_VERSION, verdict: 'error', durationMs: Date.now() - startTime },
+      { cliVersion: CLI_VERSION, verdict: 'error', durationMs: Date.now() - startTime, output },
       { policy, projectDir },
     )
   } catch (err) {
@@ -448,7 +454,7 @@ async function runScan(ctx: {
       // Agents read stdout: give them one parseable error object (same shape as PATH_NOT_FOUND).
       console.log(JSON.stringify({ error: message, code: 'INVALID_POLICY' }))
     }
-    return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, cwd)
+    return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, cwd, outputKind(opts))
   }
 
   // -----------------------------------------------------------------------------------
@@ -603,7 +609,7 @@ async function runScan(ctx: {
         } else {
           console.log(JSON.stringify({ error: errMsg, code: 'NO_RULES_APPLIED' }))
         }
-        return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
+        return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, outputKind(opts), policy)
       }
 
       // ---------------------------------------------------------------------
@@ -661,7 +667,7 @@ async function runScan(ctx: {
             ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
           }))
         }
-        return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
+        return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, outputKind(opts), policy)
       }
     }
   }
@@ -708,7 +714,7 @@ async function runScan(ctx: {
     } else {
       console.log(JSON.stringify({ error: String(error) }))
     }
-    return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
+    return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, outputKind(opts), policy)
   }
 
   // Clear progress line before printing results
@@ -819,6 +825,7 @@ async function runScan(ctx: {
   // object, so there is nothing left to strip.
   const publicResult: typeof result = { ...result }
   if (isOffline()) publicResult.mode = 'offline'
+  publicResult.telemetry = telemetryState({ policy, projectDir: cwd })
 
   // -----------------------------------------------------------------------
   // Write the report BEFORE rendering (rec #4): the human panel embeds the report
@@ -1022,7 +1029,7 @@ async function runScan(ctx: {
   // Anonymous opt-out ping — privacy-preserving. Started here so the request overlaps with the
   // exit-code work below, and AWAITED (bounded, <= 1.5 s, never rejects) right before any explicit
   // process.exit so a --strict exit cannot drop it.
-  // Payload (schema v2): version, verdict, duration bucket, ci flag, provenance, random install id (null in CI) ONLY.
+  // Payload (schema v4): version, verdict, duration bucket, ci flag, provenance, coding-agent label, stdout-is-a-terminal flag, output kind, random install id (null in CI) ONLY.
   // Never: paths, file content, hostnames, user identity, finding details.
   // Opt out: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, `shipguard telemetry disable`, or
   // `telemetry.enabled: false` in shipguard.policy.yml / .shipguard.yml. See src/core/telemetry.ts.
@@ -1046,6 +1053,7 @@ async function runScan(ctx: {
         cliVersion: CLI_VERSION,
         verdict: verdictBucket,
         durationMs: elapsedMs,
+        output: outputKind(opts),
       },
       { policy, projectDir: cwd },
     )
