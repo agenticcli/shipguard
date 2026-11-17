@@ -104,8 +104,10 @@ else
 fi
 
 # Gate 3: No @agenticcli/* runtime imports in bundle (must all be bundled in via noExternal)
-# Allow string literals (npx @agenticcli/shipguard in help text) — only flag import/require
-if grep -qE "^import\s+.*from\s+'@agenticcli/|\"@agenticcli/" "$DIST" 2>/dev/null; then
+# Only real imports count (require/from/import()); string literals such as the npx spec
+# '@agenticcli/shipguard@0' are fine. Logic + self-test: scripts/check-bundle-imports.mjs,
+# tests/core/bundle-import-guard.test.ts.
+if ! node "$CLI_DIR/scripts/check-bundle-imports.mjs" "$DIST"; then
   echo "FAIL [G3] @agenticcli/* runtime import found in dist/cli.js — bundling broken" >&2
   gate_fail
 fi
