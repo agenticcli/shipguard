@@ -1,5 +1,10 @@
 # @agenticcli/shipguard
 
+## Unreleased
+
+- Changed: the CLI now accepts Pro rule freshness tokens that stay valid for up to 72 hours (it accepted up to 25 hours before). Tokens that are longer-lived, or issued more than 5 minutes in the future, are still rejected.
+- Changed: when the signed freshness token of the Pro rules has expired, `shipguard scan --pro` now says "Pro rules are temporarily unavailable. Retry later, or run with --allow-degraded to scan with local rules only." (JSON `code` `FRESHNESS_EXPIRED`). Exit code stays 3; `--allow-degraded` still falls back to the free rules, marked degraded.
+
 ## 0.12.0 - unreleased
 
 - Better detection: the free rules now catch more real holes in Next.js, Supabase and Stripe projects, for example pages and API routes that look protected but never actually stop a signed-out visitor, and sign-in checks that test the wrong value.
