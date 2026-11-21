@@ -109,6 +109,27 @@ describe('scripts/g-plan.sh (G-PLAN)', () => {
       expect(run('src/other.ts').status).toBe(1)
     })
   })
+  it('a pack: a price + "our servers" planted in dist/ FAILS (dist is scanned for a pack)', () =>
+    withFiles({ 'package/dist/cli.js': 'console.log("$29 a month on our servers")\n', 'package/package.json': '{}\n' }, (d) => {
+      const r = g('--extracted', d)
+      expect(r.status, r.stdout + r.stderr).toBe(1)
+      expect(r.stdout).toContain('dist/cli.js')
+    }))
+  it('a pack with a clean dist/ passes; a missing pack dir is exit 2', () => {
+    withFiles({ 'package/dist/cli.js': 'console.log("hello")\n' }, (d) => expect(g('--extracted', d).status).toBe(0))
+    expect(g('--extracted', '/nonexistent/sg-pack').status).toBe(2)
+  })
+  it('an explicit dist/ path is scanned too (only the default source run skips dist)', () =>
+    withFiles({ 'dist/cli.js': 'x = "$29 a month"\n' }, (d) => expect(g(join(d, 'dist')).status).toBe(1)))
+  it('the allowlist cuts only the phrase: another violation on the same line still fails', () => {
+    withFiles({ 'dist/chunk.js': 's = "access Google Cloud services or Google Maps, $29 a month"\n', 'dist/ok.js': 's = "access Google Cloud services or Google Maps"\n' }, (d) => {
+      const allow = join(d, 'allow.txt')
+      writeFileSync(allow, 'dist/|access Google Cloud services or Google Maps\n')
+      const run = (f: string) => spawnSync('bash', [GPLAN, '--extracted', join(d, f)], { encoding: 'utf-8', env: { ...process.env, G_PLAN_ALLOW_FILE: allow } })
+      expect(run('dist/ok.js').status).toBe(0)
+      expect(run('dist/chunk.js').status).toBe(1)
+    })
+  })
   it('the shipped CLI source is clean: only the two allowlisted rule texts and one comment are excused', () => {
     const r = spawnSync('bash', [GPLAN, join(CLI, 'src')], { encoding: 'utf-8' })
     expect(r.status, r.stdout + r.stderr).toBe(0)
@@ -125,6 +146,10 @@ describe('.github/workflows/release.yml', () => {
   it('cites the trusted-publishers doc that explains why', () => {
     expect(wf).toContain('https://docs.npmjs.com/trusted-publishers')
     expect(wf).toContain('Allow npm dist-tag')
+  })
+  it('the release gate requires the Pro scan number on a real release only', () => {
+    const gate = readFileSync(join(ROOT, 'scripts', 'release-gate.sh'), 'utf-8')
+    expect(gate).toMatch(/\[\[ "\$DRY_RUN" == "1" \]\] \|\| BUDGET_ARGS\+=\(--require-pro\)/)
   })
   it('runs the release gate before packing', () => {
     expect(wf.indexOf('bash scripts/release-gate.sh')).toBeGreaterThan(0)

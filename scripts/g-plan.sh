@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # g-plan.sh - G-PLAN gate, first cut (P0). The public CLI holds no plan facts and no banned words.
 #   scripts/g-plan.sh [path...]   scan files/dirs (default: CLI src, README.md, docs, package.json)
-#   scripts/g-plan.sh --pack      scan the extracted `npm pack` output of packages/cli
+#   scripts/g-plan.sh --pack      scan the extracted `npm pack` output of packages/cli (dist/ included)
+#   scripts/g-plan.sh --extracted <dir>   same scan on an already extracted pack directory
 #   scripts/g-plan.sh --self-test fixtures: price string and 'release gate' fail, clean passes
 # Exit 0 = clean, 1 = hits (printed file:line:match), 2 = usage/could not run.
 # A line carrying the marker g-plan:allow is skipped (use only with a reason next to it).
@@ -14,32 +15,43 @@ PLAN_RE='\$[0-9]+(\.[0-9]+)? ?(a |per |/)? ?(month|year|yr|mo)\b|\$[0-9]{2,}|[0-
 # Banned words in any CLI string.
 BAN_RE='release gate|\bcloud\b|our servers'
 
-# Exact-phrase allowlist (scripts/g-plan.allow): lines `path-suffix|exact phrase`. A hit is dropped only when
-# its file ends with the path AND its text contains the phrase, so a legit provider name ("Google Cloud")
-# is allowed in that one rule text and the word stays banned everywhere else.
+# Exact-phrase allowlist (scripts/g-plan.allow): lines `path-part|exact phrase`. For a hit whose file path
+# CONTAINS the path part, the phrase is cut out of the line and the rest is checked again: the hit is dropped
+# only when nothing else on the line still matches, so another violation on the same line still fails.
 ALLOW_FILE="${G_PLAN_ALLOW_FILE:-$ROOT/scripts/g-plan.allow}"
+
+# Directories skipped ONLY in the default source-tree run (no arguments). An explicit path and --pack skip
+# nothing but source maps: a planted string in dist/ of the packed CLI must fail the gate.
+SOURCE_EXCLUDES=(--exclude-dir=node_modules --exclude-dir=dist --exclude-dir=contracts)
+GREP_EXCLUDES=()
 
 # One grep run: rc 0 = hits, 1 = none, anything else = the grep itself failed (fail closed, exit 2).
 run_grep() {
   local rc=0 out
-  out="$(grep -rHInE"$1" --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=contracts --exclude='*.map' "$2" "${@:3}")" || rc=$?
+  out="$(grep -rHInE"$1" "${GREP_EXCLUDES[@]}" --exclude='*.map' "$2" "${@:3}")" || rc=$?
   if [[ $rc -gt 1 ]]; then echo "G-PLAN: grep failed (rc=$rc) - failing closed" >&2; return 2; fi
   printf '%s' "$out"
 }
 
+still_violates() {
+  printf '%s\n' "$1" | grep -qE "$PLAN_RE" && return 0
+  printf '%s\n' "$1" | grep -qiE "$BAN_RE" && return 0
+  return 1
+}
+
 filter_allowed() {
-  local line file text entry apath aphrase keep
+  local line file text entry apath aphrase
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    file="${line%%:*}"; text="${line#*:*:}"; keep=1
+    file="${line%%:*}"; text="${line#*:*:}"
     if [[ -f "$ALLOW_FILE" ]]; then
       while IFS= read -r entry; do
         [[ -z "$entry" || "$entry" == \#* ]] && continue
         apath="${entry%%|*}"; aphrase="${entry#*|}"
-        if [[ "$file" == *"$apath" && "$text" == *"$aphrase"* ]]; then keep=0; break; fi
+        [[ -n "$aphrase" && "$file" == *"$apath"* ]] && text="${text//"$aphrase"/}"
       done < "$ALLOW_FILE"
     fi
-    [[ $keep -eq 1 ]] && printf '%s\n' "$line"
+    if still_violates "$text"; then printf '%s\n' "$line"; fi
   done
   return 0
 }
@@ -58,6 +70,12 @@ scan_paths() {
   out="$(printf '%s\n%s\n' "$plan_hits" "$ban_hits" | { grep -v 'g-plan:allow' || true; } | filter_allowed | sort -u)"
   if [[ -n "$out" ]]; then printf '%s\n' "$out"; return 1; fi
   return 0
+}
+
+# Scan an extracted `npm pack` directory. Nothing is skipped except source maps.
+scan_extracted() {
+  GREP_EXCLUDES=()
+  if scan_paths "$1"; then echo "G-PLAN: clean (pack)"; else echo "G-PLAN: FAIL (pack)" >&2; return 1; fi
 }
 
 self_test() {
@@ -80,19 +98,30 @@ self_test() {
   # exact-phrase allowlist: the phrase passes in its file, the same word elsewhere still fails
   (ALLOW_FILE="$d/allow"; scan_paths "$d/allowed.ts") >/dev/null || { echo "SELF-TEST FAIL: allowlisted phrase should pass" >&2; return 1; }
   if (ALLOW_FILE="$d/allow"; scan_paths "$d/notallowed.ts") >/dev/null 2>&1; then echo "SELF-TEST FAIL: cloud outside the allowlist should fail" >&2; return 1; fi
-  echo "G-PLAN self-test: PASS (price, count, banned word fail; clean passes; missing path exits 2; allowlist is exact-phrase)"
+  # another violation on the same line as an allowlisted phrase still fails
+  printf 'x: "access Google Cloud services, $29 a month"\n' > "$d/sameline.ts"
+  if (ALLOW_FILE="$d/allow"; scan_paths "$d/sameline.ts") >/dev/null 2>&1; then echo "SELF-TEST FAIL: a price next to an allowlisted phrase should fail" >&2; return 1; fi
+  # a planted price + banned words in dist/ of a pack must fail (dist is NOT skipped for a pack)
+  mkdir -p "$d/pk/package/dist"
+  printf 'console.log("$29 a month on our servers")\n' > "$d/pk/package/dist/cli.js"
+  if (scan_extracted "$d/pk") >/dev/null 2>&1; then echo "SELF-TEST FAIL: a plan fact in dist/ of a pack should fail" >&2; return 1; fi
+  echo "G-PLAN self-test: PASS (price, count, banned word fail; clean passes; missing path exits 2; allowlist is exact-phrase; dist of a pack is scanned)"
 }
 
 case "${1:-}" in
   --self-test) self_test ;;
   --pack)
+    GREP_EXCLUDES=()
     d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
     (cd "$ROOT/packages/cli" && npm pack --silent --ignore-scripts --pack-destination "$d" >/dev/null) || { echo "npm pack failed" >&2; exit 2; }
     [[ "$(ls "$d"/*.tgz 2>/dev/null | wc -l)" == 1 ]] || { echo "G-PLAN: expected exactly one tarball" >&2; exit 2; }
     mkdir "$d/x" && tar -xzf "$d"/*.tgz -C "$d/x"
-    if scan_paths "$d/x"; then echo "G-PLAN: clean (pack)"; else echo "G-PLAN: FAIL (pack)" >&2; exit 1; fi ;;
+    scan_extracted "$d/x" || exit 1 ;;
+  --extracted)
+    [[ -n "${2:-}" ]] || { echo "usage: g-plan.sh --extracted <dir>" >&2; exit 2; }
+    scan_extracted "$2" || exit 1 ;;
   --*) echo "usage: g-plan.sh [path...] | --pack | --self-test" >&2; exit 2 ;;
   *)
-    if [[ $# -eq 0 ]]; then set -- "$ROOT/packages/cli/src" "$ROOT/README.md" "$ROOT/docs" "$ROOT/packages/cli/package.json"; fi
+    if [[ $# -eq 0 ]]; then GREP_EXCLUDES=("${SOURCE_EXCLUDES[@]}"); set -- "$ROOT/packages/cli/src" "$ROOT/README.md" "$ROOT/docs" "$ROOT/packages/cli/package.json"; fi
     if scan_paths "$@"; then echo "G-PLAN: clean"; else echo "G-PLAN: FAIL" >&2; exit 1; fi ;;
 esac

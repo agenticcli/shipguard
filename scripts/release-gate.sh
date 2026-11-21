@@ -217,7 +217,10 @@ echo "PASS [G8] shipped-tree self-scan: no blocking findings, --strict exit 0"
 # direct runtime deps <= 7 and none new, --version <= 250 ms, 812-file scan <= 8 s Free (Pro <= 10 s is
 # measured by the dev run and passed in as RELEASE_GATE_PRO_SCAN_SECONDS), RSS <= 300 MB, and 0 public
 # fetches in CI, quiet, safe mode and DO_NOT_TRACK. Logic + tests: scripts/check-budgets.mjs, tests/release/budgets.test.ts.
-if ! node "$CLI_DIR/scripts/check-budgets.mjs"; then
+# A real release (not a dry run) REQUIRES the Pro scan number: a missing RELEASE_GATE_PRO_SCAN_SECONDS fails.
+BUDGET_ARGS=()
+[[ "$DRY_RUN" == "1" ]] || BUDGET_ARGS+=(--require-pro)
+if ! node "$CLI_DIR/scripts/check-budgets.mjs" "${BUDGET_ARGS[@]}"; then
   echo "FAIL [G9] a size, speed or network budget was breached (or could not be measured)" >&2
   gate_fail
 else

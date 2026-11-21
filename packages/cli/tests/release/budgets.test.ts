@@ -81,6 +81,12 @@ describe('evaluateBudgets', () => {
     expect(failing({ ...GOOD, fetches: undefined })).toEqual(['zero-fetch-modes'])
     expect(failing({ ...GOOD, fetches: {} })).toEqual(['zero-fetch-modes'])
   })
+  it('on a real release (requirePro) a missing Pro scan number FAILS; a present one is checked', () => {
+    const run = (m: unknown) => (evaluateBudgets(m, BUDGETS, BASELINE_DEPS, { requirePro: true }) as Array<{ id: string; ok: boolean }>).filter((r) => !r.ok).map((r) => r.id)
+    expect(run({ ...GOOD, proScanSeconds: undefined })).toEqual(['pro-scan-time'])
+    expect(run({ ...GOOD, proScanSeconds: 6 })).toEqual([])
+    expect(run({ ...GOOD, proScanSeconds: 11 })).toEqual(['pro-scan-time'])
+  })
   it('Pro scan speed is reported as skipped (not a pass) when it was not measured', () => {
     const r = (evaluateBudgets({ ...GOOD, proScanSeconds: undefined }) as Array<{ id: string; skipped?: boolean }>).find((x) => x.id === 'pro-scan-time')
     expect(r?.skipped).toBe(true)

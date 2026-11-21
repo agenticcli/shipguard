@@ -1,4 +1,4 @@
-# G-PLAN exact-phrase allowlist: `path-suffix|exact phrase`. A hit is dropped only when the file ends with the
+# G-PLAN exact-phrase allowlist: `path-part|exact phrase`. A phrase is cut from a hit only when the file path contains the
 # path AND the line contains the phrase. Keep each entry to one legit use; never allow a whole word or a price.
 # "Google Cloud" is the provider's own name in the Google API key rule text (checks/secrets.ts); shown to the user as-is.
 packages/cli/src/checks/secrets.ts|access Google Cloud services or Google Maps
@@ -10,3 +10,9 @@ packages/cli/src/core/verdict.ts|release gate can produce
 rules/free-bundle.json|https://cloud.google.com/iam/docs/best-practices-for-managing-service-account-keys
 rules/free-bundle.json|API keys, database URLs, signing keys, cloud credentials
 rules/free-bundle.json|enables full cloud account takeover
+# The same rule texts as they appear in the built CLI (dist/ of the pack; chunk names change per build, so the path part is dist/).
+dist/|access Google Cloud services or Google Maps
+dist/|Restrict key usage in the Google Cloud Console
+dist/|https://cloud.google.com/iam/docs/best-practices-for-managing-service-account-keys
+dist/|API keys, database URLs, signing keys, cloud credentials
+dist/|enables full cloud account takeover

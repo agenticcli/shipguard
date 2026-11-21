@@ -3,11 +3,11 @@
 // Every budget breach is a gate failure. The pure part (BUDGETS, evaluateBudgets) is unit-tested with
 // fake measurements in tests/release/budgets.test.ts; measure() runs the real built package.
 //
-//   node scripts/check-budgets.mjs [--json] [--pro-scan-seconds N]
+//   node scripts/check-budgets.mjs [--json] [--pro-scan-seconds N] [--require-pro]
 //
 // Pro scan speed needs a signed-in account and a real rulebook, so it is measured by the dev run (W11)
 // and handed in with --pro-scan-seconds (or RELEASE_GATE_PRO_SCAN_SECONDS); without it that line is
-// reported as SKIP, never as a pass.
+// reported as SKIP on a dry run; with --require-pro (a real release) a missing number FAILS.
 // NOT measured here (covered by tests in the stream that builds the behaviour): "signed-out Free scan:
 // at most 1 public fetch per 7 days" (W1a fake-clock test) and "signed-in Free hook with a hint = 0
 // server calls" (W1a). This gate measures the zero-fetch modes (CI, quiet, safe mode, DO_NOT_TRACK).
@@ -43,9 +43,9 @@ export const BASELINE_DEPS = ['@noble/hashes', 'chalk', 'commander', 'fast-glob'
  * m = { tarballBytes, unpackedBytes, installBytes, dependencies: string[], versionMs, freeScanSeconds,
  *       proScanSeconds?: number, rssMb, fetches: { [mode]: number } }
  * Returns [{ id, ok, skipped?, detail }]. A missing measurement is a failure (never a silent pass),
- * except proScanSeconds which is reported as skipped.
+ * except proScanSeconds, which is skipped on a dry run and a failure when requirePro is set (a real release).
  */
-export function evaluateBudgets(m, budgets = BUDGETS, baselineDeps = BASELINE_DEPS) {
+export function evaluateBudgets(m, budgets = BUDGETS, baselineDeps = BASELINE_DEPS, { requirePro = false } = {}) {
   const out = []
   const num = (v) => typeof v === 'number' && Number.isFinite(v)
   const max = (id, v, limit, unit) => {
@@ -66,6 +66,7 @@ export function evaluateBudgets(m, budgets = BUDGETS, baselineDeps = BASELINE_DE
   max('free-scan-time', m.freeScanSeconds, budgets.freeScanSeconds, 's')
   max('rss', m.rssMb, budgets.rssMb, 'MB')
   if (num(m.proScanSeconds)) max('pro-scan-time', m.proScanSeconds, budgets.proScanSeconds, 's')
+  else if (requirePro) out.push({ id: 'pro-scan-time', ok: false, detail: 'not measured: a real release needs RELEASE_GATE_PRO_SCAN_SECONDS (--pro-scan-seconds) from the dev run' })
   else out.push({ id: 'pro-scan-time', ok: true, skipped: true, detail: 'SKIP: measured by the dev run (W11), pass --pro-scan-seconds' })
   const modes = m.fetches && typeof m.fetches === 'object' ? Object.entries(m.fetches) : []
   if (modes.length === 0) out.push({ id: 'zero-fetch-modes', ok: false, detail: 'not measured' })
@@ -236,7 +237,7 @@ async function main() {
     console.error(`FAIL [budgets] could not measure: ${err instanceof Error ? err.message : String(err)}`)
     process.exit(2)
   }
-  const results = evaluateBudgets(m)
+  const results = evaluateBudgets(m, BUDGETS, BASELINE_DEPS, { requirePro: args.includes('--require-pro') })
   if (json) console.log(JSON.stringify({ measurements: m, results }, null, 2))
   else for (const r of results) console.log(`${r.skipped ? 'SKIP' : r.ok ? 'ok  ' : 'FAIL'} ${r.id}: ${r.detail}`)
   process.exit(results.every((r) => r.ok) ? 0 : 1)
