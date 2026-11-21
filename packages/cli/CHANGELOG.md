@@ -1,5 +1,18 @@
 # @agenticcli/shipguard
 
+## 0.13.0 - 2026-11-24
+
+- Clearer scans: the scan screen now opens with a verdict (safe to ship or not), then lists what to fix in plain words, shows what was not scanned, and ends with the one command to run next. Every finding says how to fix it, and secret values are hidden (only the length is shown).
+- Helpful next steps: new `shipguard status` (what is installed and when the gate last ran), `shipguard upgrade` (what Pro adds for the stacks you scan) and `shipguard login` (cancel with Ctrl-C exits 130). They suggest the command to re-run your last scan.
+- Agent contract: `--json` scan results are now schema 7. Every outcome and every error has a stable code, a plain message and a ready re-run command, so a coding agent can act without guessing. Running the same scan again on the same commit keeps the same scan id.
+- New `shipguard setup` and `shipguard uninstall`: setup adds the commit/agent hook and CI file after showing a preview and asking once; uninstall removes only what setup created, shows what stays active, and refuses to follow symlinks or edited records. Your own settings layout is kept byte for byte.
+- Hook gate: `shipguard gate` stops an agent from running unsafe commits and lets you ignore a finding only with a written reason. Unknown command forms fail closed. A health line shows if the gate is not working.
+- Free to Pro plan data now comes from the server as a signed reply: the CLI shows your plan, scans left and what Pro adds, and checks the signature. An expired or future-dated reply is treated as plain Free. The CLI holds no prices or plan numbers of its own. The new network calls (weekly public offer fetch, signed plan read) are listed in REBUILD.md and docs/privacy.md, and are off in safe mode, hooks, CI and quiet runs.
+- Better scan accuracy: loud rules fire more reliably, `sk_test_` and placeholder values are skipped, git-ignored files are respected, sign-in checks and 401 handling are detected more correctly, and React and Firebase projects are detected (stacks with no rule, such as fastify and drizzle, are no longer reported as detected). The free rules are now corpus version 29.
+- Safe mode: when set, ShipGuard writes nothing under `~/.config` and makes no optional network call.
+- Release checks: the release gate now checks package size (packed 800 KB, unpacked 3 MiB), an npm audit, the picomatch pin and that no generic cloud wording is in the package. `scripts/release-facts.sh` makes sure the version, CHANGELOG date, CITATION.cff, security statement and pinned versions in the docs all agree before publish, and writes a release-facts file afterwards.
+- Changed: the `jose` dependency is removed.
+
 ## 0.12.1 - unreleased
 
 - Faster scans: a rule is now skipped for a file when a text it must contain is absent, before the slow pattern engine runs. Scans use 4 to 7 times less CPU on large projects. Findings are identical: checked over all 259 free rules against the previous scanner (golden equality tests).
