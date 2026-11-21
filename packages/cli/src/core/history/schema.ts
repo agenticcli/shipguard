@@ -9,7 +9,7 @@
 
 import { keyFindingIdentity } from './finding-key.js'
 
-export const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 4
 
 export interface Migration {
   version: number
@@ -144,6 +144,18 @@ CREATE INDEX IF NOT EXISTS idx_scan_id_reservations_created
  */
 const MIGRATION_3_KEYED_FINDING_KEYS = `SELECT 1;`
 
+/**
+ * Migration 4: the four facts the `shipguard history` table shows that scans did not keep
+ * (incomplete, files scanned, rules that ran, scan target). Additive, nullable: rows written by
+ * older versions show `-` for them. Nothing else in the file changes.
+ */
+const MIGRATION_4_HISTORY_COLUMNS = `
+ALTER TABLE scans ADD COLUMN incomplete INTEGER;
+ALTER TABLE scans ADD COLUMN files_scanned INTEGER;
+ALTER TABLE scans ADD COLUMN rules_label TEXT;
+ALTER TABLE scans ADD COLUMN target TEXT;
+`
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, sql: MIGRATION_1_INIT },
   { version: 2, sql: MIGRATION_2_SCAN_ID_RESERVATIONS },
@@ -156,6 +168,7 @@ export const MIGRATIONS: Migration[] = [
       for (const row of rows) update.run(keyFindingIdentity(salt, row.finding_key), row.id)
     },
   },
+  { version: 4, sql: MIGRATION_4_HISTORY_COLUMNS },
 ]
 
 /** Sentinel used whenever a real corpus/release/rule version genuinely isn't available (§3). */

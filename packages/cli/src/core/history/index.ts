@@ -8,6 +8,8 @@ import type {
   ScanResult,
   StateStatus,
 } from '@agenticcli/shared'
+import { relative } from 'node:path'
+import { bundledRulesMeta } from '../bundled-rules.js'
 import { UNVERSIONED } from './schema.js'
 import { resolveHistoryPath } from './path.js'
 import { resolveRepoIdentity } from './identity.js'
@@ -160,6 +162,10 @@ export async function recordScanHistory(input: RecordScanHistoryInput): Promise<
       mediumCount: result.riskScore.mediumCount,
       lowCount: result.riskScore.lowCount,
       infoCount: result.riskScore.infoCount,
+      incomplete: result.degraded === true,
+      filesScanned: result.coverage ? result.coverage.scanned : result.filesScanned,
+      rulesLabel: proApplied ? `rulebook:${proRules?.length ?? 0}` : `general:${bundledRulesMeta().ruleCount}`,
+      target: relative(process.cwd(), cwd) || '.',
       ruleOutcomes,
       findings: findingRows,
     })

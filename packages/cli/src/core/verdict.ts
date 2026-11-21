@@ -1,5 +1,12 @@
 import type { Recommendation, RiskScore, ScanResult } from '@agenticcli/shared'
 
+/** Verdict words on screen match the JSON enum one to one (spec 01 "Shared words"). */
+export const VERDICT_WORDS: Record<Recommendation, string> = {
+  SAFE_TO_SHIP: 'SAFE TO SHIP',
+  REVIEW_BEFORE_SHIP: 'REVIEW BEFORE SHIP',
+  DO_NOT_SHIP: 'DO NOT SHIP',
+}
+
 /**
  * THE single place the ship / don't-ship verdict is computed.
  *

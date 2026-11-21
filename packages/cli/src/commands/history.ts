@@ -3,10 +3,55 @@ import { resolve } from 'node:path'
 import { loadPolicy } from '../core/policy.js'
 import { resolveHistoryPath, resolveRepoIdentity, HistoryStore } from '../core/history/index.js'
 import { logger } from '../utils/logger.js'
+import { VERDICT_WORDS } from '../core/verdict.js'
+import type { Recommendation } from '@agenticcli/shared'
 
 declare const __SHIPGUARD_VERSION__: string | undefined
 const CLI_VERSION =
   typeof __SHIPGUARD_VERSION__ !== 'undefined' ? __SHIPGUARD_VERSION__ : (process.env.npm_package_version ?? '0.0.0-dev')
+
+type HistoryRow = ReturnType<HistoryStore['listRecentScans']>[number]
+
+/** Shorten a long target with a middle `...` (terminal only; `history --json` has the full value). */
+function shortenMiddle(text: string, max: number): string {
+  if (text.length <= max || max < 8) return text
+  const keep = max - 3
+  const head = Math.ceil(keep / 2)
+  return `${text.slice(0, head)}...${text.slice(text.length - (keep - head))}`
+}
+
+/**
+ * The history table (spec 01): same names and order as the screen, identical piped; newest first.
+ * Rows written before schema 4 show `-` for the facts they never kept.
+ */
+export function renderHistoryTable(scans: readonly HistoryRow[], columns?: number): string {
+  const dash = '-'
+  const rulesW = Math.max(10, 'RULES'.length, ...scans.map((s) => (s.rulesLabel ?? dash).length))
+  const fixed = 8 + 2 + 16 + 2 + 18 + 2 + 8 + 2 + 8 + 2 + 10 + 2 + rulesW + 2
+  const lines: string[] = []
+  lines.push(
+    ['RUN'.padEnd(8), 'WHEN (UTC)'.padEnd(16), 'VERDICT'.padEnd(18), 'BLOCKING'.padStart(8), 'FINDINGS'.padStart(8), 'INCOMPLETE'.padEnd(10), 'RULES'.padEnd(rulesW), 'TARGET'].join('  '),
+  )
+  for (const s of scans) {
+    const when = new Date(s.timestamp).toISOString().slice(0, 16).replace('T', ' ')
+    const verdict = s.recommendation ? (VERDICT_WORDS[s.recommendation as Recommendation] ?? s.recommendation) : 'UNKNOWN'
+    let target = s.target ?? dash
+    if (columns != null) target = shortenMiddle(target, Math.max(10, Math.min(100, Math.max(60, columns)) - fixed))
+    lines.push(
+      [
+        s.scanId.replace(/[^A-Za-z0-9]/g, '').slice(0, 8).padEnd(8),
+        when.padEnd(16),
+        verdict.padEnd(18),
+        String(s.blockingCount).padStart(8),
+        String(s.findingCount).padStart(8),
+        (s.incomplete === null ? dash : s.incomplete ? 'yes' : 'no').padEnd(10),
+        (s.rulesLabel ?? dash).padEnd(rulesW),
+        target,
+      ].join('  '),
+    )
+  }
+  return lines.join('\n')
+}
 
 /**
  * `shipguard history` — read-only view of the local audit-trail store (DIY-first: "the schema is the product's documented on-disk
@@ -63,7 +108,16 @@ export function historyCommand(): Command {
               historyPath,
               repoId: identity.repoId,
               repoIdKind: identity.repoIdKind,
-              scans,
+              // Old keys keep their meaning; the field-vocabulary names (spec 01) are added beside them.
+              scans: scans.map((s) => ({
+                ...s,
+                runId: s.scanId,
+                when: new Date(s.timestamp).toISOString(),
+                verdict: s.recommendation,
+                findings: s.findingCount,
+                files: s.filesScanned,
+                rules: s.rulesLabel,
+              })),
             }, null, 2),
           )
           return
@@ -74,16 +128,7 @@ export function historyCommand(): Command {
           return
         }
 
-        logger.info(`Recent scans for this repo (${historyPath}):`)
-        console.log('')
-        for (const s of scans) {
-          const ts = new Date(s.timestamp).toISOString()
-          console.log(
-            `  ${ts}  ${(s.recommendation ?? 'UNKNOWN').padEnd(18)}  blocking:${s.blockingCount}  state:${s.stateStatus}  scope:${s.scopeFingerprint}  corpus:${s.corpusVersion}  (${s.scanId})`,
-          )
-        }
-        console.log('')
-        logger.info('Full schema is documented and DIY-queryable: `sqlite3 ' + historyPath + '`.')
+        console.log(renderHistoryTable(scans, process.stdout.isTTY ? (process.stdout.columns ?? 100) : undefined))
       } finally {
         store.close()
       }
