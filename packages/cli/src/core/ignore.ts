@@ -11,6 +11,7 @@
  * Whatever is ignored by this list is counted in `coverage.ignoredByDefault`, never silent.
  */
 import { dirname, join } from 'node:path'
+import fg from 'fast-glob'
 import { Minimatch } from 'minimatch'
 import type { Policy } from '@agenticcli/shared'
 import { HISTORY_PATH_ENV_VAR } from '@agenticcli/shared'
@@ -50,14 +51,17 @@ export const DEFAULT_IGNORE = [
 export function selfArtifactIgnorePatterns(policy: Policy): string[] {
   const patterns: string[] = []
 
-  const add = (p: string | undefined): void => {
+  // These come from the scanned project's own policy file, so they are LITERAL paths: every glob
+  // character is escaped before the pattern reaches fast-glob (picomatch). Unescaped, a policy value
+  // such as `+(*a)` makes picomatch backtrack exponentially (a 29-character file name took 20 s).
+  const add = (p: string | undefined, suffix = ''): void => {
     if (!p) return
     // Only project-relative paths can be matched against fast-glob's relative results;
     // an absolute path is outside the scan root's pattern space anyway.
     if (p.startsWith('/')) return
     const rel = p.replace(/^\.\//, '')
     if (!rel) return
-    patterns.push(rel)
+    patterns.push(fg.escapePath(rel) + suffix)
   }
 
   const reportOutput = policy.report?.output
@@ -67,7 +71,7 @@ export function selfArtifactIgnorePatterns(policy: Policy): string[] {
     add(reportOutput.replace(/\.md$/, '.json'))
     // ...and the whole per-run report directory: run filenames are unpredictable run ids.
     const reportDir = dirname(reportOutput)
-    add(join(reportDir === '.' ? '' : reportDir, RUNS_SUBDIR, '**'))
+    add(join(reportDir === '.' ? '' : reportDir, RUNS_SUBDIR), '/**')
   }
   add(policy.history?.path)
   // The env override wins over the policy value (see history/path.ts), so honour it here too.

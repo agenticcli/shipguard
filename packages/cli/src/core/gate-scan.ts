@@ -21,8 +21,17 @@ import { logger } from '../utils/logger.js'
 import { occurrenceKey } from './gate-state.js'
 import { firstSentence, type GateFinding, type NotScanned, type ScanSummary } from './gate-text.js'
 
+/** Variables git itself exports to a hook: they would point every command below at the hook's own repository. */
+const GIT_LOCATION_VARS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'GIT_OBJECT_DIRECTORY']
+
+function inheritedEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  for (const name of GIT_LOCATION_VARS) delete env[name]
+  return env
+}
+
 const GIT_ENV: NodeJS.ProcessEnv = {
-  ...process.env,
+  ...inheritedEnv(),
   LC_ALL: 'C',
   LANGUAGE: 'C',
   GIT_TERMINAL_PROMPT: '0',
@@ -98,6 +107,10 @@ export function extractCommit(topLevel: string, sha: string): string {
     rmSync(root, { recursive: true, force: true })
     throw new Error(`could not read commit ${sha.slice(0, 7)}: ${err instanceof Error ? err.message : String(err)}`)
   }
+  // ShipGuard's own folder is never project content, and a committed `.shipguard/` (a symlinked
+  // report file, say) must not steer where this run writes its report. Removing a symlink removes
+  // the link, never its target.
+  rmSync(join(dest, '.shipguard'), { recursive: true, force: true })
   return dest
 }
 
@@ -124,7 +137,7 @@ export function runScanChild(opts: { cliEntry: string; dir: string; budgetMs: nu
   return new Promise((resolveRun) => {
     const child = spawn(process.execPath, [opts.cliEntry, 'scan', '--all', '--json', '--strict', '--report'], {
       cwd: opts.dir,
-      env: { ...process.env, SHIPGUARD_GATE_KIND: opts.host },
+      env: { ...inheritedEnv(), SHIPGUARD_GATE_KIND: opts.host },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const chunks: Buffer[] = []

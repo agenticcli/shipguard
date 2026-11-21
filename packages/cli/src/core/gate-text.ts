@@ -304,6 +304,8 @@ export interface PassText {
 }
 
 const LIMIT_CLAUSE = 'no rule matched; not a security audit'
+/** The verdict-line form: `(0 findings; no rule matched, not a security audit)`. */
+const VERDICT_LIMIT = 'no rule matched, not a security audit'
 
 /** The pass text: the gate is never silent. `Allowed` only means nothing blocks, it is not the verdict. */
 export function passText(input: PassInput): PassText {
@@ -320,7 +322,7 @@ export function passText(input: PassInput): PassText {
     out.push(`Checked: ${c?.dir} @ ${c?.sha.slice(0, 7)} (${c?.label}), the commit this ${ctx.kind === 'ci' ? 'run checks' : 'push sends'}: ${scan.filesScanned} files${rules}, ${scan.seconds.toFixed(1)}s.${scan.runId ? ` Run ${scan.runId}.` : ''}`)
     out.push(
       safe
-        ? `Verdict: SAFE TO SHIP (0 findings; ${LIMIT_CLAUSE}). ${v.allowed}.`
+        ? `Verdict: SAFE TO SHIP (0 findings; ${VERDICT_LIMIT}). ${v.allowed}.`
         : `Verdict: REVIEW BEFORE SHIP (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')}, 0 blocking; see ${ctx.reportPath ?? '.shipguard/reports/latest.md'}). ${v.allowed}: only blocking findings stop ${ctx.kind === 'ci' ? 'the check' : 'a push'}.`,
     )
     if (ctx.kind !== 'ci') {
@@ -333,12 +335,12 @@ export function passText(input: PassInput): PassText {
   } else if (ctx.kind === 'merge') {
     out.push(`Checked: ${c?.dir} @ ${c?.sha.slice(0, 7)} (${c?.label}) only: ${scan.filesScanned} files${rules}, ${scan.seconds.toFixed(1)}s.${scan.runId ? ` Run ${scan.runId}.` : ''}`)
     out.push(
-      `NOT checked: the merged result in your branch. Verdict for that commit: ${safe ? `SAFE TO SHIP (0 findings; ${LIMIT_CLAUSE})` : `REVIEW BEFORE SHIP (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')}, 0 blocking)`}. ${v.allowed}.`,
+      `NOT checked: the merged result in your branch. Verdict for that commit: ${safe ? `SAFE TO SHIP (0 findings; ${VERDICT_LIMIT})` : `REVIEW BEFORE SHIP (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')}, 0 blocking)`}. ${v.allowed}.`,
     )
   } else {
     out.push(`Checked: ${c?.dir} @ ${c?.sha.slice(0, 7)} (${c?.label}) only. NOT checked: the PR head on GitHub or the merged result; the CI check covers those.${scan.runId ? ` Run ${scan.runId}.` : ''}`)
     out.push(
-      `Verdict for that commit: ${safe ? `SAFE TO SHIP (0 findings; ${LIMIT_CLAUSE})` : `REVIEW BEFORE SHIP (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')}, 0 blocking)`}. ${v.allowed}.`,
+      `Verdict for that commit: ${safe ? `SAFE TO SHIP (0 findings; ${VERDICT_LIMIT})` : `REVIEW BEFORE SHIP (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')}, 0 blocking)`}. ${v.allowed}.`,
     )
   }
   const note = rulesNoteLine(ctx.rulesNote)

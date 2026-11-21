@@ -30,6 +30,7 @@ import {
   type ScanRun,
 } from '../core/gate-scan.js'
 import { parseGateCommand, type GateInvocation } from '../core/gate-target.js'
+import { SHIM_VERSION } from '../core/hook-templates.js'
 import {
   claudePassJson,
   failClosedText,
@@ -92,6 +93,7 @@ export interface GateDeps {
 }
 
 const HOOK_PUSH = 'pre-push'
+const STALE_TEXT = 'WARNING: your hook script is from an older ShipGuard and can skip the gate silently. Update it: shipguard setup --agent claude'
 
 function defaultDeps(): GateDeps {
   const cliEntry = resolve(process.argv[1] ?? '')
@@ -115,7 +117,8 @@ function defaultDeps(): GateDeps {
     uncommittedFiles,
     extractCommit,
     removeExtraction,
-    runScan: ({ dir, budgetMs, host }) => runScanChild({ cliEntry, dir, budgetMs, host }),
+    // The child scan reports which gate asked (usage ping field gateKind: claude | git | ci); Codex and Cursor use git hooks.
+    runScan: ({ dir, budgetMs, host }) => runScanChild({ cliEntry, dir, budgetMs, host: host === 'codex' || host === 'cursor' ? 'git' : host }),
     gapLine: () => null,
     isSafeMode: () => process.env.SHIPGUARD_SAFE_MODE === '1',
   }
@@ -278,7 +281,9 @@ async function scanCommit(
   deps: GateDeps,
   warningsBase: string[],
 ): Promise<JobResult> {
-  const staleHook = detectStaleHook(top)
+  // A hook script older than this ShipGuard says so itself (the shim exports its version), whatever the files say.
+  const shimVersion = Number(deps.env.SHIPGUARD_SHIM_VERSION)
+  const staleHook = detectStaleHook(top) ?? (shimVersion > 0 && shimVersion < SHIM_VERSION ? { layer: 'claude' as const, text: STALE_TEXT } : null)
   const startedMs = deps.now()
   const checkedBase: CheckedInfo = { dir: top, sha: target.sha, label: target.label, workingTree: deps.uncommittedFiles(top) }
   const previous = readGateRecord(top)

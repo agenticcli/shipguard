@@ -7,9 +7,9 @@
  *  - machine line format; loop-stop on rule + file; host kill leaves a `running` record;
  *  - no plan line except the weekly clean-pass line; the gate never fetches.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runGate } from '../../src/commands/gate.js'
 import { readGateRecord } from '../../src/core/gate-state.js'
 import {
@@ -600,6 +600,64 @@ describe('banned words and plan facts', () => {
       expect(t).not.toMatch(/release gate|\bcloud\b|our servers/i)
       expect(t).not.toMatch(/\$\d|per (month|year)|\d+ (scans|credits)/)
     }
+  })
+})
+
+describe('hardening', () => {
+  it('a committed .shipguard folder (a symlinked report file) cannot steer where the scan writes', async () => {
+    const main = mkRepo()
+    const victim = join(main, '..', 'victim.txt')
+    writeFileSync(victim, 'untouched\n')
+    mkdirSync(join(main, '.shipguard', 'reports'), { recursive: true })
+    symlinkSync(victim, join(main, '.shipguard', 'reports', 'latest.md'))
+    git(main, 'add', '-f', '-A')
+    git(main, 'commit', '-q', '-m', 'hostile .shipguard')
+    let existed: boolean | undefined
+    const runScan = async (o: { dir: string; budgetMs: number; host: string }) => {
+      existed = existsSync(join(o.dir, '.shipguard'))
+      return fakeScan()(o)
+    }
+    const { deps } = mkDeps(main, claudeInput('git push', main), { runScan })
+    expect(await runGate({ host: 'claude' }, deps)).toBe(0)
+    expect(existed).toBe(false)
+    expect(readFileSync(victim, 'utf-8')).toBe('untouched\n')
+  })
+
+  it('the extraction folder is removed after every run, pass or block', async () => {
+    const main = mkRepo()
+    const seen: string[] = []
+    const { deps } = mkDeps(main, claudeInput('git push', main), { runScan: fakeScan({ seen }) })
+    await runGate({ host: 'claude' }, deps)
+    commitFile(main, 'x.ts', `k = "${SECRET_MARKER}"\n`)
+    const second = mkDeps(main, claudeInput('git push', main), { runScan: fakeScan({ seen }) })
+    await runGate({ host: 'claude' }, second.deps)
+    expect(seen).toHaveLength(2)
+    for (const dir of seen) expect(existsSync(dir)).toBe(false)
+  })
+
+  it('the git variables a hook exports do not redirect the gate to the hook repository', async () => {
+    const main = mkRepo()
+    const other = mkRepo({ 'package.json': '{"name":"other"}', 'o.ts': `x = "${SECRET_MARKER}"\n` })
+    const before = { ...process.env }
+    const expected = git(main, 'rev-parse', 'HEAD')
+    process.env.GIT_DIR = join(other, '.git')
+    process.env.GIT_INDEX_FILE = join(other, '.git', 'index')
+    try {
+      // Fresh import: GIT_ENV is built when the module loads.
+      vi.resetModules()
+      const scan = await import('../../src/core/gate-scan.js')
+      expect(scan.repoTopLevel(main)).toBe(main)
+      expect(scan.resolveCommit(main, 'HEAD')).toBe(expected)
+    } finally {
+      process.env = before
+    }
+  })
+
+  it('an old hook script announces itself through its version (stale nudge at the top of the text)', async () => {
+    const main = mkRepo()
+    const { deps, out } = mkDeps(main, claudeInput('git push', main), {}, { SHIPGUARD_SHIM_VERSION: '1' })
+    expect(await runGate({ host: 'claude' }, deps)).toBe(0)
+    expect(JSON.parse(out.stdout).hookSpecificOutput.additionalContext.split('\n')[0]).toContain('your hook script is from an older ShipGuard')
   })
 })
 
