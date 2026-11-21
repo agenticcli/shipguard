@@ -169,7 +169,8 @@ describe('scanId reuse over-dedup guard — a framework change on an already-dir
     const call2 = vi.mocked(mockFetchProRules).mock.calls[1]
 
     // Sanity: the two runs genuinely detected DIFFERENT framework sets (arg 0 = framework names).
-    expect(call1[0]).toEqual(['nextjs'])
+    // integrate: W9 added React detection, so a Next.js app now reports nextjs + react.
+    expect(call1[0]).toEqual(['nextjs', 'react'])
     expect(call2[0]).toEqual(expect.arrayContaining(['nextjs', 'express']))
 
     // FAIL-BEFORE (frameworks NOT in the key): identical contentIdentity + same scope → call2[3]

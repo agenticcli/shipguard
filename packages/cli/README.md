@@ -53,7 +53,7 @@ shipguard hook --target ci        # GitHub Actions verdict job
 
 Copy-paste snippets for `AGENTS.md`, `CLAUDE.md` and CI: [docs/placement-kit.md](docs/placement-kit.md).
 
-The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below), plus a signed-out terminal scan may ask once a week for public rule counts for your stack names (names only, no code; never in hooks, CI, quiet or safe mode). Prices and plan details are not listed here: see `shipguard status` and https://agenticcli.dev/pricing.
+The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below), plus a signed-out terminal scan may ask once a week for public rule counts for your stack names (names only, no code; never in hooks, CI, quiet or safe mode). Prices and plan details are not listed here: see `shipguard status` and [agenticcli.dev/pricing](https://agenticcli.dev/pricing?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen).
 
 ## Exit codes
 
