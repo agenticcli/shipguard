@@ -19,7 +19,7 @@ const walk = (d: string): string[] =>
 
 describe('REBUILD.md network-call list', () => {
   it('names every source file that calls fetch( or a node http client', () => {
-    const callers = walk(SRC).filter((f) => /(^|[^.\w])fetch\(|https?\.request\(|net\.connect\(/.test(
+    const callers = walk(SRC).filter((f) => /(^|[^.\w])fetch\(|\bfetch\)\(|https?\.request\(|net\.connect\(/.test(
       readFileSync(f, 'utf-8').split('\n').filter((l) => !/^\s*(\*|\/\/)/.test(l)).join('\n')))
     expect(callers.length).toBeGreaterThan(5)
     for (const f of callers) {

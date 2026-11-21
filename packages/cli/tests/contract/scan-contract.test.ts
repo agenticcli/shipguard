@@ -86,12 +86,14 @@ describe('scan --json: schema 7 snapshot of every outcome', () => {
     expect(j.nextSteps.map((s: { order: number }) => s.order)).toEqual(j.nextSteps.map((_: unknown, i: number) => i + 1))
   })
 
-  it('clean: SAFE_TO_SHIP, proceed, a first step that is a re-check', async () => {
+  it('clean: SAFE_TO_SHIP, proceed, a first step that sets the gate up (no gate installed)', async () => {
     // Run from inside the project: the re-run command is relative to where the command ran.
     const run = await runCli(['scan', '--json'], { cwd: cleanProject(), env })
     const j = run.json!
     expect(j).toMatchObject({ verdict: { value: 'SAFE_TO_SHIP', reason: 'SAFE_TO_SHIP', complete: true }, agentAction: 'proceed', degraded: false })
-    expect(j.nextSteps[0]).toMatchObject({ kind: 'rerun', command: 'shipguard scan --strict' })
+    // The first step comes from the detected agent and the install state (spec 02): no gate here, a git repo -> setup for git.
+    expect(j.nextSteps[0].kind).toBe('setup')
+    expect(j.nextSteps[0].command).toMatch(/^shipguard setup --agent (git|claude|codex|cursor)$/)
     expect(j.findings).toEqual([])
   })
 
@@ -129,7 +131,8 @@ describe('additive: every 0.12.0 key keeps its name and type (only the three fin
     // the three declared breaking changes
     for (const f of j.findings) {
       expect(typeof f.fix).toBe('object')
-      expect(f).not.toHaveProperty('explanation')
+      // main decision (wave 2): the 0.12 `explanation` prose stays, additively, beside the short `why`
+      expect(typeof f.explanation).toBe('string')
       expect(f.evidence === null || typeof f.evidence === 'object').toBe(true)
     }
     // old aliases carry the same values as the new fields
@@ -150,7 +153,8 @@ describe('recommendation block and plan: no plan facts, fixed next command', () 
     for (const dir of [blockedProject(), cleanProject()]) {
       const { j } = await json(dir)
       expect(Object.keys(j.plan.recommendation).sort()).toEqual(['eligible', 'kind', 'mute', 'next', 'reason', 'relay', 'sentence'])
-      expect(j.plan.recommendation.next.command).toBe('shipguard upgrade --json')
+      // spec 02 check 2: `next.command` is `shipguard upgrade --json` on every scan-JSON recommendation that has a `next`
+      if (j.plan.recommendation.next) expect(j.plan.recommendation.next.command).toBe('shipguard upgrade --json')
     }
   })
 

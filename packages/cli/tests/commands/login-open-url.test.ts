@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Regression: `shipguard login` used to pass the server-supplied verification_uri to
 // child_process.exec() inside double quotes, so `$(...)`, backticks, `"` and `;` were run by
@@ -26,6 +26,11 @@ vi.mock('node:child_process', () => {
   }
 })
 vi.mock('../../src/core/auth.js', () => ({ saveCredentials: vi.fn(), clearCredentials: vi.fn() }))
+vi.mock('../../src/core/plan-client.js', async (orig) => ({
+  ...(await orig<typeof import('../../src/core/plan-client.js')>()),
+  readPlanFresh: vi.fn().mockResolvedValue({ signIn: 'signed-in', plan: { status: 'unavailable', reason: 'NOT_FETCHED', command: 'shipguard upgrade', link: null, server: null }, acct: null, accountStatus: null, failure: null }),
+  forgetAccountState: vi.fn(),
+}))
 
 const { loginCommand } = await import('../../src/commands/login.js')
 
@@ -41,14 +46,24 @@ function mockDeviceFlow(verification_uri: string) {
     }) as unknown as typeof fetch
 }
 
+/** The device poll waits at least 5 s (the interval is clamped): run it on a fake clock. */
+async function runLogin(): Promise<void> {
+  const p = loginCommand().parseAsync(['node', 'login'])
+  await vi.runAllTimersAsync()
+  await p
+}
+
 const launches = () => [...spawnCalls, ...execFileCalls]
 
 describe('login: opening the verification URI', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     vi.clearAllMocks()
     spawnCalls.length = 0
     execFileCalls.length = 0
   })
+
+  afterEach(() => vi.useRealTimers())
 
   it.each([
     ['command substitution', 'https://agenticcli.dev/$(touch${IFS}/tmp/pwned)'],
@@ -56,7 +71,7 @@ describe('login: opening the verification URI', () => {
     ['quote break-out + semicolon', 'https://agenticcli.dev/";touch${IFS}/tmp/pwned;"'],
   ])('never runs a shell for a URI with %s', async (_n, uri) => {
     mockDeviceFlow(uri)
-    await loginCommand().parseAsync(['node', 'login'])
+    await runLogin()
     expect(exec).not.toHaveBeenCalled()
     expect(execSync).not.toHaveBeenCalled()
     for (const l of launches()) {
@@ -79,7 +94,7 @@ describe('login: opening the verification URI', () => {
     'https://agenticcli.dev/$(touch /tmp/pwned)', // whitespace in the URI
   ])('refuses to open %s but still prints the code and completes login', async (uri) => {
     mockDeviceFlow(uri)
-    await loginCommand().parseAsync(['node', 'login'])
+    await runLogin()
     expect(exec).not.toHaveBeenCalled()
     expect(launches()).toHaveLength(0)
   })
@@ -88,7 +103,7 @@ describe('login: opening the verification URI', () => {
     'opens allowed URI %s',
     async (uri) => {
       mockDeviceFlow(uri)
-      await loginCommand().parseAsync(['node', 'login'])
+      await runLogin()
       const l = launches()
       expect(l).toHaveLength(1)
       expect(l[0].args.join(' ')).toContain(new URL(uri).href)

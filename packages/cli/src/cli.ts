@@ -6,6 +6,9 @@ import { scanCommand } from './commands/scan.js'
 import { loginCommand } from './commands/login.js'
 import { logoutCommand } from './commands/logout.js'
 import { statusCommand } from './commands/status.js'
+import { gateCommand } from './commands/gate.js'
+import { ignoreCommand } from './commands/ignore.js'
+import { upgradeCommand } from './commands/upgrade.js'
 import { historyCommand } from './commands/history.js'
 import { hookCommand } from './commands/hook.js'
 import { setupCommand } from './commands/setup.js'
@@ -147,6 +150,9 @@ addSubcommand(scanCommand())
 addSubcommand(loginCommand())
 addSubcommand(logoutCommand())
 addSubcommand(statusCommand())
+addSubcommand(upgradeCommand())
+addSubcommand(gateCommand())
+addSubcommand(ignoreCommand())
 addSubcommand(historyCommand())
 addSubcommand(hookCommand())
 addSubcommand(setupCommand())

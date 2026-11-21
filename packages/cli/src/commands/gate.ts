@@ -32,6 +32,7 @@ import {
   type ScanRun,
 } from '../core/gate-scan.js'
 import { parseGateCommand, type GateInvocation } from '../core/gate-target.js'
+import { gateGapFromCache } from '../core/plan-client.js'
 import { SHIM_VERSION } from '../core/hook-templates.js'
 import {
   claudePassJson,
@@ -89,10 +90,10 @@ export interface GateDeps {
   runScan: (opts: { dir: string; budgetMs: number; host: string }) => Promise<ScanRun>
   /**
    * The weekly "Not run here" first line, read from the verified cache with no fetch, or null.
-   * The default returns null until the plan modules (W1a) are wired in. Called only on a clean
+   * The default reads the plan modules' verified cache (plan-client.ts gateGapFromCache). Called only on a clean
    * pass, never in CI, safe mode or with the promotion mute set.
    */
-  gapLine: (info: { dir: string; host: GateHost; scan: ParsedScan }) => string | null
+  gapLine: (info: { dir: string; host: GateHost; scan: ParsedScan }) => string | null | Promise<string | null>
   isSafeMode: () => boolean
 }
 
@@ -124,7 +125,8 @@ function defaultDeps(): GateDeps {
     removeExtraction,
     // The child scan reports which gate asked (usage ping field gateKind: claude | git | ci); Codex and Cursor use git hooks.
     runScan: ({ dir, budgetMs, host }) => runScanChild({ cliEntry, dir, budgetMs, host: host === 'codex' || host === 'cursor' ? 'git' : host }),
-    gapLine: () => null,
+    // The weekly gap line: the first line only, from the verified cache, no fetch (plan-client.ts); same 7-day counter as the scan screen.
+    gapLine: ({ dir }) => gateGapFromCache(dir),
     isSafeMode: () => isSafeMode(),
   }
 }
@@ -419,7 +421,7 @@ async function scanCommit(
     let gap: string | null = null
     if (clean && host !== 'ci' && !deps.isSafeMode() && deps.env.SHIPGUARD_NO_PROMO !== '1') {
       try {
-        gap = deps.gapLine({ dir: top, host, scan: parsed })
+        gap = await deps.gapLine({ dir: top, host, scan: parsed })
       } catch (err) {
         logger.debug(`gate: the gap line could not be read: ${err instanceof Error ? err.message : String(err)}`)
       }

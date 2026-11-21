@@ -2,7 +2,9 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 
 import { getAuthToken, RefreshUnavailableError } from './auth.js'
-import { goLink } from './links.js'
+import { clientHelloHeaders, newNonce, acctFromAccessToken, readAccountReply, type PlanRead } from './plan.js'
+import { safeServerText, TEXT_CAPS } from './safe-text.js'
+import { CLI_VERSION } from './telemetry.js'
 // The verifyAndDecryptBundle and verifyRuleBundle imports were removed (retired paths).
 // Both functions are permanently disabled tombstones. Any call to them throws
 // 'legacy-bundle-rejected: attestation required'. The import is removed so any
@@ -96,16 +98,34 @@ export type ProFetchErrorCode =
   | 'NO_ACTIVE_RELEASE'
   | 'PLATFORM_UNAVAILABLE'
   | 'FRESHNESS_EXPIRED'
+  /** 0.13: the server's own refusal codes (402). The allowance is used up / the account has no active plan. */
+  | 'ALLOWANCE_USED'
+  | 'PLAN_INACTIVE'
+
+/** What a failed rulebook request still tells the caller: the verified plan read, the account, the server's own words. */
+export interface ProFetchContext {
+  /** The plan document that arrived with the refusal (verified against THIS request), or null. */
+  plan: PlanRead | null
+  /** `acct` hash of the signed-in account (for the account cache), or null. */
+  acct: string | null
+  /** The server's own error code (unsigned: it can only make an explicit --pro stricter). */
+  serverCode: string | null
+  /** The server's wording, already through safe-text. */
+  serverText: string | null
+}
 
 export class ProFetchError extends Error {
   readonly code: ProFetchErrorCode
   /** Only populated for RATE_LIMITED and PLATFORM_UNAVAILABLE, when the server sends a usable `Retry-After` header. */
   readonly retryAfterSeconds?: number
-  constructor(code: ProFetchErrorCode, message: string, opts?: { retryAfterSeconds?: number }) {
+  /** 0.13 plan data that came with the failure (the 402 refusals carry a signed account document). */
+  context?: ProFetchContext
+  constructor(code: ProFetchErrorCode, message: string, opts?: { retryAfterSeconds?: number; context?: ProFetchContext }) {
     super(message)
     this.name = 'ProFetchError'
     this.code = code
     this.retryAfterSeconds = opts?.retryAfterSeconds
+    this.context = opts?.context
   }
 }
 
@@ -129,13 +149,32 @@ function parseCreditsRemaining(headers: Headers): number | undefined {
   return Number.isFinite(credits) ? credits : undefined
 }
 
+/** What a served rulebook request returns (0.13 additions beside the rules: the plan read and the partial flag). */
+export interface ProFetchResult {
+  rules: QualityGateRule[]
+  creditsRemaining: number | undefined
+  rulesVersion?: string
+  /** The signed plan document that arrived with this reply (verified against this request's nonce and scan id). */
+  plan: PlanRead | null
+  /** `acct` hash of the signed-in account, or null. */
+  acct: string | null
+  /** Envelope v2: the served tiers are narrower than the rulebook this request should get (RULEBOOK_PARTIAL). */
+  partial: boolean
+  /** Envelope v2: the tiers that were served (open tokens). Null for an envelope v1 reply. */
+  tiersApplied: string[] | null
+  /** Per-rule area names (`area` in the signed rule list), for the first-Pro receipt. */
+  areaByRuleId: Record<string, string>
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
 export async function fetchProRules(
   frameworks: string[],
   categories: string[] | undefined,
   apiUrl: string,
   scanId?: string,
   floorPath?: string,
-): Promise<{ rules: QualityGateRule[]; creditsRemaining: number | undefined; rulesVersion?: string }> {
+): Promise<ProFetchResult> {
   assertTrustedApiUrl(apiUrl)
   // pass apiUrl through so a raw SHIPGUARD_API_KEY is exchanged for an
   // access token against the SAME configured API base this call targets.
@@ -156,6 +195,10 @@ export async function fetchProRules(
     throw err
   }
   if (!token) throw new ProFetchError('AUTH_FAILED', 'Not authenticated. Run `shipguard login` first.')
+  // 0.13 client hello: asks for envelope v2 and a signed plan document bound to this request (a nonce nobody can replay).
+  // A server that ignores the hello answers as before (legacy reply), which this function handles as well.
+  const acct = acctFromAccessToken(token)
+  const nonce = newNonce()
 
   // ScanId idempotency (scanId idempotency): send the CLI's stable scanId BOTH in the body AND as the
   // HTTP-idiomatic Idempotency-Key header, on EVERY attempt (a retry of the same scan reuses
@@ -170,6 +213,7 @@ export async function fetchProRules(
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
+        ...clientHelloHeaders(CLI_VERSION, nonce),
         ...(scanId ? { 'Idempotency-Key': scanId } : {}),
       },
       body: JSON.stringify({ frameworks, categories, ...(scanId ? { scanId } : {}) }),
@@ -191,9 +235,9 @@ export async function fetchProRules(
     // recognized code is present. A non-JSON/unparsable body is a normal case for some failure
     // classes (e.g. a bare 5xx from an upstream proxy) — errorBody stays undefined and
     // status-based classification below proceeds exactly as before.
-    let errorBody: { code?: string; error?: string } | undefined
+    let errorBody: { code?: string; error?: string; account?: unknown } | undefined
     try {
-      errorBody = await res.json() as { code?: string; error?: string }
+      errorBody = await res.json() as { code?: string; error?: string; account?: unknown }
     } catch (parseErr: unknown) {
       const msg = parseErr instanceof Error ? parseErr.message : String(parseErr)
       console.error(
@@ -228,7 +272,25 @@ export async function fetchProRules(
     }
 
     if (res.status === 401) throw new ProFetchError('AUTH_FAILED', 'Auth expired. Run `shipguard login` again.')
-    if (res.status === 402) throw new ProFetchError('INSUFFICIENT_CREDITS', `No credits. Buy at ${goLink('billing')}`)
+    // 503 TOKEN_CHECK_UNAVAILABLE: the server cannot read its token revocation list. That is "the server is
+    // unavailable" (retry later), never "sign in again" (that is 401).
+    if (res.status === 503 && errorBody?.code === 'TOKEN_CHECK_UNAVAILABLE') {
+      throw new ProFetchError('SERVER_ERROR', 'The rulebook service could not check your sign-in right now. Retry in a minute.', {
+        retryAfterSeconds: parseRetryAfterSeconds(res.headers),
+      })
+    }
+    if (res.status === 402) {
+      // The server refused the rulebook and said why. With the hello the reply also carries a signed account
+      // document: verified against THIS request (nonce and scan id), it is the only thing that can soften an
+      // explicit --pro (decision v21-prolimit). Unsigned or unverified data can only make a run stricter.
+      const plan = errorBody?.account === undefined ? null : await readAccountReply(errorBody.account, { acct, nonce, scanId: scanId ?? null, now: Date.now() })
+      const serverCode = typeof errorBody?.code === 'string' && /^[A-Z_]{1,40}$/.test(errorBody.code) ? errorBody.code : null
+      const serverText = safeServerText(errorBody?.error, TEXT_CAPS.limit)
+      const code: ProFetchErrorCode = serverCode === 'ALLOWANCE_USED' ? 'ALLOWANCE_USED' : serverCode === 'PLAN_INACTIVE' ? 'PLAN_INACTIVE' : 'INSUFFICIENT_CREDITS'
+      throw new ProFetchError(code, serverText ?? 'The server did not provide the rulebook for this scan.', {
+        context: { plan, acct, serverCode, serverText },
+      })
+    }
     if (res.status === 429) {
       throw new ProFetchError(
         'RATE_LIMITED',
@@ -286,18 +348,32 @@ export async function fetchProRules(
       freshnessTok: unknown
       selectedRules: unknown
       bundleEnvelope: unknown
+      account?: unknown
     }
 
     const effectiveFloorPath = floorPath ?? DEFAULT_FLOOR_PATH
     const effectiveScanId = scanId ?? ''
+
+    // The signed plan document (top-level sibling `account`): verified FIRST against this request's nonce and scan id.
+    // Not verified or absent = no plan data (plain Free display); the bundle is judged on its own signatures below.
+    const planRead = await readAccountReply(bundleResponse.account, { acct, nonce, scanId: effectiveScanId === '' ? null : effectiveScanId, now: Date.now() })
+
+    // Envelope v2 (the server answered the hello): the request digest covers the categories THIS CLI sent, in the
+    // order sent (`{}` with none), and the signed selection must equal them. Envelope v1: digest over `{}`, as ever.
+    const rawEnvelope = bundleResponse.bundleEnvelope
+    const isV2 = isRecord(rawEnvelope) && rawEnvelope['protocolVersion'] === '2'
+    const sentCategories = categories !== undefined && categories.length > 0 ? categories : null
 
     const verifyResult = await verifyBundleResponse(
       bundleResponse,
       {
         scanId: effectiveScanId,
         frameworks,
-        options: {},
+        options: isV2 && sentCategories !== null ? { categories: sentCategories } : {},
         isPro: true,
+        categories: sentCategories,
+        // A verified LIVE plan document's tiers: a served selection narrower than these is RULEBOOK_PARTIAL.
+        verifiedRulebookTiers: planRead.live ? (planRead.block.server?.capabilities?.rulebookTiers ?? null) : null,
       },
       effectiveFloorPath,
     )
@@ -390,7 +466,23 @@ export async function fetchProRules(
       }
     }) as unknown as QualityGateRule[]
 
-    return { rules, creditsRemaining: credits, rulesVersion }
+    // Per-rule area names (the server's own words) for the receipt: read from the signed rule list when it carries one.
+    const areaByRuleId: Record<string, string> = {}
+    for (const r of verifyResult.selectedRules) {
+      const area = safeServerText((r as unknown as Record<string, unknown>)['area'], TEXT_CAPS.item)
+      if (area !== null) areaByRuleId[r.id] = area
+    }
+
+    return {
+      rules,
+      creditsRemaining: credits,
+      rulesVersion,
+      plan: planRead,
+      acct,
+      partial: verifyResult.partial === true,
+      tiersApplied: verifyResult.selection ? verifyResult.selection.tiers : null,
+      areaByRuleId,
+    }
   }
 
   // If we reach here, the response lacked 'fullManifest'.

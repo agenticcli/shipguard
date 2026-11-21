@@ -11,6 +11,10 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import chalk from 'chalk'
+import { parseMaskedSecret } from './redact.js'
+import { decideRecommendation, planJson, receiptNote, usageNote } from './plan-lines.js'
+import type { DetectedStack, Receipt } from './plan-lines.js'
+import type { AccountStatus, PlanBlock } from './plan-types.js'
 import type { DegradeReason, Finding, Recommendation, RiskScore, ScanCoverage } from '@agenticcli/shared'
 
 export const SCHEMA_VERSION = '7'
@@ -75,7 +79,10 @@ export function mapProFetchCode(code: string, message = ''): ErrorCode {
       return 'RATE_LIMITED'
     // The 0.12 credit-balance refusal: the server withheld the rulebook (no credit wording in 0.13).
     case 'INSUFFICIENT_CREDITS':
+    case 'ALLOWANCE_USED':
       return 'RULEBOOK_WITHHELD'
+    case 'PLAN_INACTIVE':
+      return 'PLAN_INACTIVE'
     case 'NO_RULES_APPLIED':
       return 'NO_RULES_APPLIED'
     // SERVER_ERROR, BUNDLE_INVALID, NO_ACTIVE_RELEASE, PLATFORM_UNAVAILABLE, FRESHNESS_EXPIRED and anything
@@ -170,7 +177,10 @@ export type EvidenceJson =
 
 export function evidenceOf(f: Finding): EvidenceJson {
   if (f.category === 'secrets') {
-    return { kind: 'secret', secretType: secretTypeOf(f), length: secretLengthOf(f), valueHidden: true }
+    // The masking step (core/redact.ts) leaves `<type>, <length> characters, value hidden`: read the type and the
+    // length back from it. Nothing else about the value exists any more.
+    const masked = f.evidence ? parseMaskedSecret(f.evidence) : undefined
+    return { kind: 'secret', secretType: masked?.secretType ?? secretTypeOf(f), length: masked?.length ?? secretLengthOf(f), valueHidden: true }
   }
   return f.evidence ? { kind: 'text', text: f.evidence } : null
 }
@@ -204,6 +214,8 @@ export function buildFindingJson(f: Finding, ctx: FindingContext): Record<string
     column: f.column ?? null,
     evidence: evidenceOf(f),
     why: firstSentence(f.explanation ?? ''),
+    // Additive 0.12 key (main decision, wave 2): the long prose stays beside the short `why`, so a consumer that read it keeps working.
+    explanation: f.explanation ?? '',
     fix: {
       summary: fixSummary,
       // No stack-specific fix data ships yet: say so honestly (spec 04: generic when not known to be specific).
@@ -554,73 +566,67 @@ export function buildVerdictJson(i: {
   }
 }
 
-// ---- plan block (no plan data wired yet: the no-data branch of spec 02 "The plan block") ----
+// ---- plan block: the verified server block (W1a modules) rendered once for JSON ----
 
 const STACK_DISPLAY: Record<string, string> = {
-  nextjs: 'Next.js', express: 'Express', fastify: 'Fastify', prisma: 'Prisma', drizzle: 'Drizzle', supabase: 'Supabase',
+  nextjs: 'Next.js', express: 'Express', fastify: 'Fastify', prisma: 'Prisma', drizzle: 'Drizzle', supabase: 'Supabase', react: 'React', firebase: 'Firebase',
 }
 export function stackDisplayName(name: string): string {
   return STACK_DISPLAY[name] ?? name
 }
 
 export interface PlanInput {
+  plan: PlanBlock
+  signedIn: boolean
+  /** This run's verified account status, else the LAST verified one, else null. */
+  accountStatus: AccountStatus | null
   /** Frameworks detected for this scan (not 'generic'). */
-  stacks: string[]
+  stacks: DetectedStack[]
+  /** `rules.applied` of a general run: the bundled general rules (a run-time count). */
+  generalRuleCount: number
   complete: boolean
   blockingCount: number
-  /** The run used the downloaded rulebook. */
-  rulebookRan: boolean
-  rulebookFallbackCode: string | null
-  /** Environment facts for suppression reasons. */
+  /** `rules.fallback` is set (the rulebook was not used). */
+  fallbackActive: boolean
   ci: boolean
+  safeMode: boolean
   muted: boolean
-  /**
-   * Whether the per-channel display cap (spec 02 "Counters") allows telling an agent now. Until the nag
-   * counters are wired this is false, so the contract never tells an agent loop the same sentence twice.
-   */
-  jsonPitchAllowed: boolean
+  /** The JSON counters (per channel) allow telling an agent now. */
+  jsonPitchDue: boolean
+  usageJsonDue: boolean
+  receiptJsonDue: boolean
+  /** The first-Pro receipt of this run (null unless a rulebook run added rules). */
+  receipt: Receipt | null
 }
 
-export function buildPlanJson(i: PlanInput): Record<string, unknown> {
-  const names = i.stacks.map(stackDisplayName)
-  const hasStack = names.length > 0
-  const coverageBranch = hasStack && i.complete && !i.rulebookRan && i.rulebookFallbackCode === null
-  let relay = false
-  let reason: string | null
-  let kind: 'coverage' | null
-  let sentence: string | null = null
+export interface PlanJsonResult {
+  json: Record<string, unknown>
+  /** Which counters the caller must mark as used (the JSON read told an agent). */
+  mark: { pitch: boolean; usage: boolean; receipt: boolean }
+}
 
-  if (i.rulebookRan) {
-    kind = null; reason = 'NO_PLAN_DATA'
-  } else if (coverageBranch) {
-    kind = 'coverage'; reason = 'NO_PLAN_DATA'
-    sentence = `Checks for ${names.join(' + ')} beyond the general rules did not run here; details: shipguard upgrade`
-    if (i.blockingCount > 0) reason = 'BLOCKING_FINDINGS'
-    else if (i.ci) reason = 'CI'
-    else if (i.muted) reason = 'MUTED'
-    else if (!i.jsonPitchAllowed) reason = 'RECENTLY_SHOWN'
-    else relay = true
-  } else {
-    kind = null; reason = hasStack ? (i.complete ? 'NO_PLAN_DATA' : 'INCOMPLETE_SCAN') : 'NO_GAP'
-  }
-
+export function buildPlanJson(i: PlanInput): PlanJsonResult {
+  const recommendation = decideRecommendation({
+    plan: i.plan,
+    signedIn: i.signedIn,
+    accountStatus: i.accountStatus,
+    detected: i.stacks,
+    rulesApplied: i.generalRuleCount,
+    scanComplete: i.complete,
+    blocking: i.blockingCount > 0,
+    fallbackActive: i.fallbackActive,
+    ci: i.ci,
+    hookOrGate: false,
+    safeMode: i.safeMode,
+    muted: i.muted,
+    recentlyShown: !i.jsonPitchDue,
+  })
+  const quietContext = i.ci || i.safeMode
+  const usage = usageNote(i.plan, { quietContext, jsonDue: i.usageJsonDue })
+  const receiptN = receiptNote({ receipt: i.receipt, plan: i.plan, quietContext, jsonDue: i.receiptJsonDue })
   return {
-    status: 'unavailable',
-    reason: 'NOT_FETCHED',
-    command: 'shipguard upgrade',
-    link: null,
-    server: null,
-    recommendation: {
-      eligible: false,
-      relay,
-      kind,
-      reason,
-      sentence,
-      next: { command: 'shipguard upgrade --json', link: null },
-      mute: kind === null ? null : 'SHIPGUARD_NO_PROMO=1',
-    },
-    usageNote: { relay: false, reason: 'NO_USAGE' },
-    receiptNote: { relay: false, reason: 'NO_RECEIPT' },
+    json: planJson({ plan: i.plan, recommendation, usageNote: usage, receiptNote: receiptN }),
+    mark: { pitch: recommendation.relay, usage: usage.relay, receipt: receiptN.relay },
   }
 }
 

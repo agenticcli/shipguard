@@ -242,30 +242,37 @@ describe('nextSteps', () => {
 })
 
 describe('plan block with no plan data (spec 02 coverage branch): states no plan fact', () => {
-  const input = { stacks: ['nextjs', 'supabase'], complete: true, blockingCount: 0, rulebookRan: false, rulebookFallbackCode: null, ci: false, muted: false, jsonPitchAllowed: true }
+  const input: Parameters<typeof buildPlanJson>[0] = {
+    plan: { status: 'unavailable', reason: 'NOT_FETCHED', command: 'shipguard upgrade', link: null, server: null },
+    signedIn: false, accountStatus: null,
+    stacks: [{ key: 'nextjs', display: 'Next.js' }, { key: 'supabase', display: 'Supabase' }],
+    generalRuleCount: 36, complete: true, blockingCount: 0, fallbackActive: false, ci: false, safeMode: false, muted: false,
+    jsonPitchDue: true, usageJsonDue: true, receiptJsonDue: true, receipt: null,
+  }
+  const rec = (over: Partial<typeof input> = {}) => (buildPlanJson({ ...input, ...over }).json as { recommendation: Record<string, unknown> }).recommendation
 
   it('every recommendation object has all seven keys; next.command is always `shipguard upgrade --json`', () => {
-    for (const over of [{}, { blockingCount: 2 }, { ci: true }, { muted: true }, { stacks: [] }, { rulebookRan: true }, { complete: false }, { jsonPitchAllowed: false }]) {
-      const plan = buildPlanJson({ ...input, ...over }) as { recommendation: Record<string, unknown> }
-      expect(Object.keys(plan.recommendation).sort()).toEqual(['eligible', 'kind', 'mute', 'next', 'reason', 'relay', 'sentence'])
-      expect((plan.recommendation.next as { command: string }).command).toBe('shipguard upgrade --json')
+    for (const over of [{}, { blockingCount: 2 }, { ci: true }, { muted: true }, { stacks: [] }, { complete: false }, { jsonPitchDue: false }]) {
+      const r = rec(over)
+      expect(Object.keys(r).sort()).toEqual(['eligible', 'kind', 'mute', 'next', 'reason', 'relay', 'sentence'])
+      if (r.next) expect((r.next as { command: string }).command).toBe('shipguard upgrade --json')
     }
   })
 
   it('coverage sentence is number-free and names the detected stack; relay only when nothing suppresses it', () => {
-    const plan = buildPlanJson(input) as { recommendation: { relay: boolean; kind: string; sentence: string } }
-    expect(plan.recommendation).toMatchObject({ relay: true, kind: 'coverage' })
-    expect(plan.recommendation.sentence).toBe('Checks for Next.js + Supabase beyond the general rules did not run here; details: shipguard upgrade')
-    expect(plan.recommendation.sentence).not.toMatch(/\d/)
-    const blocked = buildPlanJson({ ...input, blockingCount: 1 }) as { recommendation: { relay: boolean; reason: string; sentence: string } }
-    expect(blocked.recommendation).toMatchObject({ relay: false, reason: 'BLOCKING_FINDINGS' })
-    expect(blocked.recommendation.sentence).toBeTruthy()
-    expect((buildPlanJson({ ...input, ci: true }) as { recommendation: { reason: string } }).recommendation.reason).toBe('CI')
-    expect((buildPlanJson({ ...input, muted: true }) as { recommendation: { reason: string } }).recommendation.reason).toBe('MUTED')
+    const r = rec() as { relay: boolean; kind: string; sentence: string }
+    expect(r).toMatchObject({ relay: true, kind: 'coverage' })
+    expect(r.sentence).toBe('Checks for Next.js + Supabase beyond the general rules did not run here; details: shipguard upgrade')
+    expect(r.sentence).not.toMatch(/\d/)
+    expect(rec({ blockingCount: 1 })).toMatchObject({ relay: false, reason: 'BLOCKING_FINDINGS' })
+    expect(rec({ blockingCount: 1 }).sentence).toBeTruthy()
+    expect(rec({ ci: true }).reason).toBe('CI')
+    expect(rec({ muted: true }).reason).toBe('MUTED')
+    expect(rec({ jsonPitchDue: false }).reason).toBe('RECENTLY_SHOWN')
   })
 
   it('the block itself is unavailable/NOT_FETCHED with no server data and no link', () => {
-    expect(buildPlanJson(input)).toMatchObject({ status: 'unavailable', reason: 'NOT_FETCHED', server: null, link: null, command: 'shipguard upgrade' })
+    expect(buildPlanJson(input).json).toMatchObject({ status: 'unavailable', reason: 'NOT_FETCHED', server: null, link: null, command: 'shipguard upgrade' })
   })
 })
 

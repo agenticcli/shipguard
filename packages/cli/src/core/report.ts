@@ -26,6 +26,8 @@ export interface ReportContext {
   ignoredTestValues?: number
   /** W5 masking seam: `<type>, <n> characters, value hidden` for a secret finding. */
   secretEvidence?: (f: Finding) => string | null
+  /** The schema-7 result object (the same one `--json` prints): written as the run's JSON record. Absent: the bare result. */
+  agentJson?: unknown
 }
 
 function utcStamp(iso: string): string {
@@ -136,7 +138,8 @@ function buildUserMarkdown(result: ScanResult, ctx: ReportContext): string {
 // Internal _ fields must NOT appear here.
 // ---------------------------------------------------------------------------
 
-function buildAgentJson(result: ScanResult): string {
+function buildAgentJson(result: ScanResult, agentJson?: unknown): string {
+  if (agentJson !== undefined) return JSON.stringify(agentJson, null, 2)
   // Strip internal metadata fields (same logic as scan.ts publicResult)
   const publicResult = { ...result }
   delete (publicResult as Record<string, unknown>)._skippedTooLarge
@@ -194,6 +197,12 @@ export interface LatestPointer {
   runMarkdown: string
 }
 
+/** Where `generateReport` will write the run's files (pure): lets a caller put the paths in the result before it is written. */
+export function reportPathsFor(outputPath: string, runId: string | undefined): { mdPath: string; runJsonPath: string } {
+  const id = sanitizeRunId(runId) ?? `run-${Date.now()}`
+  return { mdPath: outputPath, runJsonPath: join(dirname(outputPath), RUNS_SUBDIR, `${id}.json`) }
+}
+
 /**
  * Write a file atomically: temp file in the same directory, then rename.
  *
@@ -245,7 +254,7 @@ export async function generateReport(
   const runJsonPath = join(dir, runJsonName)
 
   const mdContent = buildUserMarkdown(result, ctx)
-  const jsonContent = buildAgentJson(result)
+  const jsonContent = buildAgentJson(result, ctx.agentJson)
 
   const pointer: LatestPointer = {
     pointer: true,

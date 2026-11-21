@@ -93,8 +93,9 @@ describe('packed tarball with source maps', () => {
     }
   })
 
-  it('stays under the release-gate size ceiling (G4: 700 kB packed)', () => {
-    expect(size).toBeLessThan(716_800)
+  it('stays under the release-gate size ceiling (G4: 800 kB packed, the 0.13 budget in scripts/release-gate.sh)', () => {
+    // W1b: wiring the plan modules into the commands puts them in the bundle (they were tree-shaken before): 670 kB -> 786 kB.
+    expect(size).toBeLessThan(819_200)
   })
 
   it('maps hold only repo source: no private key block, no env assignment of a secret', () => {
