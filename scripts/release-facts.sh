@@ -175,9 +175,10 @@ run_sync() {
 
 run_emit() {
   [[ -n "$TARBALL" && -n "$OUT" ]] || die "emit needs --tarball FILE and --out FILE"
-  case "$(basename "$TARBALL")" in agenticcli-shipguard-*.tgz) ;; *) die "unexpected tarball name: $(basename "$TARBALL")" ;; esac
   [[ -f "$TARBALL" ]] || die "tarball not found: $TARBALL"
   [[ "$TAG" == "v$VERSION" ]] || die "tag $TAG != package.json version v$VERSION"
+  # exact basename (the version is known), not a glob
+  [[ "$(basename "$TARBALL")" == "agenticcli-shipguard-$VERSION.tgz" ]] || die "unexpected tarball name: $(basename "$TARBALL") (expected agenticcli-shipguard-$VERSION.tgz)"
   ERRORS=(); read_changelog
   [[ "${#ERRORS[@]}" -eq 0 ]] || { printf 'release-facts: MISMATCH: %s\n' "${ERRORS[@]}" >&2; die "CHANGELOG entry is not release-ready"; }
 

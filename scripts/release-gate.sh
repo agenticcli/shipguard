@@ -123,29 +123,30 @@ PACK_JSON="$(cd "$CLI_DIR" && npm pack --dry-run --json --ignore-scripts 2>"$PAC
   gate_fail
 }
 rm -f "$PACK_ERR"
-TARBALL_SIZE="$(printf '%s' "$PACK_JSON" | node -e "
+SIZES="$(printf '%s' "$PACK_JSON" | node -e "
   const chunks=[]; process.stdin.on('data',c=>chunks.push(c)); process.stdin.on('end',()=>{
     let d; try { d=JSON.parse(Buffer.concat(chunks).toString()); }
     catch (e) { console.error('unparseable npm pack output: '+e.message); process.exit(1); }
-    const size=d[0]&&d[0].size;
-    if (!Number.isFinite(size) || size<=0) { console.error('npm pack reported no size'); process.exit(1); }
-    process.stdout.write(String(size));
+    const size=d[0]&&d[0].size, unpacked=d[0]&&d[0].unpackedSize;
+    if (!Number.isFinite(size) || size<=0 || !Number.isFinite(unpacked) || unpacked<=0) { console.error('npm pack reported no size'); process.exit(1); }
+    process.stdout.write(size+' '+unpacked);
   });
 ")" || {
   echo "FAIL [G4] could not read the packed tarball size" >&2
   gate_fail
 }
-if [[ "$TARBALL_SIZE" -gt 819200 ]]; then
-  echo "FAIL [G4] packed tarball is ${TARBALL_SIZE} bytes — exceeds the 800 kB budget" >&2
+read -r TARBALL_SIZE UNPACKED_SIZE <<<"$SIZES"
+# Plan budgets (the same numbers scripts/check-budgets.mjs enforces in G9; install size <= 7 MB is measured there):
+# tarball <= 800 KiB, unpacked <= 3 MiB. The tarball includes the .map files (shipped on purpose, see G5b).
+if [[ "${TARBALL_SIZE:-0}" -gt 819200 ]]; then
+  echo "FAIL [G4] packed tarball is ${TARBALL_SIZE} bytes — exceeds the 800 KiB budget" >&2
   gate_fail
 fi
-# Fallback: just check dist size
-DIST_SIZE=$(du -k "$CLI_DIR/dist" | tail -1 | cut -f1)
-if [[ "$DIST_SIZE" -gt 2600 ]]; then
-  echo "FAIL [G4] dist/ is ${DIST_SIZE}KB — exceeds 2.6MB sanity ceiling" >&2
+if [[ "${UNPACKED_SIZE:-0}" -gt 3145728 ]]; then
+  echo "FAIL [G4] unpacked package is ${UNPACKED_SIZE} bytes — exceeds the 3 MiB budget" >&2
   gate_fail
 fi
-echo "PASS [G4] dist size ${DIST_SIZE}KB, packed tarball ${TARBALL_SIZE} bytes within limits"
+echo "PASS [G4] packed tarball ${TARBALL_SIZE} bytes (<= 819200), unpacked ${UNPACKED_SIZE} bytes (<= 3145728)"
 
 # Gate 5: checksum-manifest.json must exist (gen-checksum-manifest.mjs onSuccess)
 if [[ ! -f "$CLI_DIR/dist/checksum-manifest.json" ]]; then

@@ -158,10 +158,9 @@ jobs:
           TARBALL: ${{ needs.build.outputs.tarball }}
           EXPECTED_SHA256: ${{ needs.build.outputs.sha256 }}
         run: |
-          case "$TARBALL" in
-            agenticcli-shipguard-*.tgz) ;;
-            *) echo "::error::unexpected tarball name"; exit 1 ;;
-          esac
+          # exact basename: the tag names the version, so the tarball name is fully determined
+          test "$TARBALL" = "agenticcli-shipguard-${GITHUB_REF_NAME#v}.tgz" \
+            || { echo "::error::unexpected tarball name"; exit 1; }
           case "$EXPECTED_SHA256" in
             *[!0-9a-f]*|"") echo "::error::bad expected sha256"; exit 1 ;;
           esac
@@ -261,10 +260,9 @@ jobs:
         env:
           TARBALL: ${{ needs.build.outputs.tarball }}
         run: |
-          case "$TARBALL" in
-            agenticcli-shipguard-*.tgz) ;;
-            *) echo "::error::unexpected tarball name"; exit 1 ;;
-          esac
+          # exact basename: the tag names the version, so the tarball name is fully determined
+          test "$TARBALL" = "agenticcli-shipguard-${GITHUB_REF_NAME#v}.tgz" \
+            || { echo "::error::unexpected tarball name"; exit 1; }
           mkdir -p "$RUNNER_TEMP/release-facts"
           bash scripts/release-facts.sh emit --tag "$GITHUB_REF_NAME" \
             --tarball "$RUNNER_TEMP/tarball/$TARBALL" --out "$RUNNER_TEMP/release-facts/release-facts.json"
