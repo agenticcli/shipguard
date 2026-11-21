@@ -2,7 +2,7 @@
 
 **The security scanner your coding agent runs before every commit. On your machine. Flat price, no seats.**
 
-Same code, same answer: same diff, same verdict, a real exit code your agent can read.
+Review code with a rulebook to build secure code. Same code, same answer: same diff, same verdict, a real exit code your agent can read.
 
 Checks for leaked secrets, auth gaps, payment webhook risks, destructive migrations, and deployment misconfigurations — before your code ships.
 
@@ -35,6 +35,8 @@ shipguard scan --pro      # Download the full current rulebook for this scan (ne
 shipguard login           # Sign in to run rulebook scans
 shipguard init            # Generate .shipguard.yml policy file
 shipguard hook            # Install the hook at the merge boundary (git / claude / ci)
+shipguard setup           # Set up the gate for your agent (--dry-run lists every file first)
+shipguard uninstall       # Remove what setup wrote and name what stays
 shipguard schema --json   # The machine-readable contract: verdict values, exit codes, limits
 ```
 
@@ -51,7 +53,7 @@ shipguard hook --target ci        # GitHub Actions verdict job
 
 Copy-paste snippets for `AGENTS.md`, `CLAUDE.md` and CI: [docs/placement-kit.md](docs/placement-kit.md).
 
-The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below).
+The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below), plus a signed-out terminal scan may ask once a week for public rule counts for your stack names (names only, no code; never in hooks, CI, quiet or safe mode). Prices and plan details are not listed here: see `shipguard status` and https://agenticcli.dev/pricing.
 
 ## Exit codes
 
@@ -80,7 +82,7 @@ when you want that truthful verdict to actually stop something.
 
 ### What was actually scanned
 
-Every `--json` result (schemaVersion 6) has a `coverage` object: files discovered, scanned,
+Every `--json` result (schemaVersion 7) has a `coverage` object: files discovered, scanned,
 and skipped, with the reason for each skip (real binary, too large, symlink, unknown binary,
 invalid text, unreadable, special file), plus text read as UTF-16 or with stray NUL bytes
 turned into spaces. Real binaries (images, fonts, archives) are counted and are not a
@@ -94,7 +96,7 @@ outside the ASCII reading, compressed archives, and string tables inside ELF, PE
 
 ## Telemetry
 
-**The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below).** Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run ping is never sent in CI). A scan ping carries 11 keys: `schema` (`4`), `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket`, `ci`, and three about how ShipGuard was run: `agent` (`claude_code`, `codex`, `cursor`, `gemini_cli`, `copilot`, `opencode`, `other_agent` or `none`, from the variables the agent itself sets in your environment; only the label is sent, never a value), `interactive` (is the output a terminal) and `output` (`json`, `human` or `sarif`). Pings go to `agenticcli.dev/api/cli-telemetry` (host agenticcli.dev). Every `--json` result shows `"telemetry": "on"` or `"off"`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
+**The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below).** Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run ping is never sent in CI). A scan ping carries 12 keys: `schema` (`5`), `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket`, `ci`, and four about how ShipGuard was run: `agent` (`claude_code`, `codex`, `cursor`, `gemini_cli`, `copilot`, `opencode`, `other_agent` or `none`, from the variables the agent itself sets in your environment; only the label is sent, never a value), `interactive` (is the output a terminal) `output` (`json`, `human` or `sarif`) and `gateKind` (`claude`, `git`, `ci` or `none`: which gate ran the scan). Pings go to `agenticcli.dev/api/cli-telemetry` (host agenticcli.dev). Every `--json` result shows `"telemetry": "on"` or `"off"`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
 
 Before the first ping on a machine, ShipGuard prints a one-line notice to stderr (in every mode, including `--json` and CI, so stdout stays clean). Turn pings off any of these ways:
 

@@ -1,4 +1,4 @@
-# Advisories the release gate (packages/cli/scripts/check-audit.mjs) lets through. One per line:
+# Advisories the release checks (packages/cli/scripts/check-audit.mjs) lets through. One per line:
 #   GHSA-id | reason | expiry date (YYYY-MM-DD)
 # An entry with no reason or an expired date is ignored by the gate, so the release then stops until someone decides again.
 # Empty on purpose: GHSA-fc5q-39xc-vjpf (picomatch) was withdrawn by GitHub on 2026-11-18 and `npm audit` no longer reports it;
