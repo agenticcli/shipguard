@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { Finding, ScanResult } from '@agenticcli/shared'
+import { occurrenceKey } from './outcome.js'
 
 // SARIF 2.1.0 — https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
 // Emitted by `shipguard scan --sarif` for GitHub Code Scanning interop.
@@ -84,6 +85,8 @@ function buildResults(findings: Finding[]): object[] {
       ],
       partialFingerprints: {
         primary: fingerprint(f),
+        // The one finding key of the 0.13 contract (rule id + file): same value as `occurrence` in --json.
+        occurrence: occurrenceKey(f.id, f.file),
       },
     }
   })
@@ -107,7 +110,7 @@ export interface SarifResultEntry {
       region: { startLine: number }
     }
   }>
-  partialFingerprints: { primary: string }
+  partialFingerprints: { primary: string; occurrence: string }
 }
 
 export interface SarifLog {

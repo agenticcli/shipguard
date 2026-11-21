@@ -74,6 +74,9 @@ export function mapProFetchCode(code: string, message = ''): ErrorCode {
       return /not authenticated|login/i.test(message) ? 'LOGIN_REQUIRED' : 'TOKEN_EXPIRED'
     case 'RATE_LIMITED':
       return 'RATE_LIMITED'
+    // The 0.12 credit-balance refusal: the server withheld the rulebook (no credit wording in 0.13).
+    case 'INSUFFICIENT_CREDITS':
+      return 'RULEBOOK_WITHHELD'
     case 'NO_RULES_APPLIED':
       return 'NO_RULES_APPLIED'
     // SERVER_ERROR, BUNDLE_INVALID, NO_ACTIVE_RELEASE, PLATFORM_UNAVAILABLE, FRESHNESS_EXPIRED and anything

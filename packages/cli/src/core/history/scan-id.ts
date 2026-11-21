@@ -3,7 +3,7 @@ import { relative } from 'node:path'
 import type { Policy } from '@agenticcli/shared'
 import { DEFAULT_SCAN_ID_REUSE_WINDOW_MINUTES, SCAN_ID_REUSE_WINDOW_ENV_VAR } from '@agenticcli/shared'
 import { resolveHistoryPath } from './path.js'
-import { resolveRepoIdentity, resolveContentIdentity } from './identity.js'
+import { resolveRepoIdentity, resolveContentIdentity, resolveListingIdentity } from './identity.js'
 import { HistoryStore } from './store.js'
 import { logger } from '../../utils/logger.js'
 
@@ -43,9 +43,10 @@ export interface ScanIdReuseKeyInput {
   categories: string[]
   /** Effective ignore-paths list (policy `ignore.paths`, normalized). */
   ignorePaths: string[]
-  /** Whether `--pro` was REQUESTED this run (not whether it ends up applying — that is an
-   * outcome unknown at reuse-key-computation time, unlike fingerprint.ts's `proApplied`). */
-  proRequested: boolean
+  /** Whether the full rulebook was REQUESTED this run (an explicit `--pro`, or the signed-in default
+   * that asks for it; not whether it ends up applying — that is an outcome unknown at reuse-key-
+   * computation time, unlike fingerprint.ts's `proApplied`). */
+  rulebookRequested: boolean
   /**
    * Detected framework names for this scan (e.g. `['nextjs','prisma']`) — request metadata,
    * NOT source bytes (no privacy impact). These select WHICH Pro rule bundle the server builds
@@ -75,7 +76,7 @@ export function computeScanIdReuseKey(input: ScanIdReuseKeyInput): string {
     mode: input.changedOnly ? 'changed' : 'full',
     categories: [...input.categories].map((c) => c.trim().toLowerCase()).filter(Boolean).sort(),
     ignorePaths: [...input.ignorePaths].map((p) => p.trim()).filter(Boolean).sort(),
-    proRequested: input.proRequested,
+    rulebookRequested: input.rulebookRequested,
     // Sorted so listing order never affects the key; a changed framework set → fresh scanId.
     frameworks: [...input.frameworks].map((f) => f.trim().toLowerCase()).filter(Boolean).sort(),
     content: input.contentIdentity,
@@ -90,7 +91,8 @@ export interface ResolveScanIdInput {
   cliVersion: string
   changedOnly: boolean
   categories: string[]
-  proRequested: boolean
+  /** The full rulebook was requested this run (see ScanIdReuseKeyInput.rulebookRequested). */
+  rulebookRequested: boolean
   /** Detected framework names (see ScanIdReuseKeyInput.frameworks — selects the paid bundle). */
   frameworks: string[]
 }
@@ -129,7 +131,7 @@ export function resolveScanIdReuseWindowMs(policy: Pick<Policy, 'history'>): num
  * before this feature existed.
  */
 export async function resolveScanId(input: ResolveScanIdInput): Promise<ResolveScanIdResult> {
-  const { cwd, policy, cliVersion, changedOnly, categories, proRequested, frameworks } = input
+  const { cwd, policy, cliVersion, changedOnly, categories, rulebookRequested, frameworks } = input
 
   try {
     const historyPath = resolveHistoryPath(cwd, policy)
@@ -141,18 +143,26 @@ export async function resolveScanId(input: ResolveScanIdInput): Promise<ResolveS
     const historyRelPath = relative(cwd, historyPath).replace(/\\/g, '/')
     const excludePrefixes = ['.shipguard/', historyRelPath]
 
-    // No resolvable git HEAD → no safe content identity → do not attempt reuse at all.
-    const contentIdentity = resolveContentIdentity(cwd, excludePrefixes)
+    // Resolve the repo identity FIRST: in a non-git folder it creates ShipGuard's own `.shipguard/repo-id` and
+    // `.gitignore` line, and those must exist before the content identity is taken or the second run would
+    // see them as "changed files" and never reuse (the same run does this later in the history record anyway).
+    const identity = resolveRepoIdentity(cwd)
+
+    // Git identity first (HEAD + dirty paths). With no resolvable git HEAD (not a git repo, no commits yet)
+    // fall back to a local folder-listing identity (paths, sizes, mtimes; never file contents) so a re-run in
+    // a non-git folder still reuses its scan id and a gate re-run is never counted twice. Neither available
+    // (folder too big to list) → do not attempt reuse at all.
+    const contentIdentity =
+      resolveContentIdentity(cwd, excludePrefixes) ?? resolveListingIdentity(cwd, excludePrefixes)
     if (!contentIdentity) {
       return { scanId: randomUUID(), scanIdReused: false }
     }
 
-    const identity = resolveRepoIdentity(cwd)
     const reuseKey = computeScanIdReuseKey({
       changedOnly,
       categories,
       ignorePaths: policy.ignore.paths,
-      proRequested,
+      rulebookRequested,
       frameworks,
       contentIdentity,
     })
