@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import YAML from 'yaml'
 import { setExitCode } from '../utils/exit.js'
+import { isSafeMode } from '../core/telemetry-config.js'
 import { logger } from '../utils/logger.js'
 import {
   DEFAULT_GATE_TIMEOUT_SECONDS,
@@ -124,7 +125,7 @@ function defaultDeps(): GateDeps {
     // The child scan reports which gate asked (usage ping field gateKind: claude | git | ci); Codex and Cursor use git hooks.
     runScan: ({ dir, budgetMs, host }) => runScanChild({ cliEntry, dir, budgetMs, host: host === 'codex' || host === 'cursor' ? 'git' : host }),
     gapLine: () => null,
-    isSafeMode: () => process.env.SHIPGUARD_SAFE_MODE === '1',
+    isSafeMode: () => isSafeMode(),
   }
 }
 

@@ -54,9 +54,12 @@ describe('OpenVEX statement (docs/security/shipguard.openvex.json)', () => {
     const reachable = patterns.some((p) => p.includes(hostile))
     const st = vex.statements.find((s: { vulnerability: { name: string } }) => s.vulnerability.name === 'GHSA-fc5q-39xc-vjpf')
     expect(st).toBeTruthy()
-    // Open route -> the file must not claim "not affected". Closed route -> the claim is allowed (and expected).
-    expect(st.status).toBe(reachable ? 'under_investigation' : 'not_affected')
-    if (st.status === 'not_affected') expect(st.justification).toBe('vulnerable_code_cannot_be_controlled_by_adversary')
+    // The route is closed (W3 escapes both values), so the statement is not_affected and names its evidence.
+    // If the route ever reopens, this fails until the statement is set back to under_investigation.
+    expect(reachable).toBe(false)
+    expect(st.status).toBe('not_affected')
+    expect(st.justification).toBe('vulnerable_code_cannot_be_controlled_by_adversary')
+    expect(st.status_notes).toContain('tests/gate/ignore-escape.test.ts')
   })
 })
 
