@@ -29,7 +29,7 @@ shipguard scan
 
 `npm install` without `-g` does not put `shipguard` on your PATH. Use `npx @agenticcli/shipguard` or the global install.
 
-## 4. Make it stop a release
+## 4. Make it stop a bad push
 
 ShipGuard informs; you choose whether it blocks. Add `--strict` to make it exit `1` when the verdict is blocking:
 
@@ -37,15 +37,17 @@ ShipGuard informs; you choose whether it blocks. Add `--strict` to make it exit 
 shipguard scan --strict
 ```
 
-Or let ShipGuard install a hook for you:
+Or let ShipGuard set up the gate for your agent:
 
 ```bash
-shipguard hook                    # git pre-push and pre-merge-commit hooks
-shipguard hook --target claude    # Claude Code hook
-shipguard hook --target ci        # GitHub Actions workflow
+shipguard setup --dry-run         # see every file it would write; nothing is written
+shipguard setup --agent claude    # Claude Code hook + CLAUDE.md block
+shipguard setup --agent codex     # AGENTS.md block + git hooks (Cursor too)
+shipguard setup --agent ci        # GitHub Actions workflow
+shipguard uninstall               # take it out again
 ```
 
-More on each option in [CI and agent setup](ci-setup.md).
+What each option can and cannot stop is in [CI and agent setup](ci-setup.md#setup-and-uninstall).
 
 ## 5. Fix findings
 
