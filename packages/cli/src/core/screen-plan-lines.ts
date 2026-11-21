@@ -1,5 +1,5 @@
 /**
- * plan-lines.ts: the Free-to-Pro lines of the scan screen (spec 05), built from ONE verified plan block.
+ * screen-plan-lines.ts: the Free-to-Pro lines of the scan screen (spec 05), built from ONE verified plan block.
  *
  * HARD RULE: no plan fact lives here. Every number, plan name, area and the offer wording comes from
  * the server block (`PlanServerBlock`, W1a verifies it before it gets here). The words around a server

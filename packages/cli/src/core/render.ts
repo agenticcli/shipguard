@@ -6,7 +6,7 @@
  * the bytes are the same piped or on a terminal, except colour). No new dependencies.
  *
  * The screen (spec 01): line 1 of stdout is the verdict; at most 25 lines; no box art, no emoji, no
- * bar charts, no tips. Plan facts never appear here: the Free-to-Pro lines come from plan-lines.ts
+ * bar charts, no tips. Plan facts never appear here: the Free-to-Pro lines come from screen-plan-lines.ts
  * and are built from the one verified server block.
  */
 
@@ -21,8 +21,11 @@ import { effectiveRecommendation, VERDICT_WORDS } from './verdict.js'
 import { fixGuidance, firstSentence, orderFindings, realStacks, stackDisplayName } from './fix-guidance.js'
 import type { NotScannedSummary, NotScannedEntry } from './not-scanned.js'
 import type { GateState, NextAgent } from './screen-context.js'
-import { bundledRulesMeta } from './bundled-rules.js'
-import { logger } from '../utils/logger.js'
+import { generalRulesText, rulesRanLines } from './rules-ran.js'
+import type { RulesRan } from './rules-ran.js'
+export { rulesRanLines } from './rules-ran.js'
+export type { RulesRan } from './rules-ran.js'
+export { generalRuleCountOrNull } from './general-rule-count.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -202,13 +205,6 @@ export function shouldShowProgress(gates: ProgressGates): boolean {
 // The scan screen (spec 01)
 // ---------------------------------------------------------------------------
 
-/** What rules ran in this scan (the `Rules ran:` line and the fallback sentence under the header). */
-export type RulesRan =
-  | { kind: 'general' }
-  | { kind: 'rulebook'; label?: string | null; count: number }
-  | { kind: 'partial'; count: number }
-  | { kind: 'fallback'; code: 'RULEBOOK_WITHHELD' | 'RULEBOOK_UNREACHABLE' | 'PLAN_INACTIVE'; serverText?: string | null }
-
 export interface NextContext {
   /** The agent running the scan, else repo signals; null = none. */
   agent: NextAgent | null
@@ -238,7 +234,7 @@ export interface ScanScreenInput {
   rulesRan?: RulesRan
   notScanned?: NotScannedSummary
   next?: NextContext
-  /** Free-to-Pro lines already decided by plan-lines.ts; printed after `Rules ran:`. */
+  /** Free-to-Pro lines already decided by screen-plan-lines.ts; printed after `Rules ran:`. */
   planLines?: readonly string[]
   /** Name of the plan for the `[<plan> rule]` tag; null = `[rulebook rule]`. */
   planLabel?: string | null
@@ -256,23 +252,6 @@ export interface ScanScreenInput {
 
 const DEFAULT_RERUN = 'shipguard scan --strict'
 
-/**
- * The number of bundled general rules, counted at run time (never typed in text). If the bundle cannot
- * be read the number is left out of the text (the line then says "general rules") and one warning is
- * logged: the scan itself would already have failed loudly on a broken bundle.
- */
-export function generalRuleCountOrNull(): number | null {
-  try {
-    return bundledRulesMeta().ruleCount
-  } catch (err) {
-    logger.warn(`Could not count the bundled general rules (${err instanceof Error ? err.message : String(err)}); the count is left out of the output.`)
-    return null
-  }
-}
-
-function generalRulesText(n: number | null): string {
-  return n === null ? 'general rules' : `${n} general rules`
-}
 
 function formatElapsed(ms: number): string {
   return `${(Math.max(0, ms) / 1000).toFixed(1)}s`
@@ -306,7 +285,9 @@ function tokens(text: string): string[] {
 export function wrapLine(line: string, columns: number | null | undefined): string[] {
   if (columns == null) return [line]
   const width = Math.min(100, Math.max(60, columns))
-  if (line.length <= width) return [line]
+  // eslint-disable-next-line no-control-regex
+  const visible = (t: string): number => t.replace(/\x1b\[[0-9;]*m/g, '').length
+  if (visible(line) <= width) return [line]
   const lead = /^ */.exec(line)![0]
   const hang = lead + '    '
   const words = tokens(line.slice(lead.length))
@@ -314,7 +295,7 @@ export function wrapLine(line: string, columns: number | null | undefined): stri
   let cur = lead
   for (const w of words) {
     const candidate = cur.trim().length === 0 ? cur + w : `${cur} ${w}`
-    if (candidate.length > width && cur.trim().length > 0) {
+    if (visible(candidate) > width && cur.trim().length > 0) {
       out.push(cur)
       cur = hang + w
     } else cur = candidate
@@ -350,42 +331,6 @@ function rulesCountText(r: RulesRan | undefined, generalRuleCount: number | null
   if (r && r.kind === 'rulebook') return `${r.count} rules`
   if (r && r.kind === 'partial') return `${r.count} rules`
   return generalRulesText(generalRuleCount)
-}
-
-/** The `Rules ran:` line (spec 05) and, for a fallback, the sentence that goes under the header. */
-export function rulesRanLines(r: RulesRan | undefined, generalRuleCount: number | null, terminal = true): { runSentence: string | null; line: string } {
-  const n = generalRulesText(generalRuleCount)
-  if (!r || r.kind === 'general') return { runSentence: null, line: `Rules ran: ${n} (Free).` }
-  if (r.kind === 'rulebook') {
-    const who = r.label && r.label.length > 0 ? `${r.label} rulebook` : 'full rulebook'
-    return { runSentence: null, line: `Rules ran: ${who}, ${r.count} rules.` }
-  }
-  if (r.kind === 'partial') {
-    return {
-      runSentence: 'Only part of the rulebook was provided; the verdict covers the rules that ran.',
-      line: `Rules ran: ${r.count} rules (part of the rulebook).`,
-    }
-  }
-  const line = `Rules ran: ${n} (full rulebook not used).`
-  if (r.code === 'RULEBOOK_UNREACHABLE') {
-    return {
-      runSentence: 'Rulebook could not be reached. This scan ran general rules only; it is not a full rulebook scan. Retry when you are online.',
-      line,
-    }
-  }
-  if (r.code === 'PLAN_INACTIVE') {
-    // Terminal only; hooks, the gate, CI and --quiet print just the Rules ran line.
-    return {
-      runSentence: terminal
-        ? `${r.serverText && r.serverText.length > 0 ? r.serverText : 'Your plan is no longer active.'} This scan ran general rules only; the verdict covers those rules only.`
-        : null,
-      line,
-    }
-  }
-  return {
-    runSentence: `${r.serverText && r.serverText.length > 0 ? r.serverText : 'The rulebook was not provided for this scan.'} This scan ran general rules only; the verdict covers those rules only.`,
-    line,
-  }
 }
 
 function otherReasonPhrase(ns: NotScannedSummary | undefined, input: ScanScreenInput): string {

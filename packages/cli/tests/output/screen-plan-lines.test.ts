@@ -3,7 +3,7 @@
  * Number-free in the CLI: every number, plan name and area below comes from the test's "server" block.
  */
 import { describe, it, expect } from 'vitest'
-import { planLines, type PlanLineContext } from '../../src/core/plan-lines.js'
+import { planLines, type PlanLineContext } from '../../src/core/screen-plan-lines.js'
 import { renderScanScreen } from '../../src/core/render.js'
 import { a1Findings, result } from './_fixtures.js'
 import type { PlanServerBlock } from '../../src/core/plan-types.js'

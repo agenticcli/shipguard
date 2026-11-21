@@ -4,8 +4,8 @@ import { randomUUID } from 'node:crypto'
 import type { Finding, ScanResult } from '@agenticcli/shared'
 import { effectiveRecommendation, VERDICT_WORDS } from './verdict.js'
 import { fixGuidance, orderFindings, fixOrderGroup } from './fix-guidance.js'
-import { rulesRanLines, generalRuleCountOrNull } from './render.js'
-import type { RulesRan } from './render.js'
+import { rulesRanLines } from './rules-ran.js'
+import type { RulesRan } from './rules-ran.js'
 import type { NotScannedSummary } from './not-scanned.js'
 import { assertCwdAlive } from '../utils/cwd-guard.js'
 
@@ -64,7 +64,7 @@ function buildUserMarkdown(result: ScanResult, ctx: ReportContext): string {
   const word = VERDICT_WORDS[rec]
   const incomplete = result.degraded === true
   const rerun = ctx.rerunCommand ?? 'shipguard scan --strict'
-  const n = ctx.generalRuleCount === undefined ? generalRuleCountOrNull() : ctx.generalRuleCount
+  const n = ctx.generalRuleCount ?? null
   const rr = rulesRanLines(ctx.rulesRan, n)
   const rulesLabel =
     ctx.rulesRan && (ctx.rulesRan.kind === 'rulebook' || ctx.rulesRan.kind === 'partial')

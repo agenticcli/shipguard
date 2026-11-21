@@ -9,7 +9,7 @@ import type {
   StateStatus,
 } from '@agenticcli/shared'
 import { relative } from 'node:path'
-import { generalRuleCountOrNull } from '../render.js'
+import { generalRuleCountOrNull } from '../general-rule-count.js'
 import { UNVERSIONED } from './schema.js'
 import { resolveHistoryPath } from './path.js'
 import { resolveRepoIdentity } from './identity.js'
