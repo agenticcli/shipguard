@@ -5,12 +5,14 @@ name: Release
 # One-time npm setup: package Settings > Trusted publisher > GitHub Actions >
 #   owner agenticcli, repository shipguard, workflow release.yml, environment npm-publish.
 #
-# Three jobs, so that no dependency code ever runs in a job that can publish or write releases:
+# Four jobs, so that no dependency code ever runs in a job that can publish or write releases:
 #   build   - contents: read only, NO id-token. Installs (lifecycle scripts blocked), builds, tests,
 #             packs, uploads the tarball + its sha256. This is the only job that runs dependency code.
 #   publish - id-token: write, environment npm-publish. NO checkout, NO install, NO cache. Downloads the
 #             tarball, checks its sha256 against the build job output, then publishes that tarball.
 #   github-release - contents: write only, runs after publish. Creates the GitHub Release for the tag.
+#   release-facts  - contents: read only, runs after publish. Checks the registry against the built tarball and
+#             emits release-facts.json. Verify + emit only: no secret, no write.
 on:
   push:
     tags:
@@ -63,6 +65,11 @@ jobs:
           ver="$(node -p "require('./packages/cli/package.json').version")"
           test "v$ver" = "$GITHUB_REF_NAME" \
             || { echo "::error::tag $GITHUB_REF_NAME != package.json version v$ver"; exit 1; }
+
+      # W12: before anything is installed or built, tag, package.json, the top CHANGELOG entry (version + date),
+      # CITATION.cff, the OpenVEX product purl and every pinned version in README/docs/REBUILD.md must agree.
+      - name: Release facts agree (fail closed)
+        run: bash scripts/release-facts.sh check --tag "$GITHUB_REF_NAME"
 
       # pnpm 9 runs dependency lifecycle scripts by default; --ignore-scripts blocks them.
       # Nothing in the lockfile needs a build script (esbuild ships prebuilt platform binaries
@@ -221,3 +228,51 @@ jobs:
             flags+=(--generate-notes)
           fi
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" "${flags[@]}"
+
+  # W12: after the publish, prove the registry shows what the build job packed and emit release-facts.json
+  # (version, dates, CHANGELOG entry, tarball size, provenance) as an artifact + job summary. Verify and emit
+  # only: contents: read, no secret, no cross-repo write, no dist-tag change, no dependency code (no install).
+  # The release session then opens the facts PR in agenticcli locally (BUILD-PLAN-0.13 W12); see REBUILD.md.
+  release-facts:
+    name: Verify registry, emit release facts
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the tag (scripts/release-facts.sh and CHANGELOG only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Download tarball + sha256
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: shipguard-tarball
+          path: ${{ runner.temp }}/tarball
+
+      - name: Verify registry and write release-facts.json
+        env:
+          TARBALL: ${{ needs.build.outputs.tarball }}
+        run: |
+          case "$TARBALL" in
+            agenticcli-shipguard-*.tgz) ;;
+            *) echo "::error::unexpected tarball name"; exit 1 ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/release-facts"
+          bash scripts/release-facts.sh emit --tag "$GITHUB_REF_NAME" \
+            --tarball "$RUNNER_TEMP/tarball/$TARBALL" --out "$RUNNER_TEMP/release-facts/release-facts.json"
+
+      - name: Upload release-facts.json
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: release-facts
+          path: ${{ runner.temp }}/release-facts/release-facts.json
+          if-no-files-found: error
+          retention-days: 30
