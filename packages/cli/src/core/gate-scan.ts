@@ -74,15 +74,40 @@ export function resolveCommit(dir: string, name: string): string | null {
   return sha && /^[0-9a-f]{40,64}$/.test(sha) ? sha : null
 }
 
+/** Upper bound for the refs one `--all` / `--mirror` / `--tags` push may name before the gate refuses to guess. */
+export const MAX_PUSHED_REFS = 200
+
+/** The commits of every ref under `prefixes` (deduplicated, labelled by the short ref name); null when there are too many or git fails. */
+export function listRefCommits(dir: string, prefixes: string[]): Array<{ sha: string; label: string }> | null {
+  const names = gitRaw(dir, ['for-each-ref', '--format=%(refname)', ...prefixes])
+  if (names === null) return null
+  const refs = names.split('\n').filter(Boolean)
+  if (refs.length > MAX_PUSHED_REFS) return null
+  const seen = new Set<string>()
+  const out: Array<{ sha: string; label: string }> = []
+  for (const ref of refs) {
+    const sha = resolveCommit(dir, ref)
+    if (!sha) return null
+    if (seen.has(sha)) continue
+    seen.add(sha)
+    out.push({ sha, label: ref.replace(/^refs\/(heads|tags)\//, '') })
+  }
+  return out
+}
+
 /** `HEAD of main`, or `HEAD (detached)`. */
 export function headLabel(dir: string): string {
   const branch = git(dir, ['symbolic-ref', '--short', '-q', 'HEAD'])
   return branch ? `HEAD of ${branch}` : 'HEAD (detached)'
 }
 
-/** Tracked files that differ from HEAD (staged or not). Untracked files are not pushed, so they are not listed. */
-export function uncommittedFiles(dir: string): string[] {
+/**
+ * Tracked files that differ from HEAD (staged or not). Untracked files are not pushed, so they are
+ * not listed. null = git could not say: the state is UNKNOWN, never "clean".
+ */
+export function uncommittedFiles(dir: string): string[] | null {
   const out = gitRaw(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=no'])
+  if (out === null) return null
   if (!out) return []
   return out
     .split('\0')

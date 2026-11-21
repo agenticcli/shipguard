@@ -603,6 +603,75 @@ describe('banned words and plan facts', () => {
   })
 })
 
+describe('review fixes: no false SAFE from a command form the parser does not know', () => {
+  it('a bad cd followed by a launcher, a loop, an if or an eval blocks with NOT_A_PROJECT; the hook cwd is never scanned instead', async () => {
+    const main = mkRepo()
+    let scanned = 0
+    const runScan = async () => { scanned++; return fakeScan()({ dir: main, budgetMs: 1, host: 'claude' }) }
+    for (const command of [
+      'cd "$BAD"; timeout 60 git push',
+      'cd "$BAD" && xargs git push',
+      'cd "$BAD" && stdbuf -o0 git push',
+      'if cd "$BAD"; then git push; fi',
+      'cd "$BAD"; for r in origin; do git push $r main; done',
+      'cd "$BAD"; eval "git push origin main"',
+    ]) {
+      const { deps, out } = mkDeps(main, claudeInput(command, main), { runScan })
+      expect(await runGate({ host: 'claude' }, deps), command).toBe(2)
+      expect(out.stderr, command).toContain('code=NOT_A_PROJECT')
+    }
+    expect(scanned).toBe(0)
+  })
+
+  it('a good cd with the same forms scans the directory the cd names', async () => {
+    const main = mkRepo()
+    const wt = addWorktree(main, 'wt', 'feature')
+    commitFile(wt, 'x.ts', `k = "${SECRET_MARKER}"\n`)
+    for (const command of ['cd ../wt && timeout 60 git push', 'cd ../wt; xargs git push', 'if cd ../wt; then git push; fi', 'cd ../wt && eval "git push origin feature"']) {
+      const { deps, out } = mkDeps(main, claudeInput(command, main))
+      expect(await runGate({ host: 'claude' }, deps), command).toBe(2)
+      expect(out.stderr, command).toContain(`Checked: ${wt} @`)
+    }
+  })
+
+  it('push --all, --mirror and --tags check every pushed ref, not just HEAD', async () => {
+    const main = mkRepo()
+    git(main, 'checkout', '-q', '-b', 'other')
+    commitFile(main, 'x.ts', `k = "${SECRET_MARKER}"\n`)
+    git(main, 'checkout', '-q', 'main')
+    git(main, 'tag', 'v1', 'other')
+    for (const flag of ['--all', '--mirror', '--tags']) {
+      const { deps, out } = mkDeps(main, claudeInput(`git push ${flag} origin`, main))
+      expect(await runGate({ host: 'claude' }, deps), flag).toBe(2)
+      expect(out.stderr, flag).toContain('x.ts')
+    }
+    // a clean repo passes with --all
+    const clean = mkRepo()
+    const ok = mkDeps(clean, claudeInput('git push --all', clean))
+    expect(await runGate({ host: 'claude' }, ok.deps)).toBe(0)
+  })
+
+  it('more refs than the gate will list: it refuses instead of checking only some', async () => {
+    const main = mkRepo()
+    const { deps, out } = mkDeps(main, claudeInput('git push --all', main), { listRefCommits: () => null })
+    expect(await runGate({ host: 'claude' }, deps)).toBe(2)
+    expect(out.stderr).toContain('could not list and check them all')
+    expect(out.stderr).toContain('push the branch you mean by name')
+  })
+
+  it('a working tree that git cannot report is unknown, never "clean"', async () => {
+    const main = mkRepo()
+    const pass = mkDeps(main, claudeInput('git push', main), { uncommittedFiles: () => null })
+    expect(await runGate({ host: 'claude' }, pass.deps)).toBe(0)
+    const ctx = JSON.parse(pass.out.stdout).hookSpecificOutput.additionalContext as string
+    expect(ctx).toContain('Working tree: could not be read')
+    expect(ctx).not.toContain('Working tree: clean')
+    const unreadable = mkDeps(main, claudeInput('git push origin no-such-ref', main), { uncommittedFiles: () => null })
+    expect(await runGate({ host: 'claude' }, unreadable.deps)).toBe(2)
+    expect(unreadable.out.stderr).toContain('code=UNCOMMITTED_CHANGES')
+  })
+})
+
 describe('hardening', () => {
   it('a committed .shipguard folder (a symlinked report file) cannot steer where the scan writes', async () => {
     const main = mkRepo()

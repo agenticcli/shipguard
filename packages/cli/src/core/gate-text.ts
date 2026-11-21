@@ -59,8 +59,8 @@ export interface CheckedInfo {
   sha: string
   /** `HEAD of main`, `incoming feature/x`, `local HEAD of main`. */
   label: string
-  /** Uncommitted tracked files (never scanned by the gate). */
-  workingTree: string[]
+  /** Uncommitted tracked files (never scanned by the gate); null = git could not say. */
+  workingTree: string[] | null
 }
 
 export interface GateTextContext {
@@ -153,7 +153,9 @@ function checkedLine(ctx: GateTextContext): string {
         : ctx.kind === 'ci' ? 'the commit this CI run checks'
           : 'the local commit only (the PR head on GitHub and the merged result are not checked; CI covers those)'
   const wt =
-    c.workingTree.length === 0
+    c.workingTree === null
+      ? ' Working tree: could not be read, so uncommitted files are unknown (they are not checked).'
+      : c.workingTree.length === 0
       ? ''
       : ` Working tree: ${c.workingTree.length} file${c.workingTree.length === 1 ? '' : 's'} changed, not committed (${c.workingTree.slice(0, 3).join(', ')}${c.workingTree.length > 3 ? ', ...' : ''}): a fix there is not ${VERB[ctx.kind].done} until you commit it.`
   return `Checked: ${c.dir} @ ${c.sha.slice(0, 7)} (${c.label}), ${what}.${wt}`
@@ -326,10 +328,13 @@ export function passText(input: PassInput): PassText {
         : `Verdict: REVIEW BEFORE SHIP (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')}, 0 blocking; see ${ctx.reportPath ?? '.shipguard/reports/latest.md'}). ${v.allowed}: only blocking findings stop ${ctx.kind === 'ci' ? 'the check' : 'a push'}.`,
     )
     if (ctx.kind !== 'ci') {
+      const wt = c?.workingTree
       out.push(
-        c && c.workingTree.length > 0
-          ? `Working tree: ${c.workingTree.length} file${c.workingTree.length === 1 ? '' : 's'} changed, not committed. They are not pushed and were not checked.`
-          : 'Working tree: clean (nothing uncommitted is left out).',
+        wt === null
+          ? 'Working tree: could not be read, so uncommitted files are unknown (they are not checked).'
+          : wt && wt.length > 0
+            ? `Working tree: ${wt.length} file${wt.length === 1 ? '' : 's'} changed, not committed. They are not pushed and were not checked.`
+            : 'Working tree: clean (nothing uncommitted is left out).',
       )
     }
   } else if (ctx.kind === 'merge') {

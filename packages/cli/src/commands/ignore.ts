@@ -71,26 +71,66 @@ function fail(deps: IgnoreDeps, code: string, what: string, fix: string, cause?:
   return { exitCode: 2 }
 }
 
-/** The highest severity known for this rule (and file) from the last gate run or the last report; null when unknown. */
-export function knownSeverity(cwd: string, id: string, file: string | undefined): string | null {
-  const seen: string[] = []
+interface RecordedFinding {
+  id: string
+  file: string
+  severity: string
+}
+
+/** Every finding on record from the last gate run and the last report; onRecord is false when neither exists. */
+function recordedFindings(cwd: string): { onRecord: boolean; list: RecordedFinding[] } {
+  const list: RecordedFinding[] = []
+  let onRecord = false
   const gate = readGateRecord(cwd)
-  for (const f of gate?.findings ?? []) {
-    if (f.id === id && (file === undefined || f.file === file)) seen.push(f.severity.toLowerCase())
+  if (gate) {
+    onRecord = true
+    for (const f of gate.findings ?? []) list.push({ id: f.id, file: f.file, severity: f.severity.toLowerCase() })
   }
-  const reportJson = join(cwd, '.shipguard', 'reports', 'latest.json')
-  if (existsSync(reportJson)) {
+  // latest.json is either the report itself or a pointer (`runJson`) to the run's report file.
+  const reportsDir = join(cwd, '.shipguard', 'reports')
+  const readReport = (file: string, follow: boolean): Array<{ id?: unknown; file?: unknown; severity?: unknown }> | null => {
+    if (!existsSync(file)) return null
     try {
-      const report = JSON.parse(readFileSync(reportJson, 'utf-8')) as { findings?: Array<{ id?: unknown; file?: unknown; severity?: unknown }> }
-      for (const f of report.findings ?? []) {
-        if (f.id === id && (file === undefined || f.file === file) && typeof f.severity === 'string') seen.push(f.severity.toLowerCase())
+      const report = JSON.parse(readFileSync(file, 'utf-8')) as { findings?: Array<{ id?: unknown; file?: unknown; severity?: unknown }>; runJson?: unknown }
+      if (Array.isArray(report.findings)) return report.findings
+      if (follow && typeof report.runJson === 'string') {
+        const target = resolve(reportsDir, report.runJson)
+        // One hop, and only to a report inside this project's reports folder.
+        if (target.startsWith(reportsDir + sep)) return readReport(target, false)
+        return null
       }
+      return follow && typeof report.runJson === 'string' ? null : []
     } catch (err) {
-      logger.warn(`Could not read ${reportJson}: ${err instanceof Error ? err.message : String(err)}`)
+      logger.warn(`Could not read ${file}: ${err instanceof Error ? err.message : String(err)}`)
+      return null
     }
   }
-  if (seen.length === 0) return null
-  return seen.sort((a, b) => SEVERITY_RANK.indexOf(b) - SEVERITY_RANK.indexOf(a))[0]
+  const findings = readReport(join(reportsDir, 'latest.json'), true)
+  if (findings) {
+    onRecord = true
+    for (const f of findings) {
+      if (typeof f.id === 'string' && typeof f.file === 'string' && typeof f.severity === 'string') list.push({ id: f.id, file: f.file, severity: f.severity.toLowerCase() })
+    }
+  }
+  return { onRecord, list }
+}
+
+const highest = (sev: string[]): string | null =>
+  sev.length === 0 ? null : sev.sort((a, b) => SEVERITY_RANK.indexOf(b) - SEVERITY_RANK.indexOf(a))[0]
+
+/** The highest severity known for this rule (and file) from the last gate run or the last report; null when unknown. */
+export function knownSeverity(cwd: string, id: string, file: string | undefined): string | null {
+  return highest(recordedFindings(cwd).list.filter((f) => f.id === id && (file === undefined || f.file === file)).map((f) => f.severity))
+}
+
+/**
+ * What the last run knows about everything under a path (the file itself, or a folder and what is in it).
+ * `known` is false when there is no gate record and no report at all.
+ */
+export function pathSeverity(cwd: string, path: string): { known: boolean; highest: string | null } {
+  const { onRecord, list } = recordedFindings(cwd)
+  const under = list.filter((f) => f.file === path || f.file.startsWith(`${path}/`))
+  return { known: onRecord, highest: highest(under.map((f) => f.severity)) }
 }
 
 /** A path inside the project as a project-relative posix path, or null when it escapes or is the project itself. */
@@ -138,25 +178,35 @@ export async function runIgnore(target: string, opts: IgnoreOptions, deps: Ignor
   }
 
   const terminal = deps.isTerminal()
+  // The critical guard covers BOTH forms: ignoring a file or folder that holds a critical finding
+  // is the same decision as ignoring the finding. Severity not on record = unknown = deny (no terminal).
+  const subject = entry.finding ?? entry.path ?? ''
+  let severity: string | null
+  let known = true
   if (entry.finding !== undefined) {
-    const severity = knownSeverity(cwd, entry.finding, entry.file)
-    if (severity === null || severity === 'critical') {
-      if (!terminal) {
-        return fail(
-          deps,
-          'CONFIRMATION_REQUIRED',
-          severity === 'critical'
-            ? `${entry.finding} is a critical finding, and a critical finding can only be ignored from a terminal, by a person.`
-            : `ShipGuard cannot tell from the last run how severe ${entry.finding} is, so it will not ignore it without a person at a terminal.`,
-          severity === 'critical'
-            ? 'ask the user to run this command themselves in a terminal.'
-            : 'run shipguard scan --strict first so the finding is on record, then run this again; or ask the user to run it in a terminal.',
-        )
-      }
-      if (severity === 'critical' && !(await deps.confirm(`${entry.finding} is CRITICAL. Ignore it anyway? [y/N] `))) {
-        deps.say('Nothing was changed.')
-        return { exitCode: 2 }
-      }
+    severity = knownSeverity(cwd, entry.finding, entry.file)
+    known = severity !== null
+  } else {
+    const p = pathSeverity(cwd, entry.path as string)
+    severity = p.highest
+    known = p.known
+  }
+  if (!known || severity === 'critical') {
+    if (!terminal) {
+      return fail(
+        deps,
+        'CONFIRMATION_REQUIRED',
+        severity === 'critical'
+          ? `${subject} holds a critical finding, and a critical finding can only be ignored from a terminal, by a person.`
+          : `ShipGuard cannot tell from the last run how severe ${entry.finding !== undefined ? subject : `what is in ${subject}`} is, so it will not ignore it without a person at a terminal.`,
+        severity === 'critical'
+          ? 'ask the user to run this command themselves in a terminal.'
+          : 'run shipguard scan --strict first so the findings are on record, then run this again; or ask the user to run it in a terminal.',
+      )
+    }
+    if (severity === 'critical' && !(await deps.confirm(`${subject} holds a CRITICAL finding. Ignore it anyway? [y/N] `))) {
+      deps.say('Nothing was changed.')
+      return { exitCode: 2 }
     }
   }
 

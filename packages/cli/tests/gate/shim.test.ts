@@ -109,7 +109,7 @@ describe('the files the shim is written to', () => {
 describe('claude shim: the hook sees EVERY Bash command', () => {
   it('a command that names neither git nor gh is not gated: exit 0, silent, ShipGuard never started (and never blocked when it is missing)', async () => {
     const sb = sandbox({ shipguard: 'echo started >> "$LOG"; exit 2' })
-    for (const command of ['ls -la', 'npm test', 'echo "highway weigh"', 'cat digit.txt']) {
+    for (const command of ['ls -la', 'npm test', 'echo highway weigh', 'cat digit.txt', 'node scripts/build.js --flag=1']) {
       const r = await runScript(sb, claudeShimScript(), push(command), { env: { LOG: sb.log } })
       expect(r.code, command).toBe(0)
       expect(r.stderr + r.stdout, command).toBe('')
@@ -128,7 +128,67 @@ describe('claude shim: the hook sees EVERY Bash command', () => {
   })
 })
 
+describe('claude shim: the pre-filter is never narrower than the parser (no way to hide a push from it)', () => {
+  it('quotes, backslashes, variables, substitutions, globs and braces always go to the gate', async () => {
+    for (const command of [
+      "g''it push origin main",
+      'g\\it push origin main',
+      '/usr/bin/g[i]t push',
+      '/usr/bin/g?t push',
+      '/usr/bin/g*t push',
+      'G=git; $G push',
+      '${G:-git} push',
+      '$(echo git) push',
+      '`echo git` push',
+      '{g,x}it push',
+      'echo hi\nls',
+      '"git" push',
+      "'git' push",
+    ]) {
+      const r = await runScript(sandbox(), claudeShimScript(), push(command))
+      expect(r.code, command).toBe(2)
+      expect(lastLine(r.stderr), command).toContain('code=GATE_NOT_STARTED')
+    }
+  })
+
+  it('a command with no such character and no git or gh word is the only thing that is not gated', async () => {
+    for (const command of ['ls -la', 'npm run build', 'echo done']) {
+      expect((await runScript(sandbox(), claudeShimScript(), push(command))).code, command).toBe(0)
+    }
+  })
+})
+
+describe('claude shim: the program that decides comes from the project root, never from the hook cwd', () => {
+  it('a node_modules/.bin/shipguard in the folder the agent is in is NOT run (no code execution, no bypass)', async () => {
+    const sb = sandbox({ shipguard: 'if [ "$2" = --supports ]; then exit 0; fi; echo "SAFE-PATH" >&2; exit 2' })
+    const evil = join(sb.root, 'evil')
+    mkdirSync(join(evil, 'node_modules', '.bin'), { recursive: true })
+    writeFileSync(join(evil, 'node_modules', '.bin', 'shipguard'), `#!/bin/sh\ntouch "${join(sb.root, 'PWNED')}"\nexit 0\n`)
+    chmodSync(join(evil, 'node_modules', '.bin', 'shipguard'), 0o755)
+    const r = await runScript(sb, claudeShimScript(), push('git push', evil))
+    expect(existsSync(join(sb.root, 'PWNED'))).toBe(false)
+    expect(r.code).toBe(2)
+    expect(r.stderr).toContain('SAFE-PATH')
+  })
+
+  it('the project-root binary is used even when the hook cwd is somewhere else', async () => {
+    const sb = sandbox({ local: 'if [ "$2" = --supports ]; then exit 0; fi; echo "$0" > "$LOG"; exit 0' })
+    const elsewhere = join(sb.root, 'elsewhere')
+    mkdirSync(elsewhere)
+    const r = await runScript(sb, claudeShimScript(), push('git push', elsewhere), { env: { LOG: sb.log } })
+    expect(r.code).toBe(0)
+    expect(readFileSync(sb.log, 'utf-8').trim()).toBe(`${sb.work}/node_modules/.bin/shipguard`)
+  })
+})
+
 describe('claude shim: fail closed when ShipGuard cannot run the gate', () => {
+  it('a gate that was stopped (exit 124) is a deadline text, not "could not start"', async () => {
+    const sb = sandbox({ shipguard: 'if [ "$2" = --supports ]; then exit 0; fi; exit 124' })
+    const r = await runScript(sb, claudeShimScript(), push())
+    expect(r.code).toBe(2)
+    expect(lastLine(r.stderr)).toContain('code=GATE_TIMEOUT')
+  })
+
   it('nothing installed: exit 2, GATE_NOT_STARTED text with the fix and the manual removal, the command named', async () => {
     const sb = sandbox()
     const r = await runScript(sb, claudeShimScript(), push('git push origin main'), { path: `${sb.bin}:/usr/bin:/bin` })
@@ -185,7 +245,7 @@ describe('claude shim: fail closed when ShipGuard cannot run the gate', () => {
     expect(readFileSync(only.log, 'utf-8').trim()).toBe(`--yes ${NPX_SPEC} gate --host claude`)
   })
 
-  it('the stdin of the hook reaches the gate, and the gate runs in the directory the hook input names', async () => {
+  it('the stdin of the hook reaches the gate untouched; the gate runs from the project root; the clock and version are exported', async () => {
     const sb = sandbox({ shipguard: 'if [ "$2" = --supports ]; then exit 0; fi; cat > "$LOG"; pwd >> "$LOG"; env | grep ^SHIPGUARD_ >> "$LOG"; exit 0' })
     const elsewhere = join(sb.root, 'elsewhere')
     mkdirSync(elsewhere)
@@ -193,18 +253,12 @@ describe('claude shim: fail closed when ShipGuard cannot run the gate', () => {
     const r = await runScript(sb, claudeShimScript(), input, { env: { LOG: sb.log } })
     expect(r.code).toBe(0)
     const log = readFileSync(sb.log, 'utf-8')
-    expect(log).toContain('"command":"git push"')
-    expect(log).toContain(elsewhere)
+    expect(log).toContain(input)
+    expect(log).toContain(elsewhere) // the gate reads the hook cwd from the JSON itself
+    expect(log).toContain(`${input}${sb.work}\n`)
     expect(log).toMatch(/SHIPGUARD_GATE_START=\d+/)
     expect(log).toContain('SHIPGUARD_HOST_TIMEOUT=180')
     expect(log).toContain('SHIPGUARD_SHIM_VERSION=2')
-  })
-
-  it('a hook input cwd that does not exist falls back to the project folder (never a silent pass)', async () => {
-    const sb = sandbox({ shipguard: 'if [ "$2" = --supports ]; then exit 0; fi; pwd > "$LOG"; exit 0' })
-    const r = await runScript(sb, claudeShimScript(), push('git push', '/no/such/dir'), { env: { LOG: sb.log } })
-    expect(r.code).toBe(0)
-    expect(readFileSync(sb.log, 'utf-8').trim()).toBe(sb.work)
   })
 
   it('a project folder that cannot be entered blocks with NOT_A_PROJECT', async () => {
@@ -223,7 +277,7 @@ describe('claude shim: the clock', () => {
     expect(r.ms).toBeGreaterThanOrEqual(4_500)
     expect(r.ms).toBeLessThan(15_000)
     expect(r.stderr).toContain('did not answer its 5 s startup check')
-    expect(r.stderr).toContain('./node_modules/.bin/shipguard')
+    expect(r.stderr).toContain(`${sb.work}/node_modules/.bin/shipguard`)
     expect(lastLine(r.stderr)).toBe('shipguard-gate: code=GATE_STARTUP_STALLED agentAction=ask_human run=none')
   })
 

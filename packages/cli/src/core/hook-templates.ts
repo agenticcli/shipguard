@@ -75,14 +75,15 @@ function shimBody(opts: ShimOptions): string {
   const hostArgs = claude ? 'gate --host claude' : `gate --host git --hook ${opts.hookName ?? 'pre-push'}`
   const setupAgent = claude ? 'claude' : 'git'
   const cmdLine = claude
-    ? `C=$(sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$IN" | head -n 1); C=\${C%\\\\}; [ -n "$C" ] || C="the git command"`
+    ? `R=$(sed -nE 's/.*"command"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' "$IN" | head -n 1); C=$(printf '%s\\n' "$R" | sed 's/\\\\"/"/g; s/\\\\\\\\/\\\\/g'); [ -n "$C" ] || C="the git command"`
     : `C="git ${opts.hookName === 'pre-merge-commit' ? 'merge' : 'push'}"`
+  // The project root, never the hook's working directory: a local binary is looked up there, so a
+  // folder the agent cd'd into cannot supply the program that decides whether a push is allowed.
   const cdLine = claude
     ? [
-        `D=$(sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$IN" | head -n 1)   # best-effort first guess; \`shipguard gate\` parses the same JSON itself and decides the scan directory (cd X &&, git -C X)`,
-        `cd "\${D:-\${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || cd "\${CLAUDE_PROJECT_DIR:-.}" || { say "SHIPGUARD BLOCKED: \${Q}\${C}\${Q} did not run. The project folder cannot be entered, so nothing was scanned." 'shipguard-gate: code=NOT_A_PROJECT agentAction=fix_and_rerun run=none'; exit 2; }`,
+        `P=$(cd "\${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && pwd) && cd "$P" || { say "SHIPGUARD BLOCKED: \${Q}\${C}\${Q} did not run. The project folder cannot be entered, so nothing was scanned." 'shipguard-gate: code=NOT_A_PROJECT agentAction=fix_and_rerun run=none'; exit 2; }   # \`shipguard gate\` reads the hook cwd from the same JSON and decides the scan directory itself (cd X &&, git -C X)`,
       ]
-    : []
+    : [`P=$(pwd)`]
   const removal = claude
     ? 'If the user no longer wants the gate, remove it by hand (ShipGuard itself is not available): delete the file .claude/hooks/shipguard-gate.sh and the entry that names it under "hooks" > "PreToolUse" in .claude/settings.json.'
     : `If the user no longer wants the gate, remove it by hand (ShipGuard itself is not available): delete the block between the two "shipguard managed block" lines in the git hook file ${opts.hookName ?? 'pre-push'}.`
@@ -90,12 +91,12 @@ function shimBody(opts: ShimOptions): string {
     `# shipguard-hook v${SHIM_VERSION} (managed by ShipGuard, host ${opts.host}). Manual removal: ${claude ? 'delete this file and the entry naming it in .claude/settings.json' : 'delete this block'}`,
     `IN=$(mktemp 2>/dev/null || echo "\${TMPDIR:-/tmp}/shipguard-in.$$"); trap 'rm -f "$IN"' EXIT; cat > "$IN"   # the hook input (${claude ? 'JSON on stdin: tool_input.command and cwd' : 'the refs git sends on stdin'})`,
     `Q='\`'; say() { printf '%s\\n' "$@" >&2; }`,
+    cmdLine,
     ...(claude
       ? [
-          `grep -Eq '(^|[^A-Za-z0-9_])(git|gh)([^A-Za-z0-9_]|$)' "$IN" || exit 0   # the hook sees EVERY Bash command: one that names neither git nor gh cannot be a push or a merge, so it is not gated (and is never blocked when ShipGuard is missing)`,
+          `if [ -n "$R" ]; then case "$R" in *[\\\\\\$\\\`\\'\\*\\?\\[\\{]*) ;; *) printf '%s\\n' "$R" | grep -Eq '(^|[^A-Za-z0-9_])(git|gh)([^A-Za-z0-9_]|$)' || exit 0;; esac; fi   # the hook sees EVERY Bash command: only a command with no quote, backslash, $, backtick, glob or brace character AND no git or gh word cannot be a push or a merge, so only that is not gated (and never blocked when ShipGuard is missing); anything the shell could rewrite goes to the gate`,
         ]
       : []),
-    cmdLine,
     ...cdLine,
     `SHIPGUARD_HOST_TIMEOUT=${CLAUDE_HOOK_TIMEOUT_SECONDS}; SHIPGUARD_GATE_START=$(date +%s); export SHIPGUARD_HOST_TIMEOUT SHIPGUARD_GATE_START   # ${CLAUDE_HOOK_TIMEOUT_SECONDS} = the hook timeout setup writes to settings.json`,
     `SHIPGUARD_SHIM_VERSION=${SHIM_VERSION}; export SHIPGUARD_SHIM_VERSION`,
@@ -108,14 +109,14 @@ function shimBody(opts: ShimOptions): string {
     `  wait "$p"; rc=$?; kill "$w" 2>/dev/null; return $rc; }`,
     `probe() { bounded "$(cap 5)" "$1" gate --supports >/dev/null 2>&1; rc=$?; case $rc in 124|137|143) STALLED=$1;; esac; return $rc; }   # true only for 0.13+; an older binary is skipped; a binary that hangs costs 5 s at most, is remembered in STALLED and skipped`,
     claude
-      ? `run() { bounded "$(cap ${GATE_DEADLINE_SECONDS})" "$@"; rc=$?; [ "$rc" = 0 ] && exit 0; [ "$rc" = 2 ] && exit 2; }   # no exec: we must see the code. 2 is always a gate block`
-      : `run() { bounded "$(cap ${GATE_DEADLINE_SECONDS})" "$@"; rc=$?; [ "$rc" = 0 ] && exit 0; [ "$rc" = 1 ] && exit 1; }   # no exec: we must see the code. 1 is always a gate block on a git host`,
-    `if   [ -x ./node_modules/.bin/shipguard ] && probe ./node_modules/.bin/shipguard; then run ./node_modules/.bin/shipguard ${hostArgs}`,
+      ? `run() { bounded "$(cap ${GATE_DEADLINE_SECONDS})" "$@"; rc=$?; [ "$rc" = 0 ] && exit 0; [ "$rc" = 2 ] && exit 2; case $rc in 124|137|143) TIMEDOUT=1;; esac; }   # no exec: we must see the code. 2 is always a gate block; a stopped gate is remembered`
+      : `run() { bounded "$(cap ${GATE_DEADLINE_SECONDS})" "$@"; rc=$?; [ "$rc" = 0 ] && exit 0; [ "$rc" = 1 ] && exit 1; case $rc in 124|137|143) TIMEDOUT=1;; esac; }   # no exec: we must see the code. 1 is always a gate block on a git host; a stopped gate is remembered`,
+    `if   [ -x "$P/node_modules/.bin/shipguard" ] && probe "$P/node_modules/.bin/shipguard"; then run "$P/node_modules/.bin/shipguard" ${hostArgs}`,
     `elif command -v shipguard >/dev/null 2>&1 && probe shipguard; then run shipguard ${hostArgs}`,
     `elif command -v npx >/dev/null 2>&1; then run npx --yes ${NPX_SPEC} ${hostArgs}   # download and gate share what is left of the ${GATE_DEADLINE_SECONDS} s`,
     `fi`,
     `# nothing resolved (a ShipGuard older than 0.13 counts as nothing), or a code the gate does not use (127, a crash, 124 or 143 from a stalled or slow step): fail closed, with the text that says why`,
-    `if [ "$(left)" -le 0 ]; then`,
+    `if [ "$(left)" -le 0 ] || [ -n "$TIMEDOUT" ]; then`,
     `  say "SHIPGUARD BLOCKED: \${Q}\${C}\${Q} did not run. The gate did not finish inside its ${GATE_DEADLINE_SECONDS} s deadline (startup checks, download and scan), so nothing was cleared. This is not a finding." \\`,
     `    "Run the check yourself, outside the hook: shipguard scan --strict   (a retry would hit the same deadline on a large repo)" \\`,
     `    "If that scan alone takes longer than ${GATE_DEADLINE_SECONDS} s, or this repo is large: stop and ask the user to raise gate.timeoutSeconds in shipguard.policy.yml, then run shipguard setup --agent ${setupAgent} (it sets the hook timeout to the new value plus 60 s; today ${CLAUDE_HOOK_TIMEOUT_SECONDS} s)." \\`,

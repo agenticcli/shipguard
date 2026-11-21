@@ -19,6 +19,7 @@ import {
   copyReports,
   extractCommit,
   headLabel,
+  listRefCommits,
   parseScanJson,
   removeExtraction,
   repoTopLevel,
@@ -79,7 +80,9 @@ export interface GateDeps {
   repoTopLevel: (dir: string) => string | null
   resolveCommit: (dir: string, name: string) => string | null
   headLabel: (dir: string) => string
-  uncommittedFiles: (dir: string) => string[]
+  uncommittedFiles: (dir: string) => string[] | null
+  /** The commits of every ref under the given ref prefixes; null when git fails or there are too many. */
+  listRefCommits: (dir: string, prefixes: string[]) => Array<{ sha: string; label: string }> | null
   extractCommit: (topLevel: string, sha: string) => string
   removeExtraction: (dest: string) => void
   runScan: (opts: { dir: string; budgetMs: number; host: string }) => Promise<ScanRun>
@@ -115,6 +118,7 @@ function defaultDeps(): GateDeps {
     resolveCommit,
     headLabel,
     uncommittedFiles,
+    listRefCommits,
     extractCommit,
     removeExtraction,
     // The child scan reports which gate asked (usage ping field gateKind: claude | git | ci); Codex and Cursor use git hooks.
@@ -444,13 +448,19 @@ function deadlineBlock(ctx: GateTextContext, seconds: number): JobResult {
 // ---------------------------------------------------------------------------
 
 /** Which commits does this command check? `unreadable` = a named ref could not be read. */
-function pickCommits(job: Job, top: string, deps: GateDeps): { commits: Array<{ sha: string; label: string }> } | { unreadable: true } {
+function pickCommits(job: Job, top: string, deps: GateDeps): { commits: Array<{ sha: string; label: string }> } | { unreadable: true } | { tooMany: true } {
   if (job.shas) return { commits: job.shas }
   const { inv } = job
   const head = deps.resolveCommit(top, 'HEAD')
   const headText = deps.headLabel(top)
   if (inv.kind === 'pr-merge') return head ? { commits: [{ sha: head, label: `local ${headText}` }] } : { unreadable: true }
   if (inv.kind === 'push') {
+    // --all / --mirror / --tags send every ref of that kind: all of them are checked, or the gate refuses.
+    if (inv.allRefs) {
+      const prefixes = inv.allRefs === 'heads' ? ['refs/heads'] : inv.allRefs === 'tags' ? ['refs/tags'] : ['refs/']
+      const listed = deps.listRefCommits(top, prefixes)
+      return listed && listed.length > 0 ? { commits: listed } : { tooMany: true }
+    }
     if (inv.refs.length === 0) return head ? { commits: [{ sha: head, label: headText }] } : { unreadable: true }
     const commits: Array<{ sha: string; label: string }> = []
     for (const ref of inv.refs) {
@@ -495,12 +505,22 @@ async function gateJob(job: Job, host: GateHost, deps: GateDeps): Promise<JobRes
 
   const picked = pickCommits(job, top, deps)
   let commits: Array<{ sha: string; label: string }>
+  if ('tooMany' in picked) {
+    const ctx = toCtx(job, host, null, [], top)
+    return [block(ctx, {
+      code: 'UNKNOWN_OPTION',
+      agentAction: 'fix_and_rerun',
+      what: 'This push sends every branch or tag, and the gate could not list and check them all (git failed, or there are more than 200).',
+      lines: ['Fix: push the branch you mean by name (git push origin <branch>), then run it again.'],
+    })]
+  }
   if ('unreadable' in picked) {
     const changed = deps.uncommittedFiles(top)
     const head = deps.resolveCommit(top, 'HEAD')
-    if (changed.length > 0 || !head) {
+    // Unknown working tree (git status failed) is treated as dirty: never guess HEAD in that case.
+    if (changed === null || changed.length > 0 || !head) {
       const ctx = toCtx(job, host, null, [], top)
-      return [block(ctx, changed.length > 0
+      return [block(ctx, changed === null || changed.length > 0
         ? {
             code: 'UNCOMMITTED_CHANGES',
             agentAction: 'fix_and_rerun',

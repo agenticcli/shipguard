@@ -60,6 +60,41 @@ describe('gate target: which directory the command runs in', () => {
     }
   })
 
+  it('an unknown launcher or a shell construct in front of git keeps the directory state: a bad cd is never forgotten (false SAFE otherwise)', () => {
+    for (const command of [
+      'cd "$BAD"; timeout 60 git push',
+      'cd "$BAD" && xargs git push',
+      'cd "$BAD" && stdbuf -o0 git push',
+      'if cd "$BAD"; then git push; fi',
+      'cd "$BAD"; for r in origin; do git push $r main; done',
+      'cd "$BAD"; eval "git push origin main"',
+      'cd /nonexistent-ok && cd "$BAD" && while true; do git push; done',
+    ]) {
+      const found = parseGateCommand(command, CWD, HOME)
+      expect(found.length, command).toBeGreaterThan(0)
+      for (const inv of found) {
+        expect(inv.dir, command).toBeNull()
+        expect(inv.dirProblem, command).toBeTruthy()
+      }
+    }
+  })
+
+  it('the same forms with a good cd run where the cd says', () => {
+    for (const command of ['cd ../wt && timeout 60 git push', 'cd ../wt; xargs git push', 'if cd ../wt; then git push; fi', 'cd ../wt && eval "git push"']) {
+      const found = parseGateCommand(command, CWD, HOME)
+      expect(found.length, command).toBeGreaterThan(0)
+      expect(found.every((f) => f.dir === '/work/wt'), command).toBe(true)
+    }
+  })
+
+  it('push --all, --mirror and --tags are flagged: the push sends more than the named refs', () => {
+    expect(one('git push --all origin').allRefs).toBe('heads')
+    expect(one('git push --mirror').allRefs).toBe('all')
+    expect(one('git push --tags').allRefs).toBe('tags')
+    expect(one('git push --all --tags').allRefs).toBe('all')
+    expect(one('git push origin main').allRefs).toBeUndefined()
+  })
+
   it('an absolute cd recovers from an earlier unresolved one', () => {
     expect(one('cd "$X" && cd /abs/wt && git push').dir).toBe('/abs/wt')
   })

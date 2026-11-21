@@ -30,6 +30,8 @@ export interface GateInvocation {
   refs: string[]
   /** push: true when the command only deletes remote refs (it sends no commit). */
   deleteOnly: boolean
+  /** push `--all`, `--mirror`, `--tags`: the push sends every ref of that kind, not just the named ones. */
+  allRefs?: 'heads' | 'all' | 'tags'
 }
 
 /** Words that split a command line into separate commands (outside quotes). */
@@ -142,6 +144,8 @@ function splitSegments(input: string): Segment[] {
 
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh'])
 const WRAPPERS = new Set(['sudo', 'command', 'time', 'nice', 'nohup', 'exec', 'builtin', 'env'])
+/** Shell keywords that start a command: `if cd X; then git push; fi`, `do git push`. */
+const KEYWORDS = new Set(['if', 'then', 'else', 'elif', 'do', 'while', 'until', '!'])
 
 const PUSH_VALUE_OPTS = new Set(['-o', '--push-option', '--receive-pack', '--exec', '--repo'])
 const MERGE_VALUE_OPTS = new Set([
@@ -193,13 +197,25 @@ function parseSegment(
       t.shift(); u.shift()
       continue
     }
-    if (WRAPPERS.has(basename(t[0])) && t.length > 1) {
+    if ((WRAPPERS.has(basename(t[0])) || KEYWORDS.has(t[0])) && t.length > 1) {
       t.shift(); u.shift()
       continue
     }
     break
   }
-  const word = basename(t[0])
+  let word = basename(t[0])
+
+  // An unknown launcher in front of git or gh (`timeout 60 git push`, `xargs git push`,
+  // `stdbuf -o0 git push`): the command that runs is the first git or gh word. The directory state
+  // is kept, so a `cd` seen before it still decides where it runs.
+  if (word !== 'cd' && word !== 'pushd' && word !== 'git' && word !== 'gh' && !SHELLS.has(word)) {
+    const k = t.findIndex((x, idx) => idx > 0 && (basename(x) === 'git' || basename(x) === 'gh'))
+    if (k > 0) {
+      t = t.slice(k)
+      u = u.slice(k)
+      word = basename(t[0])
+    }
+  }
 
   if (word === 'cd' || word === 'pushd') {
     // Skip options (-P, -L, --); `-` alone means the previous directory.
@@ -289,9 +305,10 @@ function parseSegment(
   }
 }
 
-function pushRefs(args: string[]): { refs: string[]; deleteOnly: boolean } {
+function pushRefs(args: string[]): { refs: string[]; deleteOnly: boolean; allRefs?: 'heads' | 'all' | 'tags' } {
   const positional: string[] = []
   let deleting = false
+  let allRefs: 'heads' | 'all' | 'tags' | undefined
   let afterDashDash = false
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
@@ -301,6 +318,9 @@ function pushRefs(args: string[]): { refs: string[]; deleteOnly: boolean } {
     }
     if (!afterDashDash && a.startsWith('-')) {
       if (a === '-d' || a === '--delete') deleting = true
+      if (a === '--all' || a === '--branches') allRefs = allRefs === 'all' ? 'all' : 'heads'
+      if (a === '--mirror') allRefs = 'all'
+      if (a === '--tags') allRefs = allRefs === 'heads' || allRefs === 'all' ? 'all' : 'tags'
       if (PUSH_VALUE_OPTS.has(a)) i++
       continue
     }
@@ -327,7 +347,7 @@ function pushRefs(args: string[]): { refs: string[]; deleteOnly: boolean } {
     }
     if (src) refs.push(src)
   }
-  return { refs, deleteOnly: specs.length > 0 && deletes === specs.length }
+  return { refs, deleteOnly: specs.length > 0 && deletes === specs.length, ...(allRefs ? { allRefs } : {}) }
 }
 
 function mergeRefs(args: string[]): string[] {
@@ -366,7 +386,16 @@ export function parseGateCommand(command: string, cwd: string, home: string = pr
   // `git merge --abort` was understood and is not a merge, so it does not come back through here.
   if (out.length === 0 && !state.sawGit && MENTION_RE.test(command)) {
     const kind: GateCommandKind = /\bgh\s+pr\s+merge\b/.test(command) ? 'pr-merge' : /\bmerge\b/.test(command) && !/\bpush\b/.test(command) ? 'merge' : 'push'
-    out.push({ kind, command: command.trim().split('\n')[0].slice(0, 200), dir: resolve(cwd), refs: [], deleteOnly: false })
+    // The directory is the one the `cd` chain left us in; when a cd could not be resolved it stays
+    // null and the gate blocks, it never falls back to the hook cwd.
+    out.push({
+      kind,
+      command: command.trim().split('\n')[0].slice(0, 200),
+      dir: state.dir,
+      ...(state.dir === null ? { dirProblem: state.dirProblem } : {}),
+      refs: [],
+      deleteOnly: false,
+    })
   }
   return out
 }

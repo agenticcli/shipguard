@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { headLabel, repoTopLevel, resolveCommit, extractCommit, removeExtraction, uncommittedFiles } from '../../src/core/gate-scan.js'
+import { headLabel, listRefCommits, repoTopLevel, resolveCommit, extractCommit, removeExtraction, uncommittedFiles } from '../../src/core/gate-scan.js'
 import type { GateDeps } from '../../src/commands/gate.js'
 import type { ScanRun } from '../../src/core/gate-scan.js'
 
@@ -133,6 +133,7 @@ export function mkDeps(cwd: string, stdin: string, over: Partial<GateDeps> = {},
     resolveCommit,
     headLabel,
     uncommittedFiles,
+    listRefCommits,
     extractCommit,
     removeExtraction,
     runScan: fakeScan(),
