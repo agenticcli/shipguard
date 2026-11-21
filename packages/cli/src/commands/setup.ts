@@ -1,4 +1,5 @@
 import { Command } from 'commander'
+import { detectJsonLayout, writeJsonLayout, type JsonLayout } from '../utils/json-layout.js'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -245,9 +246,9 @@ function planClaudeSettings(cwd: string, claudeVersion: string | null): { action
       }
     }
   }
-  const found = raw === null ? null : /^\{[ \t]*\r?\n([ \t]+)\S/.exec(raw)
-  const indent: string | number = found ? found[1] : 2
-  if (raw !== null && !found && raw.trim() !== '{}' && raw.trim() !== '') notes.push(`${label} is rewritten with 2-space indentation (its own layout could not be kept).`)
+  // Keep the file's own layout (indent, compact one-liner, final newline), so uninstall can give it back exactly.
+  const layout: JsonLayout = raw === null ? { indent: '  ', finalNewline: true, crlf: false, recognised: true } : detectJsonLayout(raw)
+  if (!layout.recognised) notes.push(`${label} is rewritten with 2-space indentation (its own layout could not be kept).`)
   const rawHooks = settings['hooks']
   if (rawHooks !== undefined && (typeof rawHooks !== 'object' || rawHooks === null || Array.isArray(rawHooks))) {
     return { action: { path, label, note: '"hooks" is not an object; not changed', status: 'refused', manual: `fix "hooks" in ${label} by hand (it must be an object), then run setup again`, agents: ['claude'] }, notes }
@@ -319,7 +320,7 @@ function planClaudeSettings(cwd: string, claudeVersion: string | null): { action
       label,
       note,
       status,
-      content: JSON.stringify(merged, null, indent) + (raw === null || raw.endsWith('\n') ? '\n' : ''),
+      content: writeJsonLayout(merged, layout),
       entry: { path: toPosix(relative(cwd, path)), kind: 'json-hook', sha256: sha256(JSON.stringify(ours)), version: SHIM_VERSION },
       agents: ['claude'],
     },
