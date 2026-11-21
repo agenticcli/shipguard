@@ -18,6 +18,7 @@ const COMMON = [
   '- Exit 0 means the scan completed: read `recommendation` in the JSON. Exit 1 means blocked: fix each finding with `blocking: true`, commit, then scan again.',
   '- If the ShipGuard hook blocks a push or merge, read its message and the last `shipguard-gate:` line. Do not re-run the same command unchanged; fix, commit, retry. After 3 blocks on the same finding, ask the user.',
   '- Never use `--no-verify` and never edit or remove the hook to get past ShipGuard. Ask the user before running `shipguard ignore`.',
+  '- `shipguard status` shows what is installed here and when the gate last ran.',
 ]
 
 /** The managed block for CLAUDE.md (6 lines with its two markers). */
