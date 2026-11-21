@@ -9,6 +9,8 @@
  * the process wait (standard pipe back-pressure), a truncated JSON document is worse.
  */
 import { logger } from './logger.js'
+import { legacyErrorJson, renderErrorTemplate } from '../core/outcome.js'
+import type { ErrorEnvelope } from '../core/outcome.js'
 
 /** Record the exit code. The caller must then return (stop executing); Node exits when output is drained. */
 export function setExitCode(code: number): void {
@@ -70,4 +72,21 @@ export function exitWhenDrained(): void {
   }
   process.stdout.write('', done)
   process.stderr.write('', done)
+}
+
+/**
+ * The ONE error exit for every command (spec 06 template + spec 02 envelope):
+ * the error template on stderr always; with a machine output (`--json`, `--sarif`) the envelope as the one
+ * JSON object on stdout (the 0.12 shape under `--schema-version 6`); then the exit code. The caller must
+ * `return` right after it (see setExitCode).
+ */
+export function emitError(
+  env: ErrorEnvelope,
+  opts: { machine: boolean; legacySchema?: boolean },
+): void {
+  process.stderr.write(`${renderErrorTemplate(env)}\n`)
+  if (opts.machine) {
+    console.log(JSON.stringify(opts.legacySchema ? legacyErrorJson(env) : env))
+  }
+  setExitCode(env.exit.code)
 }
