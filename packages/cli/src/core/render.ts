@@ -16,6 +16,7 @@ import { ensureSecureDir, writeSecureFileSync } from '../utils/secure-fs.js'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { goLink } from './links.js'
+import { isSafeMode } from './telemetry-config.js'
 import type { Finding, ScanResult, Recommendation } from '@agenticcli/shared'
 import { effectiveRecommendation, VERDICT_WORDS } from './verdict.js'
 import { fixGuidance, firstSentence, orderFindings, realStacks, stackDisplayName } from './fix-guidance.js'
@@ -585,6 +586,8 @@ function getShipguardConfigDir(): string {
  * @returns text (non-empty on first call; empty string thereafter)
  */
 export function welcomeBanner(configDir?: string): string {
+  // Safe mode writes nothing under ~/.config (spec 06): no marker, and no banner either.
+  if (isSafeMode()) return ''
   const dir = configDir ?? getShipguardConfigDir()
   const marker = join(dir, '.welcomed')
 
