@@ -49,8 +49,8 @@ describe('gate target: which directory the command runs in', () => {
       'cd $(pwd)/x && git push',
       'cd - && git push',
       'git -C "$DIR" push',
-      'git --git-dir=/x/.git push',
-      'git --work-tree /x push',
+      'git --git-dir=/x/bare.git push',
+      'GIT_DIR=/x/bare.git git push',
       'cd ~other && git push',
       'cd `pwd` && git push',
     ]) {
@@ -92,7 +92,62 @@ describe('gate target: which directory the command runs in', () => {
     expect(one('git push --mirror').allRefs).toBe('all')
     expect(one('git push --tags').allRefs).toBe('tags')
     expect(one('git push --all --tags').allRefs).toBe('all')
+    expect(one("git push origin 'refs/heads/*:refs/heads/*'").allRefs).toBe('heads')
+    expect(one('git push origin refs/tags/*').allRefs).toBe('tags')
+    expect(one('git push origin +refs/*:refs/*').allRefs).toBe('all')
     expect(one('git push origin main').allRefs).toBeUndefined()
+  })
+
+  it('GIT_DIR, GIT_WORK_TREE, --git-dir, --work-tree and env -C name the repository the push acts on (never the hook cwd)', () => {
+    const table: Array<[string, string]> = [
+      ['GIT_DIR=/x/.git git push', '/x'],
+      ['GIT_DIR=../wt/.git git push', '/work/wt'],
+      ['GIT_WORK_TREE=/y GIT_DIR=/x/.git git push', '/y'],
+      ['export GIT_DIR=/x/.git; git push', '/x'],
+      ['GIT_DIR=/x/.git; git push', '/x'],
+      ['git --git-dir=/x/.git push', '/x'],
+      ['git --git-dir /x/.git --work-tree /y push', '/y'],
+      ['env GIT_DIR=/x/.git git push', '/x'],
+      ['env -C ../wt git push', '/work/wt'],
+      ['env --chdir=../wt git push', '/work/wt'],
+      ['env -i -C /abs FOO=1 git push', '/abs'],
+      ['cd /a && env -C b git push', '/a/b'],
+    ]
+    for (const [command, dir] of table) expect(one(command).dir, command).toBe(dir)
+    // env -C applies to that command only
+    const two = parseGateCommand('env -C ../wt git push; git push', CWD, HOME)
+    expect(two.map((x) => x.dir)).toEqual(['/work/wt', '/work/main'])
+    // unset clears it
+    expect(one('export GIT_DIR=/x/.git; unset GIT_DIR; git push').dir).toBe('/work/main')
+  })
+
+  it('floor: a command the parser cannot place is gated as a push of the directory, never waved through', () => {
+    for (const command of [
+      '/usr/bin/g[i]t push origin main',
+      '/usr/bin/g?t push',
+      'G=git; $G push origin main',
+      '$(echo git) push',
+      'eval "g""it push origin main"',
+      'eval "$CMD"',
+      'git p',
+      'git ps origin main',
+      'cd ../wt && $G push',
+    ]) {
+      const found = parseGateCommand(command, CWD, HOME)
+      expect(found.length, command).toBeGreaterThan(0)
+      expect(found[0].kind, command).toBe('push')
+    }
+    expect(one('cd ../wt && $G push').dir).toBe('/work/wt')
+    expect(one('cd "$BAD"; $G push').dir).toBeNull()
+    const split = parseGateCommand('env -S "git push"', CWD, HOME)
+    expect(split).toHaveLength(1)
+    expect(split[0].dir).toBeNull()
+  })
+
+  it('floor: commands that are positively not a push stay silent', () => {
+    for (const command of ['ls -la', 'npm test', 'docker push image', 'git status', 'git stash push', 'git log -3', 'git commit -m x', 'FOO=1 make', '[ -f x ] && echo y', 'echo done', './deploy.sh', 'git --version', 'git']) {
+      expect(parseGateCommand(command, CWD, HOME), command).toEqual([])
+    }
   })
 
   it('an absolute cd recovers from an earlier unresolved one', () => {

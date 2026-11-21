@@ -71,6 +71,8 @@ export interface GateRecord {
   blocking?: Record<string, { id: string; file: string; count: number }>
   /** Compact list of every finding of the last run (id, file, severity), so `shipguard ignore` can tell a critical one. */
   findings?: GateFindingRecord[]
+  /** Files the last run could not scan (too large, unknown binary, ...): the only files an agent may ignore by path without a terminal. */
+  notScanned?: string[]
   /** Findings that a reasoned ignore in the policy suppressed in this run. */
   ignoresUsed?: Array<{ id: string; file: string }>
   rules?: { fallback?: { code: string } | null; receipt?: unknown } | null

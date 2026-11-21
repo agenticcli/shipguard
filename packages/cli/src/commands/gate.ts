@@ -395,6 +395,7 @@ async function scanCommit(
       commit: target.sha,
       run: scan.runId,
       findings: scan.findings.slice(0, 200).map((f) => ({ id: f.id, file: f.file, line: f.line, severity: f.severity, blocking: f.blocking, occurrence: f.occurrence })),
+      notScanned: scan.notScanned.flatMap((n) => (n.file ? [n.file] : [])).slice(0, 500),
       ignoresUsed: parsed.suppressed,
       rules: { fallback: scan.fallbackCode ? { code: scan.fallbackCode } : null, receipt: parsed.receipt },
       plan: { server: { usage: parsed.usageState ? { state: parsed.usageState } : null } },
@@ -459,7 +460,8 @@ function pickCommits(job: Job, top: string, deps: GateDeps): { commits: Array<{ 
     if (inv.allRefs) {
       const prefixes = inv.allRefs === 'heads' ? ['refs/heads'] : inv.allRefs === 'tags' ? ['refs/tags'] : ['refs/']
       const listed = deps.listRefCommits(top, prefixes)
-      return listed && listed.length > 0 ? { commits: listed } : { tooMany: true }
+      // null = git failed or too many refs; an empty list is a push with nothing in it (no tags yet).
+      return listed ? { commits: listed } : { tooMany: true }
     }
     if (inv.refs.length === 0) return head ? { commits: [{ sha: head, label: headText }] } : { unreadable: true }
     const commits: Array<{ sha: string; label: string }> = []

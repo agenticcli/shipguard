@@ -1,14 +1,14 @@
 import { Command } from 'commander'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import YAML from 'yaml'
-import { DEFAULT_POLICY_PATH } from '@agenticcli/shared'
+import { DEFAULT_POLICY_PATH, type Policy } from '@agenticcli/shared'
 import { logger } from '../utils/logger.js'
 import { setExitCode } from '../utils/exit.js'
 import { createPolicyFile, DEFAULT_POLICY } from '../core/policy.js'
 import { readGateRecord } from '../core/gate-state.js'
-import type { IgnoreEntry } from '../core/ignore.js'
+import { buildIgnoreRules, classifyIgnored, type IgnoreEntry } from '../core/ignore.js'
 
 /**
  * `shipguard ignore <finding-id|path> [--file <path>] --reason "<why>"` (spec 03, 04).
@@ -77,42 +77,69 @@ interface RecordedFinding {
   severity: string
 }
 
-/** Every finding on record from the last gate run and the last report; onRecord is false when neither exists. */
-function recordedFindings(cwd: string): { onRecord: boolean; list: RecordedFinding[] } {
-  const list: RecordedFinding[] = []
-  let onRecord = false
+interface Recorded {
+  /** False when there is no gate record and no report at all. */
+  onRecord: boolean
+  list: RecordedFinding[]
+  /** Files the last run named as not scanned (too large, unknown binary, ...). */
+  notScanned: Set<string>
+  /** The earliest time a record was taken (ms); a file changed after it is not covered. null = none. */
+  recordedAtMs: number | null
+}
+
+/** Every finding and unscanned file on record from the last gate run and the last report. */
+function recordedFindings(cwd: string): Recorded {
+  const rec: Recorded = { onRecord: false, list: [], notScanned: new Set(), recordedAtMs: null }
+  const stamp = (ms: number): void => {
+    if (Number.isFinite(ms)) rec.recordedAtMs = rec.recordedAtMs === null ? ms : Math.min(rec.recordedAtMs, ms)
+  }
   const gate = readGateRecord(cwd)
   if (gate) {
-    onRecord = true
-    for (const f of gate.findings ?? []) list.push({ id: f.id, file: f.file, severity: f.severity.toLowerCase() })
+    rec.onRecord = true
+    for (const f of gate.findings ?? []) rec.list.push({ id: f.id, file: f.file, severity: f.severity.toLowerCase() })
+    for (const f of gate.notScanned ?? []) rec.notScanned.add(f)
+    // startedAt, not finishedAt: the earlier time is the stricter one.
+    stamp(Date.parse(gate.startedAt))
   }
   // latest.json is either the report itself or a pointer (`runJson`) to the run's report file.
   const reportsDir = join(cwd, '.shipguard', 'reports')
-  const readReport = (file: string, follow: boolean): Array<{ id?: unknown; file?: unknown; severity?: unknown }> | null => {
+  type ReportJson = {
+    findings?: Array<{ id?: unknown; file?: unknown; severity?: unknown }>
+    runJson?: unknown
+    coverage?: { notScanned?: Array<{ file?: unknown }>; files?: Record<string, unknown> }
+  }
+  const readReport = (file: string, follow: boolean): ReportJson | null => {
     if (!existsSync(file)) return null
     try {
-      const report = JSON.parse(readFileSync(file, 'utf-8')) as { findings?: Array<{ id?: unknown; file?: unknown; severity?: unknown }>; runJson?: unknown }
-      if (Array.isArray(report.findings)) return report.findings
+      const report = JSON.parse(readFileSync(file, 'utf-8')) as ReportJson
+      if (Array.isArray(report.findings)) {
+        stamp(statSync(file).mtimeMs)
+        return report
+      }
       if (follow && typeof report.runJson === 'string') {
         const target = resolve(reportsDir, report.runJson)
         // One hop, and only to a report inside this project's reports folder.
         if (target.startsWith(reportsDir + sep)) return readReport(target, false)
-        return null
       }
-      return follow && typeof report.runJson === 'string' ? null : []
+      return null
     } catch (err) {
       logger.warn(`Could not read ${file}: ${err instanceof Error ? err.message : String(err)}`)
       return null
     }
   }
-  const findings = readReport(join(reportsDir, 'latest.json'), true)
-  if (findings) {
-    onRecord = true
-    for (const f of findings) {
-      if (typeof f.id === 'string' && typeof f.file === 'string' && typeof f.severity === 'string') list.push({ id: f.id, file: f.file, severity: f.severity.toLowerCase() })
+  const report = readReport(join(reportsDir, 'latest.json'), true)
+  if (report) {
+    rec.onRecord = true
+    for (const f of report.findings ?? []) {
+      if (typeof f.id === 'string' && typeof f.file === 'string' && typeof f.severity === 'string') rec.list.push({ id: f.id, file: f.file, severity: f.severity.toLowerCase() })
+    }
+    for (const n of report.coverage?.notScanned ?? []) if (typeof n.file === 'string') rec.notScanned.add(n.file)
+    for (const key of ['tooLarge', 'unknownBinary', 'symlink']) {
+      const names = report.coverage?.files?.[key]
+      if (Array.isArray(names)) for (const n of names) if (typeof n === 'string') rec.notScanned.add(n)
     }
   }
-  return { onRecord, list }
+  return rec
 }
 
 const highest = (sev: string[]): string | null =>
@@ -123,14 +150,56 @@ export function knownSeverity(cwd: string, id: string, file: string | undefined)
   return highest(recordedFindings(cwd).list.filter((f) => f.id === id && (file === undefined || f.file === file)).map((f) => f.severity))
 }
 
+/** A changed file counts as newer than the record only beyond this (file systems round their times). */
+const MTIME_SLACK_MS = 1000
+const MAX_FILES_CHECKED = 5000
+
 /**
  * What the last run knows about everything under a path (the file itself, or a folder and what is in it).
- * `known` is false when there is no gate record and no report at all.
+ *   critical: a critical finding is on record under it
+ *   safe:     EVERY file under it is covered by the record (it has a recorded finding, or the run named
+ *             it as not scanned), none is critical, and none changed after the record was taken
+ *   unknown:  anything else: no record, a file with nothing on record (never scanned, or clean), a file
+ *             newer than the record, too many files to check. Unknown is never safe.
+ * Files that are ignored by default (node_modules, build output, ShipGuard's own folder) are not scanned
+ * by design and do not count.
  */
-export function pathSeverity(cwd: string, path: string): { known: boolean; highest: string | null } {
-  const { onRecord, list } = recordedFindings(cwd)
-  const under = list.filter((f) => f.file === path || f.file.startsWith(`${path}/`))
-  return { known: onRecord, highest: highest(under.map((f) => f.severity)) }
+export function pathSeverity(cwd: string, path: string): { state: 'critical' | 'safe' | 'unknown' } {
+  const rec = recordedFindings(cwd)
+  if (!rec.onRecord || rec.recordedAtMs === null) return { state: 'unknown' }
+  const under = rec.list.filter((f) => f.file === path || f.file.startsWith(`${path}/`))
+  if (under.some((f) => f.severity === 'critical')) return { state: 'critical' }
+  const covered = new Set<string>([...under.map((f) => f.file), ...rec.notScanned])
+  const defaults = buildIgnoreRules({ ignore: { paths: [] } } as unknown as Policy)
+  const files: string[] = []
+  const walk = (rel: string): boolean => {
+    if (files.length > MAX_FILES_CHECKED) return false
+    let st
+    try {
+      st = lstatSync(join(cwd, rel))
+    } catch {
+      return false
+    }
+    if (classifyIgnored(rel, defaults)) return true
+    if (st.isDirectory()) {
+      let names: string[]
+      try {
+        names = readdirSync(join(cwd, rel))
+      } catch {
+        return false
+      }
+      return names.every((n) => walk(`${rel}/${n}`))
+    }
+    files.push(rel)
+    return true
+  }
+  if (!walk(path)) return { state: 'unknown' }
+  if (files.length > MAX_FILES_CHECKED || files.length === 0) return { state: 'unknown' }
+  for (const f of files) {
+    if (!covered.has(f)) return { state: 'unknown' }
+    if (lstatSync(join(cwd, f)).mtimeMs > rec.recordedAtMs + MTIME_SLACK_MS) return { state: 'unknown' }
+  }
+  return { state: 'safe' }
 }
 
 /** A path inside the project as a project-relative posix path, or null when it escapes or is the project itself. */
@@ -181,30 +250,31 @@ export async function runIgnore(target: string, opts: IgnoreOptions, deps: Ignor
   // The critical guard covers BOTH forms: ignoring a file or folder that holds a critical finding
   // is the same decision as ignoring the finding. Severity not on record = unknown = deny (no terminal).
   const subject = entry.finding ?? entry.path ?? ''
-  let severity: string | null
-  let known = true
+  let critical: boolean
+  let known: boolean
   if (entry.finding !== undefined) {
-    severity = knownSeverity(cwd, entry.finding, entry.file)
+    const severity = knownSeverity(cwd, entry.finding, entry.file)
+    critical = severity === 'critical'
     known = severity !== null
   } else {
-    const p = pathSeverity(cwd, entry.path as string)
-    severity = p.highest
-    known = p.known
+    const state = pathSeverity(cwd, entry.path as string).state
+    critical = state === 'critical'
+    known = state !== 'unknown'
   }
-  if (!known || severity === 'critical') {
+  if (!known || critical) {
     if (!terminal) {
       return fail(
         deps,
         'CONFIRMATION_REQUIRED',
-        severity === 'critical'
+        critical
           ? `${subject} holds a critical finding, and a critical finding can only be ignored from a terminal, by a person.`
           : `ShipGuard cannot tell from the last run how severe ${entry.finding !== undefined ? subject : `what is in ${subject}`} is, so it will not ignore it without a person at a terminal.`,
-        severity === 'critical'
+        critical
           ? 'ask the user to run this command themselves in a terminal.'
           : 'run shipguard scan --strict first so the findings are on record, then run this again; or ask the user to run it in a terminal.',
       )
     }
-    if (severity === 'critical' && !(await deps.confirm(`${subject} holds a CRITICAL finding. Ignore it anyway? [y/N] `))) {
+    if (critical && !(await deps.confirm(`${subject} holds a CRITICAL finding. Ignore it anyway? [y/N] `))) {
       deps.say('Nothing was changed.')
       return { exitCode: 2 }
     }

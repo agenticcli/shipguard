@@ -81,7 +81,7 @@ function shimBody(opts: ShimOptions): string {
   // folder the agent cd'd into cannot supply the program that decides whether a push is allowed.
   const cdLine = claude
     ? [
-        `P=$(cd "\${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && pwd) && cd "$P" || { say "SHIPGUARD BLOCKED: \${Q}\${C}\${Q} did not run. The project folder cannot be entered, so nothing was scanned." 'shipguard-gate: code=NOT_A_PROJECT agentAction=fix_and_rerun run=none'; exit 2; }   # \`shipguard gate\` reads the hook cwd from the same JSON and decides the scan directory itself (cd X &&, git -C X)`,
+        `if [ -n "$CLAUDE_PROJECT_DIR" ]; then P=$(cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && pwd) && cd "$P" || { say "SHIPGUARD BLOCKED: \${Q}\${C}\${Q} did not run. The project folder cannot be entered, so nothing was scanned." 'shipguard-gate: code=NOT_A_PROJECT agentAction=fix_and_rerun run=none'; exit 2; }; else P=; fi   # no project folder given: no local binary is used at all (PATH or npx only), the hook cwd is never trusted for one; \`shipguard gate\` reads the hook cwd from the same JSON and decides the scan directory itself`,
       ]
     : [`P=$(pwd)`]
   const removal = claude
@@ -111,7 +111,7 @@ function shimBody(opts: ShimOptions): string {
     claude
       ? `run() { bounded "$(cap ${GATE_DEADLINE_SECONDS})" "$@"; rc=$?; [ "$rc" = 0 ] && exit 0; [ "$rc" = 2 ] && exit 2; case $rc in 124|137|143) TIMEDOUT=1;; esac; }   # no exec: we must see the code. 2 is always a gate block; a stopped gate is remembered`
       : `run() { bounded "$(cap ${GATE_DEADLINE_SECONDS})" "$@"; rc=$?; [ "$rc" = 0 ] && exit 0; [ "$rc" = 1 ] && exit 1; case $rc in 124|137|143) TIMEDOUT=1;; esac; }   # no exec: we must see the code. 1 is always a gate block on a git host; a stopped gate is remembered`,
-    `if   [ -x "$P/node_modules/.bin/shipguard" ] && probe "$P/node_modules/.bin/shipguard"; then run "$P/node_modules/.bin/shipguard" ${hostArgs}`,
+    `if   [ -n "$P" ] && [ -x "$P/node_modules/.bin/shipguard" ] && probe "$P/node_modules/.bin/shipguard"; then run "$P/node_modules/.bin/shipguard" ${hostArgs}`,
     `elif command -v shipguard >/dev/null 2>&1 && probe shipguard; then run shipguard ${hostArgs}`,
     `elif command -v npx >/dev/null 2>&1; then run npx --yes ${NPX_SPEC} ${hostArgs}   # download and gate share what is left of the ${GATE_DEADLINE_SECONDS} s`,
     `fi`,

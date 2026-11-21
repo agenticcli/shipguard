@@ -171,6 +171,22 @@ describe('claude shim: the program that decides comes from the project root, nev
     expect(r.stderr).toContain('SAFE-PATH')
   })
 
+  it('without CLAUDE_PROJECT_DIR no local binary is used at all: PATH shipguard (or npx) only', async () => {
+    const sb = sandbox({
+      local: `touch "${'$'}LOG.local"; if [ "${'$'}2" = --supports ]; then exit 0; fi; exit 0`,
+      shipguard: 'if [ "$2" = --supports ]; then exit 0; fi; echo path >> "$LOG"; exit 0',
+    })
+    const r = await runScript(sb, claudeShimScript(), push('git push'), { env: { CLAUDE_PROJECT_DIR: '', LOG: sb.log } })
+    expect(r.code).toBe(0)
+    expect(existsSync(`${sb.log}.local`)).toBe(false)
+    expect(readFileSync(sb.log, 'utf-8').trim()).toBe('path')
+    // and with nothing else installed it fails closed, it does not pick up ./node_modules/.bin
+    const only = sandbox({ local: 'if [ "$2" = --supports ]; then exit 0; fi; exit 0' })
+    const r2 = await runScript(only, claudeShimScript(), push('git push'), { env: { CLAUDE_PROJECT_DIR: '' } })
+    expect(r2.code).toBe(2)
+    expect(lastLine(r2.stderr)).toContain('code=GATE_NOT_STARTED')
+  })
+
   it('the project-root binary is used even when the hook cwd is somewhere else', async () => {
     const sb = sandbox({ local: 'if [ "$2" = --supports ]; then exit 0; fi; echo "$0" > "$LOG"; exit 0' })
     const elsewhere = join(sb.root, 'elsewhere')

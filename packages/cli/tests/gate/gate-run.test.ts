@@ -651,6 +651,42 @@ describe('review fixes: no false SAFE from a command form the parser does not kn
     expect(await runGate({ host: 'claude' }, ok.deps)).toBe(0)
   })
 
+  it('a repository named by GIT_DIR, --git-dir or env -C is the one checked (the hook cwd is not)', async () => {
+    const main = mkRepo()
+    const bad = mkRepo()
+    commitFile(bad, 'x.ts', `k = "${SECRET_MARKER}"\n`)
+    for (const command of [`GIT_DIR=${bad}/.git git push`, `git --git-dir=${bad}/.git push`, `env -C ${bad} git push`, `env GIT_DIR=${bad}/.git git push`, `export GIT_DIR=${bad}/.git; git push`]) {
+      const { deps, out } = mkDeps(main, claudeInput(command, main))
+      expect(await runGate({ host: 'claude' }, deps), command).toBe(2)
+      expect(out.stderr, command).toContain(`Checked: ${bad} @`)
+    }
+    // a bare git directory has no work tree to check: refuse, never fall back to the hook cwd
+    const { deps, out } = mkDeps(main, claudeInput('GIT_DIR=/nonexistent/bare.git git push', main))
+    expect(await runGate({ host: 'claude' }, deps)).toBe(2)
+    expect(out.stderr).toContain('code=NOT_A_PROJECT')
+  })
+
+  it('floor: a command the parser cannot place is gated as a push of its directory', async () => {
+    const main = mkRepo()
+    commitFile(main, 'x.ts', `k = "${SECRET_MARKER}"\n`)
+    for (const command of ['/usr/bin/g[i]t push origin main', 'G=git; $G push origin main', '$(echo git) push', 'eval "g""it push origin main"', 'git p']) {
+      const { deps, out } = mkDeps(main, claudeInput(command, main))
+      expect(await runGate({ host: 'claude' }, deps), command).toBe(2)
+      expect(out.stderr, command).toContain('Checked:')
+    }
+    // clean repo: the floor passes with a verdict, it is not a block
+    const clean = mkRepo()
+    const ok = mkDeps(clean, claudeInput('G=git; $G push', clean))
+    expect(await runGate({ host: 'claude' }, ok.deps)).toBe(0)
+  })
+
+  it('--tags with no tags is a push with nothing in it: no check, no wrong message', async () => {
+    const main = mkRepo()
+    const { deps, out } = mkDeps(main, claudeInput('git push --tags', main))
+    expect(await runGate({ host: 'claude' }, deps)).toBe(0)
+    expect(out.stderr).not.toContain('could not list')
+  })
+
   it('more refs than the gate will list: it refuses instead of checking only some', async () => {
     const main = mkRepo()
     const { deps, out } = mkDeps(main, claudeInput('git push --all', main), { listRefCommits: () => null })
