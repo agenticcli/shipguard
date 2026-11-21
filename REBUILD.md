@@ -40,7 +40,8 @@ Nothing is sent about your code. Only the usage ping (first row) is on by defaul
 | `src/core/pro-scanner.ts` | `POST <api>/api/rules/fetch` | `scan --pro`: download the signed rules; sends your login token and a scan id, no files |
 | `src/core/auth.ts` | `POST <api>/api/agent/exchange`, `POST <api>/api/auth/device/refresh` | `scan --pro` with an API key or an expired login: get or refresh a token |
 | `src/commands/login.ts` | `POST <api>/api/auth/device`, `POST <api>/api/auth/device/token` | `shipguard login` |
-| `src/commands/status.ts` | `GET <api>/api/user/me` | `shipguard status` |
+| `src/commands/status.ts` | `GET <api>/api/user/me` | `shipguard status`: reads your account and plan; sends your login token, no files |
+| `src/core/offer-cache.ts` | `GET <api>/api/cli/v1/offer?stacks=<names>` | a signed-out scan in a terminal, at most once every 7 days: public rule counts for your detected stack names (names only, no login, no code); `shipguard setup` makes the same request once with no names; never in hooks, the gate, CI, `--quiet`, `--dry-run`, safe mode, with `DO_NOT_TRACK` or tracking off, or when signed in |
 | `src/commands/feedback.ts` | `POST <api>/api/feedback` | `shipguard feedback`, text you type |
 
 `<api>` is `https://agenticcli.dev` unless you set another; calls that carry a token refuse any host that is not https on agenticcli.dev (`src/utils/trust.ts`).

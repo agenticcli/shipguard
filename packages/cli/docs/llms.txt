@@ -1,5 +1,5 @@
 # ShipGuard by AgenticCLI
-> The security scanner your coding agent runs before every commit. One command checks a project for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings. It runs on your machine and gives the same answer every time. Rules come down; your code never goes up.
+> The security scanner your coding agent runs before every commit. One command checks a project for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings. It runs on your machine and gives the same answer every time. Review code with a rulebook to build secure code. Rules come down; your code never goes up.
 
 ShipGuard is not a code reviewer and not a full SAST tool. It uses plain pattern rules (no AI model). It informs: the verdict is in the JSON `recommendation` field (SAFE_TO_SHIP, REVIEW_BEFORE_SHIP, DO_NOT_SHIP). The exit code is 0 whenever the scan completes; add --strict to make it exit 1 on a blocking result.
 
@@ -13,9 +13,11 @@ shipguard scan — scan project for risks
 shipguard scan --changed — scan only changed files (not for CI: a clean checkout has nothing to compare)
 shipguard scan --strict — exit code 1 on a blocking result or an unfinished scan (opt-in hard gate, free on every plan)
 shipguard scan --report — generate Markdown report
-shipguard scan --json — machine-readable output (schemaVersion 6; the `coverage` object says how many files were discovered, scanned and skipped, and why)
+shipguard scan --json — machine-readable output (schemaVersion 7; the `coverage` object says how many files were discovered, scanned and skipped, and why)
 shipguard scan --check-regressions — exit code 1 if a previously-passing rule now fails
 shipguard hook — install a git hook (--target claude or --target ci for Claude Code or GitHub Actions)
+shipguard setup — set up the gate for your agent (claude, codex, cursor, ci); --dry-run lists every file first
+shipguard uninstall — remove what setup wrote and name what stays
 shipguard history — show recent local scan history for this repo (read-only)
 shipguard schema --json — the machine-readable contract: verdicts, exit codes, limits
 

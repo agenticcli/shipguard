@@ -2,7 +2,7 @@
 
 Use the full scan with `--strict` in CI: `npx --yes @agenticcli/shipguard scan --json --strict`. It scans the whole checkout and exits `1` when the verdict is blocking. Do not use `--changed` in CI: on a clean checkout nothing differs from `HEAD`, so it reads no files: the result is degraded `NO_FILES_SCANNED` with `DO_NOT_SHIP` and `--strict` exits `1` (`coverage.changed.nothingToCheck` is `true`, `filesScanned` is `0`). That is never a pass for the project.
 
-`--strict` is free on every plan.
+`--strict` needs no account.
 
 ## GitHub Actions
 
@@ -67,3 +67,28 @@ These tools read an `AGENTS.md` file. Add this block so the agent runs ShipGuard
 ```
 
 Guides: [Codex](https://agenticcli.dev/guides/codex) and [Cursor](https://agenticcli.dev/guides/cursor). Use CI as well: an instruction file asks an agent, CI enforces.
+
+## Setup and uninstall
+
+`shipguard setup` writes the right gate for your agent in one command. It lists every file first, asks you to confirm (an agent running it needs `--yes`), checks the result and tells you what the gate can and cannot stop.
+
+```bash
+shipguard setup --dry-run          # plan only; writes nothing
+shipguard setup --agent claude     # project hook in .claude/settings.json + a managed block in CLAUDE.md
+shipguard setup --agent codex      # a managed block in AGENTS.md + git pre-push and pre-merge-commit hooks
+shipguard setup --agent cursor     # same as Codex (Cursor reads AGENTS.md)
+shipguard setup --agent ci         # .github/workflows/shipguard.yml (Node 22)
+shipguard uninstall --dry-run      # what would be removed and what stays; writes nothing
+shipguard uninstall                # remove it
+```
+
+What each layer can stop:
+
+| Layer | Strength |
+|---|---|
+| Instructions (CLAUDE.md or AGENTS.md block) | Advisory: the agent can ignore them. |
+| Claude Code hook | Blocks `git push`, `git merge` and the GitHub CLI PR merge when run through Claude Code's Bash tool. Checks one commit, not the merged result. Skipped if the hook entry is removed or the host stops the hook. |
+| Git hooks | Block `git push` and local `git merge` for people and agents. Skipped by `--no-verify`. They do not cover the GitHub CLI PR merge, which merges on GitHub. |
+| CI check + branch protection | The only layer nothing local can skip, once branch protection requires the check. |
+
+Setup records what it wrote in `.shipguard/installed.json`. `shipguard uninstall` removes only those files and blocks, leaves anything you edited by hand and names it, and keeps `shipguard.policy.yml` and `.shipguard/` (reports and history; `--purge` deletes them). It does not remove the npm package (`npm uninstall @agenticcli/shipguard`) or your sign-in (`shipguard logout`). `shipguard setup` may fetch one public offer document once (no project data, no login); it skips that when you are signed in, with `DO_NOT_TRACK`, or in safe mode.
