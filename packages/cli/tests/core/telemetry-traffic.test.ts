@@ -38,7 +38,7 @@ describe('SHIPGUARD_TRAFFIC', () => {
     await scan(env({ SHIPGUARD_TRAFFIC: v }))
     await life(env({ SHIPGUARD_TRAFFIC: v }))
     const [a, b] = bodies()
-    expect(a).toMatchObject({ schema: 4, traffic: v })
+    expect(a).toMatchObject({ schema: 5, traffic: v })
     expect(b).toMatchObject({ schema: 3, traffic: v })
     expect(validatePayload(a)).toBe(true)
     expect(validateLifecyclePayload(b)).toBe(true)

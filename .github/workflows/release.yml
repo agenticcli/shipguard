@@ -76,6 +76,8 @@ jobs:
           pnpm run lint
           pnpm test
 
+      # release-gate.sh runs G1-G12: build checks, size/speed/network budgets (G9), npm audit (G10),
+      # picomatch pin (G11) and G-PLAN on the packed CLI (G12). It needs the npm registry (audit).
       - name: Publish build + release gate
         run: |
           pnpm --filter @agenticcli/shipguard run build:publish
@@ -167,6 +169,11 @@ jobs:
             || { echo "::error::tag $GITHUB_REF_NAME != tarball version v$ver"; exit 1; }
 
       # Docs: https://docs.npmjs.com/trusted-publishers
+      # There is deliberately NO `npm dist-tag` step in this workflow. Trusted publishing (OIDC) cannot add or
+      # remove a dist-tag unless the trusted publisher's "Allow npm dist-tag" option is enabled (same doc), and
+      # we keep that option off. `npm publish --tag` below is the only tag this workflow sets (latest for a
+      # release, next for a prerelease). Removing the stale `next` tag, if ever needed, is one owner-approved
+      # command by the release session, not part of this workflow.
       - name: Publish to npm with provenance
         working-directory: ${{ runner.temp }}/tarball
         env:

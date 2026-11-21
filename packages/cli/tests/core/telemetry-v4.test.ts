@@ -1,5 +1,5 @@
 /**
- * Run ping schema 4 (cli-telemetry contract v4): coding-agent label, interactive flag, output kind,
+ * Run ping schema 5 (v4 + gateKind): coding-agent label, interactive flag, output kind,
  * the agenticcli.dev endpoint, and the `telemetry` on/off state. fetch is always stubbed: nothing here
  * can send a real ping.
  */
@@ -24,7 +24,7 @@ import {
 } from '../../src/core/telemetry.js'
 
 const GOOD: TelemetryPayload = {
-  schema: 4,
+  schema: 5,
   eventId: '3f2b6c1e-8a4d-4e0b-9c77-5d1f0a2b3c4d',
   installId: '7b1e4f52-0c3a-4d8e-a1b6-92f3c5d7e801',
   cliVersion: '0.12.0',
@@ -35,6 +35,7 @@ const GOOD: TelemetryPayload = {
   agent: 'none',
   interactive: true,
   output: 'human',
+  gateKind: 'none',
 }
 
 describe('detectAgent (env markers, presence only)', () => {
@@ -74,18 +75,18 @@ describe('detectAgent (env markers, presence only)', () => {
   })
 })
 
-describe('schema 4 payload', () => {
-  it('has exactly the 11 contract keys (+ optional traffic) and nothing else', () => {
+describe('schema 5 payload', () => {
+  it('has exactly the 12 contract keys (+ optional traffic) and nothing else', () => {
     const leaky = { ...GOOD, agentValue: 'claude-code_2-1-322', cwd: '/home/x' } as unknown as TelemetryPayload
     expect(Object.keys(buildPayload(leaky)).sort()).toEqual(
-      ['agent', 'ci', 'cliVersion', 'durationBucket', 'eventId', 'installId', 'interactive', 'output', 'provenance', 'schema', 'verdict'],
+      ['agent', 'ci', 'cliVersion', 'durationBucket', 'eventId', 'gateKind', 'installId', 'interactive', 'output', 'provenance', 'schema', 'verdict'],
     )
     expect(validatePayload(GOOD)).toBe(true)
     expect(validatePayload({ ...GOOD, traffic: 'test' })).toBe(true)
     expect(validatePayload({ ...GOOD, extra: 1 })).toBe(false)
   })
 
-  it.each(['agent', 'interactive', 'output'])('missing %s is rejected', (k) => {
+  it.each(['agent', 'interactive', 'output', 'gateKind'])('missing %s is rejected', (k) => {
     const copy: Record<string, unknown> = { ...GOOD }
     delete copy[k]
     expect(validatePayload(copy)).toBe(false)
@@ -118,7 +119,7 @@ describe('endpoint', () => {
   })
 })
 
-describe('sendTelemetry sends schema 4 with the detected agent', () => {
+describe('sendTelemetry sends schema 5 with the detected agent', () => {
   let dir: string
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {
@@ -144,7 +145,7 @@ describe('sendTelemetry sends schema 4 with the detected agent', () => {
     })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls[0][0]).toBe('https://agenticcli.dev/api/cli-telemetry')
-    expect(body()).toMatchObject({ schema: 4, agent: 'cursor', interactive: true, output: 'sarif' })
+    expect(body()).toMatchObject({ schema: 5, agent: 'cursor', interactive: true, output: 'sarif' })
     expect(JSON.stringify(body())).not.toContain('secret-looking-value-123')
   })
 
@@ -203,8 +204,9 @@ describe('telemetryState (the JSON `telemetry` field)', () => {
 describe('first-run notice line', () => {
   it('says usage pings: on, how to turn them off, the new fields, and no "cloud"', () => {
     expect(NOTICE_TEXT.split('\n')).toHaveLength(1)
-    expect(NOTICE_TEXT).toContain('usage pings: on (turn off: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, or `shipguard telemetry disable`)')
-    for (const s of ['coding agent', 'terminal', 'output kind']) expect(NOTICE_TEXT).toContain(s)
+    expect(NOTICE_TEXT).toContain('usage pings on:')
+    expect(NOTICE_TEXT).toContain('Off: shipguard telemetry disable')
+    for (const s of ['verdict', 'terminal', 'which agent or gate ran it', 'never code, paths or your account']) expect(NOTICE_TEXT).toContain(s)
     expect(NOTICE_TEXT.toLowerCase()).not.toContain('cloud')
   })
 })
