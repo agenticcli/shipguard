@@ -23,7 +23,7 @@ beforeAll(() => {
 }, 240_000)
 afterEach(cleanup)
 
-const realScan: GateDeps['runScan'] = ({ dir, budgetMs, host }) => runScanChild({ cliEntry: distCli, dir, budgetMs, host })
+const realScan: GateDeps['runScan'] = ({ dir, budgetMs, host, top, sha }) => runScanChild({ cliEntry: distCli, dir, budgetMs, host, top, sha })
 // Split so this file does not itself hold a live-looking key.
 const STRIPE = `sk_live_${'abcdefghijklmnopqrstuvwx1234567'}`
 

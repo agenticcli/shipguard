@@ -9,6 +9,9 @@ import {
   OFFER_GENERIC_FILE, fetchPublicOffer, maybeFetchWeeklyOffer, normalizeStacks, primeOfferCache, readOffer, stackSetFile, type OfferFetchGate,
 } from '../../src/core/offer-cache.js'
 import { loadNag, WEEK_MS } from '../../src/core/nag.js'
+import { gapLines } from '../../src/core/plan-lines.js'
+import { mapOfferPayload, verifyPlanDocument } from '../../src/core/plan.js'
+import { injectTestKey, vector } from './helpers.js'
 import { NOW_MS, NOW_S, makeSigner, offerPayload, tempConfigDir, type TestSigner } from './helpers.js'
 
 let signer: TestSigner
@@ -33,6 +36,34 @@ describe('stack sets', () => {
     expect(stackSetFile(['supabase', 'nextjs'])).toBe(stackSetFile(['nextjs', 'supabase']))
     expect(stackSetFile(['nextjs'])).not.toBe(stackSetFile(['nextjs', 'supabase']))
     expect(stackSetFile(['x'])).toMatch(/^offer-[0-9a-f]{16}\.jws$/)
+  })
+})
+
+describe('combined: the server-computed union count for a stack set', () => {
+  it('nextjs+supabase offer with combined: the gap line shows the number; counts are never added', async () => {
+    const { dir, cleanup } = tempConfigDir()
+    try {
+      const tok = signer.sign(offerPayload({ offer: { text: 'Offer words', slot: 'checkout' }, counts, combined: { 'nextjs+supabase': 37 } }), { typ: OFFER })
+      const r = await fetchPublicOffer({ configDir: dir, now: NOW_MS, stacks: ['supabase', 'nextjs'], safeMode: false, fetchImpl: fakeFetch(JSON.stringify({ offer: tok }), []) })
+      expect(r.ok).toBe(true)
+      const read = await readOffer({ configDir: dir, now: NOW_MS, safeMode: false }, ['nextjs', 'supabase'])
+      const detected = [{ key: 'nextjs', display: 'Next.js', version: null }, { key: 'supabase', display: 'Supabase', version: null }]
+      const line = gapLines(read.block, detected, true)[0]
+      expect(line).toContain('adds 37 rules for Next.js + Supabase')
+      expect(line).not.toContain('adds 41 rules') // 30 + 11: per-stack counts are never added
+    } finally { cleanup() }
+  })
+  it('the contract vector with a combined key verifies (the payload key list is not closed) and maps to the number', async () => {
+    const restore = injectTestKey()
+    try {
+      const v = vector('valid-offer-combined')
+      const r = await verifyPlanDocument('offer', v.token, { now: v.ctx.now * 1000, acct: null, nonce: null, scanId: null })
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        expect(mapOfferPayload(r.payload, ['supabase', 'nextjs']).proAdds?.rules).toBe(10)
+        expect(mapOfferPayload(r.payload, ['nextjs']).proAdds?.rules).toBe(7)
+      }
+    } finally { restore() }
   })
 })
 

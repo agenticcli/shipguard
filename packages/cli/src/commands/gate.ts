@@ -87,7 +87,7 @@ export interface GateDeps {
   listRefCommits: (dir: string, prefixes: string[]) => Array<{ sha: string; label: string }> | null
   extractCommit: (topLevel: string, sha: string) => string
   removeExtraction: (dest: string) => void
-  runScan: (opts: { dir: string; budgetMs: number; host: string }) => Promise<ScanRun>
+  runScan: (opts: { dir: string; budgetMs: number; host: string; top: string; sha: string }) => Promise<ScanRun>
   /**
    * The weekly "Not run here" first line, read from the verified cache with no fetch, or null.
    * The default reads the plan modules' verified cache (plan-client.ts gateGapFromCache). Called only on a clean
@@ -124,7 +124,7 @@ function defaultDeps(): GateDeps {
     extractCommit,
     removeExtraction,
     // The child scan reports which gate asked (usage ping field gateKind: claude | git | ci); Codex and Cursor use git hooks.
-    runScan: ({ dir, budgetMs, host }) => runScanChild({ cliEntry, dir, budgetMs, host: host === 'codex' || host === 'cursor' ? 'git' : host }),
+    runScan: ({ dir, budgetMs, host, top, sha }) => runScanChild({ cliEntry, dir, budgetMs, host: host === 'codex' || host === 'cursor' ? 'git' : host, top, sha }),
     // The weekly gap line: the first line only, from the verified cache, no fetch (plan-client.ts); same 7-day counter as the scan screen.
     gapLine: ({ dir }) => gateGapFromCache(dir),
     isSafeMode: () => isSafeMode(),
@@ -351,7 +351,7 @@ async function scanCommit(
       runningCommit: target.sha,
     } as GateRecord)
 
-    const run = await deps.runScan({ dir: dest, budgetMs: budget * 1000, host })
+    const run = await deps.runScan({ dir: dest, budgetMs: budget * 1000, host, top, sha: target.sha })
     const elapsed = (deps.now() - startedMs) / 1000
     const finish = (record: Partial<GateRecord>): void => {
       writeGateRecord(top, {

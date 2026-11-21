@@ -29,6 +29,7 @@ import {
   managedBlockVersion,
   shimFileVersion,
 } from './hook-templates.js'
+import { readInstallState } from './install-state.js'
 
 export const GATE_LAST_RELATIVE = '.shipguard/gate-last.json'
 
@@ -282,4 +283,74 @@ export function detectStaleHook(dir: string): StaleHook | null {
     logger.warn(`Could not check the installed hook version: ${err instanceof Error ? err.message : String(err)}`)
   }
   return null
+}
+
+// ---------------------------------------------------------------------------
+// Gate health outside the gate: `scan --json` warnings[] and `shipguard status` (spec 03, spec 07)
+// ---------------------------------------------------------------------------
+
+export interface HealthWarning {
+  code: 'HOOK_STALE' | 'GATE_UNFINISHED'
+  /** The warning text, as the gate itself prints it (starts with `WARNING: `). */
+  message: string
+  command: string
+}
+
+/** The warnings every `shipguard` run reports: a stale hook, a gate that never finished. Read-only; never throws. */
+export function gateHealthWarnings(dir: string, nowMs: number = Date.now()): HealthWarning[] {
+  const out: HealthWarning[] = []
+  const stale = detectStaleHook(dir)
+  if (stale) out.push({ code: 'HOOK_STALE', message: stale.text, command: `shipguard setup --agent ${stale.layer}` })
+  const unfinished = unfinishedGateWarning(dir, nowMs)
+  if (unfinished) out.push({ code: 'GATE_UNFINISHED', message: unfinished, command: 'shipguard scan --strict' })
+  return out
+}
+
+/** `warn <CODE>: <text>`: one stderr line (spec 01), the same for quiet and the normal screen. */
+export function healthWarningLine(w: HealthWarning): string {
+  return `warn ${w.code}: ${w.message.replace(/^WARNING: /, '')}`
+}
+
+const stamp = (iso: string | undefined): string | null => {
+  const ms = iso ? Date.parse(iso) : NaN
+  return Number.isFinite(ms) ? new Date(ms).toISOString().replace('T', ' ').replace(/:\d\d\.\d+Z$/, ' UTC') : null
+}
+
+/**
+ * The three gate-health lines `shipguard status` prints (spec 07): what is installed here, when the gate last ran,
+ * how strong the gate is. "Not confirmed" is the honest word for CI branch protection: it is never read.
+ */
+export function gateHealthLines(dir: string, nowMs: number = Date.now()): string[] {
+  const lines: string[] = []
+  const state = readInstallState(dir)
+  const stale = detectStaleHook(dir)
+  const parts: string[] = []
+  const label = (name: string, version: number, current: number, layer: 'claude' | 'git'): string =>
+    `${name} v${version} (${version >= current && stale?.layer !== layer ? 'current' : 'stale'})`
+  if (state) {
+    for (const agent of state.agents) {
+      if (agent === 'claude') parts.push(label('Claude project hook', state.hookVersion, SHIM_VERSION, 'claude'))
+      else if (agent === 'git') parts.push(label('git hooks', state.hookVersion, HOOK_BLOCK_VERSION, 'git'))
+      else if (agent === 'ci') parts.push('CI workflow')
+      else parts.push('AGENTS.md block')
+    }
+  }
+  // A 0.12 hook has no install record: the stale check still sees it.
+  if (stale && !parts.some((p) => p.startsWith(stale.layer === 'claude' ? 'Claude' : 'git'))) {
+    parts.push(stale.layer === 'claude' ? 'Claude project hook (older version, stale)' : 'git hooks (older version, stale)')
+  }
+  const dedupParts = [...new Set(parts)]
+  lines.push(dedupParts.length > 0 ? `Installed here: ${dedupParts.join(', ')}` : 'Installed here: nothing. Set it up: shipguard setup')
+
+  const record = readGateRecord(dir)
+  const unfinished = unfinishedGateWarning(dir, nowMs, record) ? 1 : 0
+  const when = record ? stamp(record.finishedAt ?? record.startedAt) : null
+  if (record && when) {
+    const what = record.status === 'running' ? (unfinished ? 'never finished' : 'still running') : record.status
+    lines.push(`Last gate run: ${when}: ${what}. ${unfinished} unfinished run${unfinished === 1 ? '' : 's'}.`)
+  } else {
+    lines.push('Last gate run: none yet.')
+  }
+  if (dedupParts.length > 0) lines.push('Gate strength: local hooks only stop well-behaved agents; CI branch protection is not confirmed.')
+  return lines
 }

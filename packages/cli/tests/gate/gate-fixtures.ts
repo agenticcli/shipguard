@@ -88,9 +88,10 @@ export function fakeScan(opts: FakeScanOptions = {}): GateDeps['runScan'] {
     if (hit) {
       findings.push({
         id: 'generic.secrets.stripe-live-key',
-        title: 'live Stripe secret key in source (32 chars, value hidden)',
+        title: 'A hardcoded Stripe live secret key (sk_live_ prefix) or live restricted key (rk_live_ prefix) was detected in a source file',
         severity: 'critical',
         category: 'secrets',
+        evidence: { kind: 'secret', secretType: 'stripe_live_key', length: 32, valueHidden: true },
         file: hit,
         line: opts.line ?? 2,
         blocking: true,

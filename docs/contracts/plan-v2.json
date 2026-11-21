@@ -23,7 +23,7 @@
     "iss, aud and dv supported",
     "account document: acct equals the signed-in account",
     "live reply: nonce equals the sent nonce and binding.scanId equals this scan's id",
-    "cached copy only: iat <= now + 5 min, now < exp, exp - iat <= 72 h (offer: <= 7 days)"
+    "live reply and cached copy alike: iat <= now + 5 min, now < exp, exp - iat <= 72 h (offer: <= 7 days); an expired live reply is plain Free"
   ],
   "onFailure": { "planStatus": "unavailable", "reason": "PLAN_UNVERIFIED", "effect": "plan data discarded, plain Free, scan exit code unchanged, never Pro, never a crash" },
   "account": {
@@ -51,7 +51,8 @@
     "required": ["dv", "iss", "aud", "iat", "exp"],
     "optional": {
       "offer": "{ text, slot } as above",
-      "counts": "{ '<stack>': { rules: integer, areas: string[] } }, per-stack Pro rule counts (file format owned by W9)"
+      "counts": "{ '<stack>': { rules: integer, areas: string[] } }, per-stack Pro rule counts (file format owned by W9)",
+      "combined": "{ '<stackA>+<stackB>': integer }, server-computed union count for a set of stacks (key = sorted stack names joined with +). The CLI never adds per-stack counts: for several stacks it shows combined[key] when present, else no number. Unknown keys and non-integer or negative values are ignored."
     },
     "note": "Public, no auth, no acct, no nonce. Request carries stack names only (or none for the generic offer)."
   },

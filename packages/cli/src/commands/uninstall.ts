@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { EXIT_CODES } from '@agenticcli/shared'
 import { logger } from '../utils/logger.js'
+import { detectJsonLayout, writeJsonLayout } from '../utils/json-layout.js'
 import {
   CLAUDE_HOOK_FINGERPRINT,
   GIT_HOOK_NAMES,
@@ -236,6 +237,8 @@ function settingsItem(cwd: string, state: InstallState | null): Item | null {
     return Object.keys(next).length > 0 ? next : null
   }
   const after = stripped()
+  // Hand the file back in the layout it has now (setup kept the user's layout), so a clean round trip is byte for byte.
+  const layout = detectJsonLayout(raw)
   return {
     path,
     label,
@@ -245,7 +248,7 @@ function settingsItem(cwd: string, state: InstallState | null): Item | null {
     deletes: after === null,
     apply: () => {
       if (after === null) unlinkSync(path)
-      else writeFileSync(path, JSON.stringify(after, null, 2) + '\n', 'utf-8')
+      else writeFileSync(path, writeJsonLayout(after, layout), 'utf-8')
     },
     verify: () => {
       const t = readText(path)

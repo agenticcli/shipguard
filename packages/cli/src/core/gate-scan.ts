@@ -19,7 +19,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { logger } from '../utils/logger.js'
 import { occurrenceKey } from './gate-state.js'
+import { writeGateHandover } from './history/scan-id.js'
 import { firstSentence, type GateFinding, type NotScanned, type ScanSummary } from './gate-text.js'
+import { fixGuidance } from './fix-guidance.js'
+import { secretScreenLabel } from './redact.js'
+import type { Finding } from '@agenticcli/shared'
 
 /** Variables git itself exports to a hook: they would point every command below at the hook's own repository. */
 const GIT_LOCATION_VARS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'GIT_OBJECT_DIRECTORY']
@@ -158,7 +162,17 @@ export interface ScanRun {
 const MAX_STDOUT_BYTES = 32 * 1024 * 1024
 
 /** Run the scan on `dir` as a child process of this same program, killed at `budgetMs`. */
-export function runScanChild(opts: { cliEntry: string; dir: string; budgetMs: number; host: string }): Promise<ScanRun> {
+export function runScanChild(opts: { cliEntry: string; dir: string; budgetMs: number; host: string; top?: string; sha?: string }): Promise<ScanRun> {
+  // The extraction is a fresh temp folder every run, so the child gets the real repo folder + commit through a private
+  // file next to it (history/scan-id.ts gateReuseFor), not through the environment: a rerun on the same commit reuses
+  // the scan id. Without it the child still scans; it just mints a fresh id (logged).
+  if (opts.top && opts.sha) {
+    try {
+      writeGateHandover(opts.dir, { dir: opts.top, commit: opts.sha })
+    } catch (err) {
+      logger.warn(`Could not hand the repo identity to the scan child (a rerun on this commit gets a new scan id): ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
   return new Promise((resolveRun) => {
     const child = spawn(process.execPath, [opts.cliEntry, 'scan', '--all', '--json', '--strict', '--report'], {
       cwd: opts.dir,
@@ -246,23 +260,42 @@ function fixText(f: Json): string | null {
   return rec ? firstSentence(rec) : null
 }
 
+/** The detected stack names of the scan (`nextjs@16` is `nextjs`), the same input the scan screen gives fixGuidance. */
+function stackNames(j: Json): string[] {
+  const stack = isObj(j.stack) ? j.stack : {}
+  return (Array.isArray(stack.detected) ? stack.detected : []).filter((s): s is string => typeof s === 'string').map((s) => s.split('@')[0])
+}
+
+/** `36 chars, value hidden` for a secret finding, read from the JSON evidence object; the value itself is never in it. */
+function secretLabelOf(raw: Json): string | null {
+  if (str(raw.category) !== 'secrets') return null
+  const ev = isObj(raw.evidence) ? raw.evidence : null
+  return secretScreenLabel(ev && ev.kind === 'secret' && typeof ev.length === 'number' ? ev.length : null)
+}
+
 function readFindings(j: Json): GateFinding[] {
   const list = Array.isArray(j.findings) ? j.findings : []
+  const stacks = stackNames(j)
   const out: GateFinding[] = []
   for (const raw of list) {
     if (!isObj(raw)) continue
     const id = str(raw.id) ?? str(raw.ruleId) ?? 'unknown'
     const file = str(raw.file) ?? ''
+    const title = str(raw.title) ?? id
+    const fix = fixText(raw)
+    // The same guidance the scan screen uses (core/fix-guidance.ts): current wording, not the rule's long title and old fix.
+    const g = fixGuidance({ id, title, fix: fix ?? undefined, recommendation: fix ?? undefined } as unknown as Finding, stacks)
     out.push({
       id,
-      title: str(raw.title) ?? id,
+      title: g.what,
       severity: str(raw.severity) ?? 'info',
       file,
       line: num(raw.line),
       blocking: raw.blocking === true && raw.suppressed !== true,
-      fix: fixText(raw),
+      fix: g.certainty === 'generic' && fix === null ? null : g.summary,
       category: str(raw.category),
       occurrence: str(raw.occurrence) ?? occurrenceKey(id, file),
+      secretLabel: secretLabelOf(raw),
     })
   }
   return out

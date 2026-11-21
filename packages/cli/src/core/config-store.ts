@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { ensureSecureDir, writeSecureFileSync } from '../utils/secure-fs.js'
 import { logger } from '../utils/logger.js'
+import { isSafeMode } from './telemetry-config.js'
 
 const isPosix = process.platform !== 'win32'
 
@@ -43,6 +44,11 @@ export function readConfigText(file: string, maxBytes: number): ConfigRead {
 
 /** Atomic 0600 write into a 0700 directory. Returns false (and logs) when it could not write. */
 export function writeConfigText(dir: string, name: string, data: string): boolean {
+  // Safe mode (spec 06): nothing new is written under ~/.config. One guard here covers nag, hint, plan and offer cache.
+  if (isSafeMode()) {
+    logger.debug(`config-store: safe mode, not writing ${join(dir, name)}`)
+    return false
+  }
   const tmp = join(dir, `.${name}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`)
   try {
     ensureSecureDir(dir)

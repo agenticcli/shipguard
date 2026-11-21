@@ -74,6 +74,11 @@ export function secretEvidenceObject(secretType: string, value: string): SecretE
   return { kind: 'secret', secretType: secretTypeName(secretType), length: [...value].length, valueHidden: true }
 }
 
+/** The short form every human screen shows next to a secret finding (scan screen, gate block): `36 chars, value hidden`. */
+export function secretScreenLabel(length: number | null): string {
+  return length === null ? 'value hidden' : `${length} chars, value hidden`
+}
+
 const MASKED_SECRET_RE = /^([a-z0-9_]+), (\d+) characters, value hidden$/
 
 /** Read back a string made by `maskSecret` (for the JSON object form); undefined when it is not one. */

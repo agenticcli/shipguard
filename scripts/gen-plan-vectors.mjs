@@ -70,6 +70,8 @@ add('bad-signature', 'account', `${gh}.${gp}.${b64u(Buffer.alloc(64, 1))}`, 'PLA
 add('expired', 'account', jws(hdr(), JSON.stringify(plan({ iat: NOW - 7200, exp: NOW - 3600 }))), 'PLAN_UNVERIFIED', { now: NOW, acct: ACCT, nonce: null, scanId: null }, 'cached copy past exp');
 add('too-long-lived', 'account', jws(hdr(), JSON.stringify(plan({ iat: NOW - 60, exp: NOW + 80 * 3600 }))), 'PLAN_UNVERIFIED', { now: NOW, acct: ACCT, nonce: null, scanId: null }, 'cached copy: exp - iat > 72 h');
 add('issued-in-future', 'account', jws(hdr(), JSON.stringify(plan({ iat: NOW + 3600, exp: NOW + 7200 }))), 'PLAN_UNVERIFIED', { now: NOW, acct: ACCT, nonce: null, scanId: null }, 'cached copy: iat > now + 5 min');
+add('live-expired', 'account', goodJws, 'PLAN_UNVERIFIED', { ...ok, now: NOW + 2 * 86400 }, 'live reply (nonce and scanId match) already past exp: plain Free, same as a cached copy');
+add('live-issued-in-future', 'account', goodJws, 'PLAN_UNVERIFIED', { ...ok, now: NOW - 2 * 3600 }, 'live reply with iat > now + 5 min: plain Free');
 add('wrong-account', 'account', jws(hdr(), JSON.stringify(plan({ acct: acct('test-account-2') }))), 'PLAN_UNVERIFIED', ok, 'bound to another account');
 add('replayed-nonce', 'account', jws(hdr(), JSON.stringify(plan({ nonce: 'b2xkbm9uY2VvbGRub25jZQ' }))), 'PLAN_UNVERIFIED', ok, 'old nonce on a live reply');
 add('replayed-scanid', 'account', jws(hdr(), JSON.stringify(plan({ binding: { scanId: 'scan-old' } }))), 'PLAN_UNVERIFIED', ok, 'old scanId on a live reply');
@@ -84,6 +86,7 @@ add('unsupported-dv', 'account', jws(hdr(), JSON.stringify(plan({ dv: 99 }))), '
 add('duplicate-key', 'account', jws(hdr(), good.replace('"label":"Test plan"', '"label":"Test plan","label":"Other"')), 'PLAN_UNVERIFIED', ok, 'duplicate JSON keys are rejected');
 add('not-three-parts', 'account', `${gh}.${gp}`, 'PLAN_UNVERIFIED');
 add('valid-offer', 'offer', jws(hdr('shipguard-offer+jws'), JSON.stringify(offer())), 'ok', { now: NOW, acct: null, nonce: null, scanId: null }, 'public offer: no acct, no nonce');
+add('valid-offer-combined', 'offer', jws(hdr('shipguard-offer+jws'), JSON.stringify(offer({ counts: { nextjs: { rules: 7, areas: ['Test area'] }, supabase: { rules: 5, areas: ['Test db area'] } }, combined: { 'nextjs+supabase': 10 } }))), 'ok', { now: NOW, acct: null, nonce: null, scanId: null }, 'offer with the server-computed union count for a stack set: key = sorted stack names joined with +, value = integer');
 add('offer-expired', 'offer', jws(hdr('shipguard-offer+jws'), JSON.stringify(offer({ iat: NOW - 9 * 86400, exp: NOW - 86400 }))), 'PLAN_UNVERIFIED', { now: NOW, acct: null, nonce: null, scanId: null });
 add('offer-wrong-typ', 'offer', jws(hdr('shipguard-account+jws'), JSON.stringify(offer())), 'PLAN_UNVERIFIED', { now: NOW, acct: null, nonce: null, scanId: null });
 

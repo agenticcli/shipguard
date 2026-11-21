@@ -28,7 +28,7 @@ describe('every vector verifies as the contract says', () => {
 describe('rejection classes the plan names (explicit)', () => {
   const ctxOf = (name: string) => { const v = vector(name); return { now: v.ctx.now * 1000, acct: v.ctx.acct, nonce: v.ctx.nonce, scanId: v.ctx.scanId } }
   it('tampered, expired, replayed (nonce and scanId), wrong account all fail', async () => {
-    for (const name of ['tampered-payload', 'bad-signature', 'expired', 'replayed-nonce', 'replayed-scanid', 'wrong-account', 'wrong-typ', 'offer-as-account', 'header-jku', 'header-crit', 'alg-none', 'unknown-kid', 'duplicate-key']) {
+    for (const name of ['tampered-payload', 'bad-signature', 'expired', 'live-expired', 'live-issued-in-future', 'replayed-nonce', 'replayed-scanid', 'wrong-account', 'wrong-typ', 'offer-as-account', 'header-jku', 'header-crit', 'alg-none', 'unknown-kid', 'duplicate-key']) {
       const r = await verifyPlanDocument('account', vector(name).token, ctxOf(name))
       expect(r.ok, name).toBe(false)
     }
