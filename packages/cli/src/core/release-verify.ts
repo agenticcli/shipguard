@@ -74,12 +74,17 @@ export interface VerifyOk {
   selectedRules: ExecutableRule[]
 }
 
+/** Longest accepted freshness-token lifetime: 72 hours + 1 hour slack = 262800 seconds. */
+export const FRESHNESS_MAX_TTL_SECONDS = 73 * 3600
+
 /** Failure verification result. */
 export interface VerifyFail {
   ok: false
   reason: string
   /** true = scan result cannot be trusted; false = structural protocol error. */
   nonSafe: boolean
+  /** true only when the freshness token's validity window has passed (so callers can say "Pro rules are temporarily unavailable"). */
+  freshnessExpired?: true
 }
 
 export type VerifyResult = VerifyOk | VerifyFail
@@ -941,6 +946,7 @@ export async function verifyBundleResponse(
       ok: false,
       reason: `freshness token expired (expiresAt=${expiresAt}, now=${nowFresh})`,
       nonSafe: true,
+      freshnessExpired: true,
     }
   }
   if (nowFresh < issuedAt - CLOCK_SKEW) {
@@ -950,11 +956,11 @@ export async function verifyBundleResponse(
       nonSafe: true,
     }
   }
-  // Max TTL check (matcher spec §3.4: max 25 hours = 90000 seconds)
-  if (expiresAt - issuedAt > 90000) {
+  // Max TTL check: the server may issue tokens valid up to 72 hours; 1 hour of slack on top.
+  if (expiresAt - issuedAt > FRESHNESS_MAX_TTL_SECONDS) {
     return {
       ok: false,
-      reason: `freshness token TTL exceeds maximum 25 hours (${expiresAt - issuedAt}s)`,
+      reason: `freshness token TTL exceeds maximum 73 hours (${expiresAt - issuedAt}s)`,
       nonSafe: true,
     }
   }

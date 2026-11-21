@@ -5,6 +5,8 @@
 - Faster scans: a rule is now skipped for a file when a text it must contain is absent, before the slow pattern engine runs. Scans use 4 to 7 times less CPU on large projects. Findings are identical: checked over all 259 free rules against the previous scanner (golden equality tests).
 - Added: the package now ships source maps (`dist/*.js.map`, real `src/` files embedded), so you can read the code behind the bundle, and error traces point at real source lines. The package is about 360 kB larger packed (528 kB; was 167 kB).
 - Added: REBUILD.md in the public repo: how to rebuild the published package from its tag and compare file hashes (`scripts/rebuild-verify.sh 0.12.1`), and a list of every network call in the CLI with file names. CI now checks that two publish builds are byte-identical and that every source map resolves.
+- Changed: the CLI now accepts Pro rule freshness tokens that stay valid for up to 72 hours (it accepted up to 25 hours before). Tokens that are longer-lived, or issued more than 5 minutes in the future, are still rejected.
+- Changed: when the signed freshness token of the Pro rules has expired, `shipguard scan --pro` now says "Pro rules are temporarily unavailable. Retry later, or run with --allow-degraded to scan with local rules only." (JSON `code` `FRESHNESS_EXPIRED`). Exit code stays 3; `--allow-degraded` still falls back to the free rules, marked degraded.
 
 ## 0.12.0 - unreleased
 
