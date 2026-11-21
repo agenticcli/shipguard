@@ -2,6 +2,8 @@ import { Command } from 'commander'
 import { EXIT_CODES } from '@agenticcli/shared'
 import { loadPolicy } from '../core/policy.js'
 import { logger } from '../utils/logger.js'
+import { emitError } from '../utils/exit.js'
+import { ERROR_CODES, OUTCOMES, NEXT_STEP_KINDS, WARNING_CODES, SCHEMA_VERSION, buildErrorEnvelope } from '../core/outcome.js'
 import {
   DEFAULT_MAX_FILE_SIZE_BYTES,
   DEFAULT_MAX_FILES,
@@ -36,8 +38,8 @@ const CLI_VERSION =
     ? __SHIPGUARD_VERSION__
     : (process.env.npm_package_version ?? '0.0.0-dev')
 
-/** The schemaVersion the `scan --json` payload currently reports. Keep in sync with scan.ts. */
-export const CURRENT_SCHEMA_VERSION = '6'
+/** The schemaVersion the `scan --json` payload currently reports (`--schema-version 6` prints the 0.12 shape). */
+export const CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 export interface LimitEntry {
   /** Effective value for THIS project (policy-merged), or null when not a number. */
@@ -70,6 +72,18 @@ export interface SchemaContract {
   /** Exit-2 errors in machine mode: stdout holds exactly one object of this shape. */
   configError: { shape: string; when: string; codes: Array<{ code: string; meaning: string }> }
   degradeCodes: Array<{ code: string; meaning: string }>
+  /** Verdict values of `verdict.value` (the deprecated top-level `recommendation` carries the same). */
+  verdictValues: string[]
+  /** Every error code of every command: exit code, cause, fix and what an agent does next. */
+  errorCodes: Record<string, { exit: number; hostExit?: { claude: number; git: number }; cause: string; fix: string; agentAction: string }>
+  /** The one decision table that picks `agentAction`; modifier rows have `precedence: null`. */
+  outcomes: Array<{ precedence: number | null; outcome: string; exit: string; agentAction: string; nextStep: string }>
+  degradedReasonCodes: Record<string, string>
+  nextStepKinds: string[]
+  warningCodes: Record<string, string>
+  agentActions: string[]
+  /** JSON Schema 2020-12 for the `scan --json` result (schemaVersion 7). */
+  jsonSchema: Record<string, unknown>
   limits: {
     maxFiles: LimitEntry
     maxFileSizeBytes: LimitEntry
@@ -77,6 +91,48 @@ export interface SchemaContract {
     unanalyzableTypes: Array<{ type: string; behavior: string; machineSignal: string | null; verifiedBy: string | null }>
     /** Overall statement about whether these numbers have been measured. */
     verificationStatus: string
+  }
+}
+
+/** JSON Schema (draft 2020-12) of the `scan --json` result: required keys and closed enums, not every leaf. */
+export function buildScanJsonSchema(): Record<string, unknown> {
+  const finding = {
+    type: 'object',
+    required: ['id', 'occurrence', 'title', 'severity', 'confidence', 'category', 'blocking', 'file', 'line', 'endLine', 'column', 'evidence', 'why', 'fix', 'notAVulnerabilityIf', 'suppressed', 'suppressionState', 'origin', 'matcherType', 'aiCodeTarget', 'cwe', 'recommendation'],
+    properties: {
+      occurrence: { type: 'string', pattern: '^[0-9a-f]{12}$' },
+      severity: { enum: ['critical', 'high', 'medium', 'low', 'info'] },
+      origin: { enum: ['general', 'rulebook'] },
+      evidence: { oneOf: [{ type: 'null' }, { type: 'object', required: ['kind'], properties: { kind: { enum: ['secret', 'text'] } } }] },
+      fix: { type: 'object', required: ['summary', 'certainty', 'code', 'steps', 'verify', 'effort'], properties: { certainty: { enum: ['stack-specific', 'generic'] } } },
+    },
+  }
+  return {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    title: 'shipguard scan --json (schemaVersion 7)',
+    type: 'object',
+    required: ['schemaVersion', 'cliVersion', 'runId', 'ok', 'verdict', 'exit', 'agentAction', 'rules', 'plan', 'findings', 'coverage', 'degraded', 'degradedReasons', 'warnings', 'nextSteps'],
+    properties: {
+      schemaVersion: { const: SCHEMA_VERSION },
+      ok: { type: 'boolean' },
+      verdict: {
+        type: 'object',
+        required: ['value', 'reason', 'blockingCount', 'findingCount', 'complete', 'summary', 'meaning'],
+        properties: { value: { enum: ['SAFE_TO_SHIP', 'REVIEW_BEFORE_SHIP', 'DO_NOT_SHIP'] } },
+      },
+      exit: { type: 'object', required: ['code', 'strict', 'strictWouldExit'] },
+      agentAction: { enum: ['proceed', 'fix_and_rerun', 'retry', 'ask_human', 'stop'] },
+      findings: { type: 'array', items: finding },
+      nextSteps: {
+        type: 'array',
+        items: { type: 'object', required: ['order', 'kind', 'label', 'command', 'safe', 'blocking'], properties: { kind: { enum: [...NEXT_STEP_KINDS] } } },
+      },
+      plan: {
+        type: 'object',
+        required: ['status', 'reason', 'command', 'link', 'server', 'recommendation', 'usageNote', 'receiptNote'],
+        properties: { recommendation: { type: 'object', required: ['eligible', 'relay', 'kind', 'reason', 'sentence', 'next', 'mute'] } },
+      },
+    },
   }
 }
 
@@ -95,6 +151,38 @@ export function buildSchemaContract(limits: {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     cliVersion: CLI_VERSION,
     contract: 'shipguard-scan-result',
+    verdictValues: ['SAFE_TO_SHIP', 'REVIEW_BEFORE_SHIP', 'DO_NOT_SHIP'],
+    agentActions: ['proceed', 'fix_and_rerun', 'retry', 'ask_human', 'stop'],
+    errorCodes: Object.fromEntries(
+      Object.entries(ERROR_CODES as Record<string, (typeof ERROR_CODES)[keyof typeof ERROR_CODES]>).map(([code, e]) => [
+        code,
+        {
+          exit: e.exit,
+          ...('exitGit' in e ? { hostExit: { claude: e.exit, git: e.exitGit } } : {}),
+          cause: e.cause,
+          fix: e.fix,
+          agentAction: e.agentAction,
+        },
+      ]),
+    ),
+    outcomes: OUTCOMES.map((o) => ({ ...o })),
+    degradedReasonCodes: Object.fromEntries(
+      [
+        ['FILE_TOO_LARGE', 'A file exceeded the per-file size cap and was not scanned.'],
+        ['UNSCANNED_UNKNOWN_BINARY', 'A file holds NUL or control data no text reading explains, with no sign of a known binary format; not scanned.'],
+        ['FILE_UNREADABLE', 'A file could not be read (permission, or removed during the scan). Printed as UNREADABLE_FILE by 0.12.'],
+        ['INVALID_UTF8', 'A file was not valid UTF-8 and was skipped rather than mangled.'],
+        ['OUTPUT_TRUNCATED', 'The file or byte limit was reached; the remaining files were not scanned.'],
+        ['SYMLINK_SKIPPED', 'A symlink was not followed (privacy) and was not scanned.'],
+        ['CODEREF_SKIPPED', 'Rulebook rules that need a newer ShipGuard were skipped.'],
+        ['PRO_RULES_UNAVAILABLE', 'The full rulebook could not be obtained.'],
+        ['COMPILE_FAILURE', 'A rulebook bundle failed to compile and was refused.'],
+        ['NO_FILES_SCANNED', 'Zero files were scanned: a scan that read nothing is never SAFE_TO_SHIP.'],
+      ],
+    ),
+    nextStepKinds: [...NEXT_STEP_KINDS],
+    warningCodes: { ...WARNING_CODES },
+    jsonSchema: buildScanJsonSchema(),
     recommendation: {
       field: 'recommendation',
       // Closed set. Deliberately NOT extended for degraded scans — a new value would be a
@@ -108,14 +196,11 @@ export function buildSchemaContract(limits: {
       deprecatedMirrors: ['riskScore.recommendation'],
     },
     configError: {
-      shape: '{ "error": string, "code": string }',
-      when: 'exit code 2 with --json or --sarif: stdout is exactly this one JSON object (also for --sarif, instead of a SARIF document); the same message is on stderr',
-      codes: [
-        { code: 'INVALID_POLICY', meaning: 'shipguard.policy.yml could not be parsed' },
-        { code: 'NOT_A_PROJECT', meaning: 'the directory is not a project root; pass a path or --all' },
-        { code: 'PATH_NOT_FOUND', meaning: 'the scan path does not exist or cannot be read' },
-        { code: 'PATH_NOT_A_DIRECTORY', meaning: 'the scan path is a file, not a directory' },
-      ],
+      shape: '{ "schemaVersion": "7", "ok": false, "error": { "code", "message", "cause", "fix", "command" }, "agentAction": string, "exit": { "code": number } }',
+      when: 'every error of every command with --json or --sarif (exit 2, 3 or 130): stdout is exactly this one JSON object; the same error is on stderr as the one error template. `--schema-version 6` prints the 0.12 shape { "error": string, "code": string }.',
+      codes: Object.entries(ERROR_CODES as Record<string, (typeof ERROR_CODES)[keyof typeof ERROR_CODES]>)
+        .filter(([, e]) => e.exit === 2)
+        .map(([code, e]) => ({ code, meaning: e.cause })),
     },
     exitCodes: [
       {
@@ -145,15 +230,15 @@ export function buildSchemaContract(limits: {
         name: 'RUNTIME_ERROR',
         meaning:
           'The scan could not meaningfully run at all — zero rules applied, or an explicit ' +
-          '--pro request whose rule fetch failed (pass --allow-degraded to opt into a local ' +
-          'scan fallback instead).',
+          '--pro request whose rulebook could not be obtained (pass --allow-degraded to opt into a ' +
+          'general-rules fallback instead), or an environment, network, sign-in or internal error.',
       },
     ],
     degradeCodes: [
       { code: 'FILE_TOO_LARGE', meaning: 'One or more files exceeded the per-file size cap and were not scanned.' },
       { code: 'OUTPUT_TRUNCATED', meaning: 'The file-count or total-bytes ceiling was reached; collection stopped early.' },
       { code: 'CODEREF_SKIPPED', meaning: 'One or more rulebook coderef rules need a newer CLI and were skipped.' },
-      { code: 'PRO_RULES_UNAVAILABLE', meaning: 'The full rulebook could not be downloaded (auth, credits, rate limit, network).' },
+      { code: 'PRO_RULES_UNAVAILABLE', meaning: 'The full rulebook could not be obtained (sign-in, rate limit, network or server).' },
       { code: 'INVALID_UTF8', meaning: 'One or more files were not valid UTF-8 and were skipped rather than mangled.' },
       { code: 'UNREADABLE_FILE', meaning: 'One or more files could not be read from disk.' },
       { code: 'COMPILE_FAILURE', meaning: 'A rulebook bundle failed to compile; the whole bundle was refused rather than partly run.' },
@@ -278,8 +363,17 @@ Exit codes:
           maxTotalBytes: policy.limits?.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES,
         })
       } catch (error) {
-        logger.error(`Config error: ${error instanceof Error ? error.message : error}`)
-        process.exit(EXIT_CODES.CONFIG_ERROR)
+        const message = error instanceof Error ? error.message : String(error)
+        emitError(
+          buildErrorEnvelope({
+            code: 'INVALID_POLICY',
+            message: 'shipguard.policy.yml could not be read.',
+            cliVersion: CLI_VERSION,
+            cause: message,
+            extra: { file: 'shipguard.policy.yml' },
+          }),
+          { machine: Boolean(opts.json) },
+        )
         return
       }
 
@@ -305,8 +399,9 @@ export function renderSchemaHuman(c: SchemaContract): string {
   lines.push('Exit codes:')
   for (const e of c.exitCodes) lines.push(`  ${e.code}  ${e.name} — ${e.meaning}`)
   lines.push('')
-  lines.push(`Config errors (exit 2) with --json/--sarif: stdout is ${c.configError.shape}`)
-  for (const e of c.configError.codes) lines.push(`  ${e.code} — ${e.meaning}`)
+  lines.push(`Errors with --json/--sarif: stdout is ${c.configError.shape}`)
+  lines.push('Every error code (exit, what an agent does next):')
+  for (const [code, e] of Object.entries(c.errorCodes)) lines.push(`  ${code} [exit ${e.exit}, ${e.agentAction}] — ${e.cause}. Fix: ${e.fix}`)
   lines.push('')
   lines.push('Limits:')
   for (const [name, entry] of Object.entries(c.limits)) {

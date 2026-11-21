@@ -239,17 +239,20 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
     })
   }
 
-  it('the --json evidence is type, length and "value hidden" for corpus findings (no character of the value)', () => {
+  it('the --json evidence of a secret is type and length only (spec 06: no character of the value)', () => {
     const json = JSON.parse(captured.json)
-    const byId = (id: string): string =>
+    const byId = (id: string): { kind: string; secretType: string; valueHidden: boolean } =>
       json.findings.find((f: { id: string }) => f.id === id)?.evidence
-    expect(byId('generic.secrets.stripe-live-key')).toBe(`stripe_live_key, ${SECRETS.stripe.length} characters, value hidden`)
-    expect(byId('generic.secrets.aws-access-key')).toBe(`aws_access_key, ${SECRETS.aws.length} characters, value hidden`)
-    expect(byId('generic.secrets.github-token')).toBe(`github_token, ${SECRETS.github.length} characters, value hidden`)
-    expect(byId('generic.secrets.anthropic-api-key')).toBe(`anthropic_api_key, ${SECRETS.anthropic.length} characters, value hidden`)
-    // The corpus PEM rule matches the header AND the first line of key body, so the evidence
-    // holds real key material and is masked whole (the bare header alone would stay readable).
-    expect(byId('generic.secrets.private-key-pem')).toMatch(/^private_key_pem, \d+ characters, value hidden$/)
+    for (const id of [
+      'generic.secrets.stripe-live-key',
+      'generic.secrets.aws-access-key',
+      'generic.secrets.github-token',
+      'generic.secrets.anthropic-api-key',
+      'generic.secrets.private-key-pem',
+    ]) {
+      expect(byId(id), id).toMatchObject({ kind: 'secret', valueHidden: true })
+      expect(byId(id).secretType, id).toBe(id.split('.').pop()!.replace(/-/g, '_'))
+    }
   })
 
   it('the --json schema is unchanged: exact top-level key set and per-finding key set are pinned', () => {
@@ -258,23 +261,26 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
     // Adding or removing a field must be a deliberate edit here, not a side effect of redaction.
     // `coverage` was added deliberately with schemaVersion 6 (honest coverage); `exitMeaning` in 0.12 (additive).
     expect(Object.keys(json).sort()).toEqual([
-      'cliVersion', 'coverage', 'creditsWarning', 'degraded', 'exitMeaning', 'filesScanned', 'findings', 'policyUsed',
-      'recommendation', 'regressionCheckSkipped', 'regressionCheckSkippedReason', 'riskScore',
-      'runId', 'scanIdReused', 'schemaVersion', 'stateStatus', 'telemetry', 'timestamp', 'treeDigest',
-    ])
+      'agentAction', 'cliVersion', 'coverage', 'coverageChanged', 'creditsWarning', 'degraded', 'degradedReasons',
+      'elapsedMs', 'exit', 'exitMeaning', 'filesScanned', 'findings', 'nextSteps', 'ok', 'plan', 'policyUsed',
+      'recommendation', 'regressionCheckSkipped', 'regressionCheckSkippedReason', 'regressions', 'report',
+      'riskScore', 'rules', 'runId', 'scanIdReused', 'scanIdReusedReason', 'schemaVersion', 'sinceLastRun',
+      'stack', 'stateStatus', 'telemetry', 'timestamp', 'treeDigest', 'verdict', 'warnings',
+    ].sort())
+    // schema 7: every finding carries the SAME keys (nullable, never absent).
     const ALLOWED_FINDING_KEYS = [
-      'aiCodeTarget', 'blocking', 'category', 'column', 'confidence', 'cwe', 'evidence',
-      'explanation', 'file', 'fix', 'id', 'line', 'matcherType', 'recommendation', 'severity',
-      'suppressed', 'suppressionState', 'title',
+      'aiCodeTarget', 'blocking', 'category', 'column', 'confidence', 'cwe', 'endLine', 'evidence', 'file', 'fix',
+      'id', 'line', 'matcherType', 'notAVulnerabilityIf', 'occurrence', 'origin', 'recommendation', 'severity',
+      'suppressed', 'suppressionState', 'title', 'why',
     ]
-    const REQUIRED_FINDING_KEYS = ['blocking', 'category', 'explanation', 'file', 'id', 'recommendation', 'severity', 'title']
+    const REQUIRED_FINDING_KEYS = ALLOWED_FINDING_KEYS
     const seen = new Set<string>()
     for (const f of json.findings) {
       const keys = Object.keys(f)
       keys.forEach((k) => seen.add(k))
       for (const k of REQUIRED_FINDING_KEYS) expect(keys, `finding ${f.id} lacks ${k}`).toContain(k)
       expect(keys.filter((k) => !ALLOWED_FINDING_KEYS.includes(k)), `unexpected key on ${f.id}`).toEqual([])
-      if (f.evidence !== undefined) expect(typeof f.evidence).toBe('string')
+      if (f.evidence !== null) expect(typeof f.evidence).toBe('object')
       expect(typeof f.id).toBe('string')
       expect(typeof f.file).toBe('string')
     }

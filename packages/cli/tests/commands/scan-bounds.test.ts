@@ -149,6 +149,7 @@ describe('scan scope guard', () => {
       const errorCalls = vi.mocked(logger.error).mock.calls
       const hasRefusalMessage = errorCalls.some(
         args => typeof args[0] === 'string' && (
+          args[0].includes('NOT_A_PROJECT') ||
           args[0].includes('Refusing') ||
           args[0].includes('non-project') ||
           args[0].includes('--all') ||

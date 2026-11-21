@@ -13,7 +13,9 @@ import { feedbackCommand, rateCommand } from './commands/feedback.js'
 import { telemetryCommand } from './commands/telemetry.js'
 import { quickstartHelp } from './core/render.js'
 import { CLI_VERSION, sendLifecycleEvent } from './core/telemetry.js'
-import { installStreamErrorHandlers, exitWhenDrained } from './utils/exit.js'
+import { installStreamErrorHandlers, exitWhenDrained, emitError } from './utils/exit.js'
+import { buildErrorEnvelope, CORE_LINE } from './core/outcome.js'
+import { NEW_COMMAND_NAMES } from './core/command-names.js'
 import {
   handleUncaughtException,
   handleUnhandledRejection,
@@ -66,7 +68,7 @@ if (rawArgs[0] === '?') {
 
 program
   .name('shipguard')
-  .description('The security scanner your coding agent runs before every commit.')
+  .description(`${CORE_LINE}. The security scanner your coding agent runs before every commit.`)
   .version(
     typeof __SHIPGUARD_VERSION__ !== 'undefined'
       ? __SHIPGUARD_VERSION__
@@ -76,7 +78,7 @@ program
   .helpCommand(false)  // suppress built-in help subcommand; we add our own
   .addHelpText('after', `
 Exit codes:
-  0  scan completed (not "safe": read the verdict; the JSON \`recommendation\` field has it)
+  0  scan completed (not "safe": read the verdict; the JSON \`verdict.value\` field has it)
   1  blocked only with --strict (a blocking finding, an unfinished scan, or DO_NOT_SHIP)
   2  config error (bad flags, bad policy file, not a project folder)
   3  runtime error (the scan could not run, or --pro could not fetch its rules)
@@ -89,7 +91,26 @@ Learn more:
 
 // First command on an install: one `cli_first_run` event (opt-outs, CI and dev-build rules live in
 // sendLifecycleEvent; it never throws and is bounded). Skipped for `telemetry` so a user can opt out first.
+// Safe mode (spec 06): the global flag is registered here so commander accepts it; the decision itself lives in
+// core/telemetry-config.ts (isSafeMode, W0 PR #39). announceSafeMode prints SAFE_MODE_LINE as the FIRST stderr line.
+program.option('--safe-mode', 'No usage pings and no writes outside the project except the sign-in token')
+program.hook('preAction', async () => {
+  // Loaded by name through a cast until W0 (#39) is merged into cli-0130; after the merge this becomes a plain import.
+  const cfg = (await import('./core/telemetry-config.js')) as { announceSafeMode?: () => boolean }
+  if (cfg.announceSafeMode !== undefined) cfg.announceSafeMode()
+  else if (process.argv.includes('--safe-mode') || process.env.SHIPGUARD_SAFE_MODE === '1') {
+    process.stderr.write('shipguard: safe mode is not available in this build.\n')
+  }
+})
+program.hook('preAction', async () => {
+  // Which gate runs this process (W0 ping field). Only the three known values count; the setter ignores
+  // anything else, so the kind stays "none". Cast until W0 (#39) is merged into cli-0130.
+  const kind = process.env.SHIPGUARD_GATE_KIND
+  if (kind) ((await import('./core/telemetry.js')) as { setGateKind?: (k: string) => void }).setGateKind?.(kind)
+})
 program.hook('preAction', async (_thisCommand, actionCommand) => {
+  // `gate` (also `gate --supports`) makes zero network calls: no first-run ping.
+  if (actionCommand.name() === 'gate') return
   if (actionCommand.name() === 'telemetry' || actionCommand.parent?.name() === 'telemetry') return
   await sendLifecycleEvent('cli_first_run', { cliVersion: CLI_VERSION }, { projectDir: process.cwd() })
 })
@@ -98,6 +119,8 @@ program.hook('preAction', async (_thisCommand, actionCommand) => {
 // This lets us intercept unknown-command errors and emit a friendly message with
 // exit code 2 (config/usage error) rather than silently exiting 0.
 program.exitOverride()
+// Commander's own error line is replaced by the one error template (see the catch below): exactly one message.
+program.configureOutput({ outputError: () => {} })
 
 // Attach a subcommand AND propagate exitOverride to it.
 //
@@ -117,6 +140,7 @@ program.exitOverride()
 // reintroduce the exit-1 bug).
 function addSubcommand(cmd: ReturnType<typeof scanCommand>): void {
   cmd.exitOverride()
+  cmd.configureOutput({ outputError: () => {} })
   program.addCommand(cmd)
 }
 
@@ -176,8 +200,29 @@ function levenshtein(a: string, b: string): number {
   return dp[m][n]
 }
 
+// The commands of 0.13. The six in NEW_COMMAND_NAMES (core/command-names.ts, one list for every stream) are
+// registered by their own streams; a name here without a registered command answers UNKNOWN_COMMAND until then.
+const ALL_COMMAND_NAMES: readonly string[] = [
+  'scan', 'init', 'login', 'logout', 'history', 'hook', 'schema', 'feedback', 'rate', 'telemetry', 'help',
+  ...NEW_COMMAND_NAMES,
+]
+
+/** The one UNKNOWN_COMMAND / UNKNOWN_OPTION exit: template on stderr, envelope on stdout with --json, exit 2. */
+function failUsage(code: 'UNKNOWN_COMMAND' | 'UNKNOWN_OPTION', message: string, fixHint?: string): void {
+  const optionHelp = `shipguard ${process.argv.slice(2).find((a) => !a.startsWith('-')) ?? ''} --help`.replace('  ', ' ')
+  const env = buildErrorEnvelope({
+    code,
+    message,
+    cliVersion: CLI_VERSION,
+    ...(code === 'UNKNOWN_OPTION'
+      ? { fix: `See the options with: ${optionHelp}`, command: optionHelp, extra: { argument: /'(--?[\w-]+)/.exec(message)?.[1] } }
+      : fixHint ? { fix: fixHint } : {}),
+  })
+  emitError(env, { machine: process.argv.includes('--json') || process.argv.includes('--sarif') })
+}
+
 function closestCommand(input: string): string | undefined {
-  const names = ['scan', 'init', 'login', 'logout', 'status', 'history', 'hook', 'schema', 'feedback', 'rate', 'telemetry', 'help']
+  const names = [...ALL_COMMAND_NAMES]
   let best: string | undefined
   let bestDist = Infinity
   for (const name of names) {
@@ -198,15 +243,15 @@ function closestCommand(input: string): string | undefined {
   // Pre-parse check: if first non-flag token is not a known command name
   // and is not a flag, it's an unknown command — intercept before Commander
   // so we can emit a friendly message and exit 2 cleanly.
-  const KNOWN_COMMANDS = new Set(['scan', 'init', 'login', 'logout', 'status', 'history', 'hook', 'schema', 'feedback', 'rate', 'telemetry', 'help'])
+  const KNOWN_COMMANDS = new Set(ALL_COMMAND_NAMES)
   const firstNonFlag = process.argv.slice(2).find(a => !a.startsWith('-'))
 
   if (firstNonFlag && firstNonFlag !== '?' && !KNOWN_COMMANDS.has(firstNonFlag)) {
     const suggestion = closestCommand(firstNonFlag)
-    const hint = suggestion ? `\n  Did you mean \`shipguard ${suggestion}\`?` : ''
-    process.stderr.write(
-      `shipguard: unknown command "${firstNonFlag}"${hint}\n` +
-      `  Run \`shipguard help\` to see available commands.\n`
+    failUsage(
+      'UNKNOWN_COMMAND',
+      `shipguard has no command "${firstNonFlag}".`,
+      suggestion ? `Did you mean \`shipguard ${suggestion}\`? See all commands: shipguard help` : undefined,
     )
     process.exit(2)
   }
@@ -222,10 +267,10 @@ function closestCommand(input: string): string | undefined {
       if (err.code === 'commander.unknownCommand') {
         const unknownToken = process.argv.slice(2).find(a => !a.startsWith('-')) ?? '?'
         const suggestion = closestCommand(unknownToken)
-        const hint = suggestion ? `\n  Did you mean \`shipguard ${suggestion}\`?` : ''
-        process.stderr.write(
-          `shipguard: unknown command "${unknownToken}"${hint}\n` +
-          `  Run \`shipguard help\` to see available commands.\n`
+        failUsage(
+          'UNKNOWN_COMMAND',
+          `shipguard has no command "${unknownToken}".`,
+          suggestion ? `Did you mean \`shipguard ${suggestion}\`? See all commands: shipguard help` : undefined,
         )
         process.exit(2)
       }
@@ -233,8 +278,8 @@ function closestCommand(input: string): string | undefined {
       if (err.exitCode === 0) {
         process.exit(0)
       }
-      // Other Commander errors (unknown option, missing arg, etc.) → exit 2
-      process.stderr.write(`shipguard: ${err.message}\n`)
+      // Other Commander errors (unknown option, missing arg, bad value) → UNKNOWN_OPTION, exit 2
+      failUsage('UNKNOWN_OPTION', err.message.replace(/^error:\s*/i, '').replace(/^./, (c) => c.toLowerCase()))
       process.exit(2)
     }
     // Non-Commander errors propagate to the uncaughtException handler

@@ -84,7 +84,7 @@ describe('computeScanIdReuseKey — pure function contract', () => {
     changedOnly: false,
     categories: ['secrets', 'auth'],
     ignorePaths: ['dist/**'],
-    proRequested: true,
+    rulebookRequested: true,
     frameworks: ['nextjs', 'prisma'],
     contentIdentity: 'abc123',
   }
@@ -102,8 +102,8 @@ describe('computeScanIdReuseKey — pure function contract', () => {
     expect(computeScanIdReuseKey(base)).not.toBe(computeScanIdReuseKey({ ...base, changedOnly: true }))
   })
 
-  it('differs when proRequested differs', () => {
-    expect(computeScanIdReuseKey(base)).not.toBe(computeScanIdReuseKey({ ...base, proRequested: false }))
+  it('differs when rulebookRequested differs', () => {
+    expect(computeScanIdReuseKey(base)).not.toBe(computeScanIdReuseKey({ ...base, rulebookRequested: false }))
   })
 
   it('differs when contentIdentity differs (different working-tree state)', () => {
@@ -148,11 +148,11 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     const policy = makePolicy({ history: { path: join(dir, 'history.db') } })
 
     const first = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: [],
     })
     const second = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: [],
     })
 
@@ -166,11 +166,11 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     const policy = makePolicy({ history: { path: join(dir, 'history.db') } })
 
     const secretsOnly = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: ['secrets'], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: ['secrets'], rulebookRequested: true,
       frameworks: [],
     })
     const authOnly = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: ['auth'], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: ['auth'], rulebookRequested: true,
       frameworks: [],
     })
 
@@ -188,13 +188,13 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     const policy = makePolicy({ history: { path: join(dir, 'history.db') } })
 
     const firstFrameworks = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: ['nextjs'],
     })
     // Same cwd → identical git HEAD + identical porcelain → identical contentIdentity. Only the
     // framework set differs (a newly-detected dep), simulating the re-edit-an-already-dirty-file case.
     const secondFrameworks = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: ['nextjs', 'express'],
     })
 
@@ -208,11 +208,11 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     const policy = makePolicy({ history: { path: join(dir, 'history.db') } })
 
     const first = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: ['nextjs', 'prisma'],
     })
     const second = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: ['prisma', 'nextjs'], // reordered — must still hash equal, still reuse
     })
 
@@ -226,7 +226,7 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     const policy = makePolicy({ history: { path: join(dir, 'history.db') } })
 
     const beforeCommit = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: false,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: false,
       frameworks: [],
     })
 
@@ -235,7 +235,7 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     execSync('git commit -q -m "second"', { cwd: dir })
 
     const afterCommit = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: false,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: false,
       frameworks: [],
     })
 
@@ -243,22 +243,44 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     expect(afterCommit.scanIdReused).toBe(false)
   })
 
-  it('FAIL-BEFORE regression guard: a non-git directory (no content identity) never reuses — always a fresh scanId, never throws', async () => {
+  it('an empty non-git directory never throws and always returns a scanId (reuse is allowed since W2b non-git persistence)', async () => {
     const dir = mkTemp() // no git init at all
     const policy = makePolicy({ history: { path: join(dir, 'history.db') } })
+    const input = { cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true, frameworks: [] }
 
-    const first = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
-      frameworks: [],
-    })
-    const second = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
-      frameworks: [],
-    })
+    const first = await resolveScanId(input)
+    const second = await resolveScanId(input)
+    expect(first.scanId).toBeTruthy()
+    expect(second.scanId).toBeTruthy()
+  })
 
+  it('W2b non-git persistence: a non-git folder with files reuses its scanId on a re-run (no double charge), and a changed file mints a fresh one', async () => {
+    const dir = mkTemp() // no git init at all
+    writeFileSync(join(dir, 'app.js'), 'console.log(1)\n', 'utf-8')
+    const policy = makePolicy({ history: { path: join(dir, 'history.db') } })
+    const input = { cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true, frameworks: [] }
+
+    const first = await resolveScanId(input)
+    const second = await resolveScanId(input)
     expect(first.scanIdReused).toBe(false)
-    expect(second.scanIdReused).toBe(false)
-    expect(second.scanId).not.toBe(first.scanId)
+    expect(second.scanIdReused).toBe(true)
+    expect(second.scanId).toBe(first.scanId)
+
+    writeFileSync(join(dir, 'app.js'), 'console.log(1); console.log(2)\n', 'utf-8') // size changes
+    const third = await resolveScanId(input)
+    expect(third.scanIdReused).toBe(false)
+    expect(third.scanId).not.toBe(first.scanId)
+  })
+
+  it('W2b: "rulebook requested" is part of the key: asking for the rulebook mints a different scanId than not asking', async () => {
+    const dir = mkTemp()
+    writeFileSync(join(dir, 'app.js'), 'x\n', 'utf-8')
+    const policy = makePolicy({ history: { path: join(dir, 'history.db') } })
+    const base = { cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], frameworks: [] }
+    const general = await resolveScanId({ ...base, rulebookRequested: false })
+    const rulebook = await resolveScanId({ ...base, rulebookRequested: true })
+    expect(rulebook.scanIdReused).toBe(false)
+    expect(rulebook.scanId).not.toBe(general.scanId)
   })
 
   it('store-unavailable path (unwritable history directory) falls back to a fresh per-process scanId and never throws', async () => {
@@ -269,15 +291,15 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     const policy = makePolicy({ history: { path: join(blocker, 'nested', 'history.db') } })
 
     await expect(
-      resolveScanId({ cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true, frameworks: [] }),
+      resolveScanId({ cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true, frameworks: [] }),
     ).resolves.not.toThrow()
 
     const first = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: [],
     })
     const second = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: [],
     })
 
@@ -292,7 +314,7 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     const policy = makePolicy({ history: { path: join(dir, 'history.db'), scan_id_reuse_window_minutes: 30 } })
 
     const first = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: [],
     })
     expect(first.scanIdReused).toBe(false)
@@ -311,7 +333,7 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     opened.store.close()
 
     const second = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: [],
     })
 
@@ -324,7 +346,7 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     const policy = makePolicy({ history: { path: join(dir, 'history.db'), scan_id_reuse_window_minutes: 30 } })
 
     const first = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: [],
     })
 
@@ -340,7 +362,7 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     opened.store.close()
 
     const second = await resolveScanId({
-      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], proRequested: true,
+      cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true,
       frameworks: [],
     })
 

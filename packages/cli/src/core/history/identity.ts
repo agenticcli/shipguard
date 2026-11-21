@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { RepoIdKind } from '@agenticcli/shared'
 import { DEFAULT_REPO_ID_FALLBACK_PATH } from '@agenticcli/shared'
@@ -139,4 +139,49 @@ export function resolveContentIdentity(cwd: string, excludePrefixes: string[] = 
   // Sorted so the hash input is order-stable regardless of git's listing order.
   const dirtyStatus = kept.sort().join('\n')
   return createHash('sha256').update(`${headSha}\n${dirtyStatus}`).digest('hex').slice(0, 16)
+}
+
+/** Folders never listed by the non-git identity: dependencies, build output and ShipGuard's own files. */
+const LISTING_SKIP_DIRS = new Set(['.git', 'node_modules', '.shipguard', 'dist', 'build', '.next', 'coverage', 'out', 'tmp', 'vendor'])
+/** Hard cap on listed entries: a bigger folder gets no reuse (identity unavailable), never a slow scan. */
+const LISTING_MAX_ENTRIES = 5000
+
+/**
+ * Non-git content identity for scanId reuse (no git HEAD): a hash over the sorted list of
+ * `path NUL size NUL mtime` for the files under `cwd`. Local only; file CONTENTS are never read or hashed.
+ * Coarse on purpose (an edit that keeps size and mtime is invisible), exactly like the git identity, and
+ * safe for the same reason: it only decides whether a retry may reuse its scan id.
+ * Returns undefined when the listing cannot be completed (too many entries, unreadable folder).
+ */
+export function resolveListingIdentity(cwd: string, excludePrefixes: string[] = []): string | undefined {
+  // Only for folders git knows nothing about. Inside a git work tree (even one with no commit yet) the
+  // history store would have to write its own files (`.gitignore`) BEFORE the scan, and git would then
+  // report them as changed files: that keeps the old behaviour there (no reuse without a HEAD).
+  if (tryGit(cwd, ['rev-parse', '--is-inside-work-tree']) === 'true') return undefined
+  const excludes = excludePrefixes.map((p) => p.replace(/\\/g, '/').replace(/^\.\//, '')).filter(Boolean)
+  const lines: string[] = []
+  const stack: string[] = ['']
+  try {
+    while (stack.length > 0) {
+      const rel = stack.pop() as string
+      for (const entry of readdirSync(join(cwd, rel), { withFileTypes: true })) {
+        const childRel = rel ? `${rel}/${entry.name}` : entry.name
+        if (excludes.some((ex) => childRel === ex.replace(/\/$/, '') || childRel.startsWith(ex))) continue
+        if (entry.isDirectory()) {
+          if (!LISTING_SKIP_DIRS.has(entry.name)) stack.push(childRel)
+          continue
+        }
+        if (lines.length >= LISTING_MAX_ENTRIES) return undefined
+        // ShipGuard's own courtesy `.gitignore` (only `.shipguard/`) appears after the first run: not a user change.
+        if (childRel === '.gitignore' && readFileSync(join(cwd, childRel), 'utf-8').trim() === '.shipguard/') continue
+        const st = lstatSync(join(cwd, childRel))
+        lines.push(`${childRel}\0${st.size}\0${Math.trunc(st.mtimeMs)}`)
+      }
+    }
+  } catch (err) {
+    logger.debug(`scanId reuse: folder listing failed (no reuse for this run): ${err instanceof Error ? err.message : String(err)}`)
+    return undefined
+  }
+  if (lines.length === 0) return undefined
+  return createHash('sha256').update(lines.sort().join('\n')).digest('hex').slice(0, 16)
 }

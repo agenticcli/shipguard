@@ -16,7 +16,8 @@ type F = { id: string; file: string; line?: number | null; confidence?: string; 
 
 async function scan(name: string): Promise<F[]> {
   const dir = mkTree(TIDY_FIXTURES[name])
-  const r = await scanJson(dir)
+  // The long prose (`explanation`) is part of the 0.12 shape: schema 7 keeps only the short `why`.
+  const r = await scanJson(dir, ['--schema-version', '6'])
   expect(r.json, r.stdout + r.stderr).toBeDefined()
   return r.json!.findings as F[]
 }

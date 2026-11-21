@@ -101,6 +101,14 @@ function normaliseJson(raw: string): string {
   // failure. What must be identical across runs is the finding set, the verdict, and
   // `treeDigest`, all of which are left untouched by this normalisation.
   if ('runId' in parsed) parsed['runId'] = '<normalised>'
+  // 0.13 contract: elapsed time and the repeat-run bookkeeping are per-run by design (the loop state
+  // carries the previous run id); the findings, verdict and steps stay compared byte for byte.
+  if ('elapsedMs' in parsed) parsed['elapsedMs'] = '<normalised>'
+  if ('sinceLastRun' in parsed) parsed['sinceLastRun'] = '<normalised>'
+  // Repeating the same blocking result is counted (the third run stops and asks the human), so the action and
+  // the steps depend on the run number by design; findings and the verdict are still compared exactly.
+  for (const k of ['agentAction', 'nextSteps', 'scanIdReused', 'report']) if (k in parsed) parsed[k] = '<normalised>'
+  if ('scanIdReusedReason' in parsed) parsed['scanIdReusedReason'] = '<normalised>'
 
   if (Array.isArray(parsed['findings'])) {
     parsed['findings'] = [...(parsed['findings'] as Record<string, unknown>[])].sort(

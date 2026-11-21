@@ -101,7 +101,9 @@ const rows: Row[] = [
 ]
 
 function coverageCore(json: ScanJson): unknown {
-  const { mode: _mode, changed: _changed, ...rest } = json.coverage
+  // `ignoredByDefault` is dropped too: ShipGuard's own `.shipguard/` (the scan id reservation) exists before a
+  // non-git full scan, so the two read paths legitimately differ on that one listing.
+  const { mode: _mode, changed: _changed, ignoredByDefault: _ignored, ...rest } = json.coverage
   return rest
 }
 
@@ -114,7 +116,7 @@ describe('coverage matrix: every row on BOTH read paths', () => {
         const ctx = `${row.id} (${mode})\n${run.stderr.slice(0, 800)}`
         expect(run.json, ctx).toBeDefined()
         const json = run.json!
-        expect(json.schemaVersion, ctx).toBe('6')
+        expect(json.schemaVersion, ctx).toBe('7')
         expect(degradeCodes(json), ctx).toEqual(row.codes)
         expect(json.degraded === true, ctx).toBe(row.codes.length > 0)
         if (row.key) expect(keyFoundIn(json, row.key), `${ctx}: key must be found`).toBe(true)

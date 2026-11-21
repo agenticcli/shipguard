@@ -1,4 +1,4 @@
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import { existsSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { scan } from '../core/scanner.js'
@@ -26,7 +26,15 @@ import { recordScanHistory, resolveScanId } from '../core/history/index.js'
 import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
 import { sendTelemetry, telemetryState } from '../core/telemetry.js'
-import { setExitCode } from '../utils/exit.js'
+import { emitError, setExitCode } from '../utils/exit.js'
+import {
+  CORE_LINE, SCHEMA_VERSION, LEGACY_SCHEMA_VERSION, buildErrorEnvelope, buildScanEnvelope, buildVerdictJson, buildPlanJson,
+  buildNextSteps, buildCoverageJson, buildDegradedReasons, buildNotScanned, decideAgentAction, blockingOccurrences,
+  computeSinceLastRun, readLastRun, writeLastRun, mapProFetchCode, secretEvidenceText, evidenceOf, stackDisplayName,
+} from '../core/outcome.js'
+import type { ErrorCode, ExtraErrorFields, SinceLastRun } from '../core/outcome.js'
+import { buildRerunCommand } from '../core/rerun.js'
+import { loadBundledRules } from '../core/bundled-rules.js'
 import type { TelemetryOutput, TelemetryVerdict } from '../core/telemetry.js'
 // Type-only import — deliberately NOT a value import. pro-scanner.ts (re2js, matcher-contract,
 // coderef-dispatch, etc.) is dynamically imported ONLY inside the `if (opts.pro)` branch below to
@@ -169,7 +177,7 @@ export function proFetchActionHint(code: ProFetchErrorCode, retryAfterSeconds?: 
     case 'AUTH_FAILED':
       return 'Run `shipguard login` to re-authenticate, or pass --allow-degraded to run local rules only.'
     case 'INSUFFICIENT_CREDITS':
-      return `Buy more credits at ${goLink('billing')}, or pass --allow-degraded to run local rules only.`
+      return `The server did not provide the rulebook for this scan. Run \`shipguard upgrade\` for details, or pass --allow-degraded to run general rules only.`
     case 'RATE_LIMITED':
       return retryAfterSeconds !== undefined
         ? `Rate limited — retry after ${retryAfterSeconds}s, or pass --allow-degraded to run local rules only.`
@@ -238,7 +246,7 @@ function isProjectRoot(dir: string): boolean {
 
 export function scanCommand(): Command {
   return new Command('scan')
-    .description('Scan your project for high-risk issues (verbose by default; use --quiet for one-line verdict)')
+    .description(`${CORE_LINE}. Scan your project for high-risk issues (use --quiet for a one-line verdict)`)
     .argument('[path]', 'Path to project root to scan (defaults to current directory)')
     .option('--changed', 'Only scan changed files from git diff')
     .option('--report', 'Generate a detailed Markdown report')
@@ -246,7 +254,8 @@ export function scanCommand(): Command {
     .option('--json', 'Output results as JSON (machine-readable; suppresses all decoration)')
     .option('--sarif', 'Output results as SARIF 2.1.0 (for GitHub Code Scanning)')
     .option('-q, --quiet', 'One-line verdict only (suppresses progress, panel, and tips)')
-    .option('--pro', 'Download the full current rulebook for this scan (needs `shipguard login`; any plan, Free included; uses 1 credit)')
+    .option('--pro', 'Require the full rulebook for this scan (needs `shipguard login`; exits 3 when it cannot be had)')
+    .addOption(new Option('--schema-version <n>', 'JSON contract version to print (7 = current; 6 = the 0.12 shape, for the 0.13.x line only)').choices([LEGACY_SCHEMA_VERSION, SCHEMA_VERSION]).default(SCHEMA_VERSION))
     .option('--api-url <url>', 'API server URL', 'https://agenticcli.dev')
     .option('--category <categories>', 'Comma-separated category filter for rulebook rules')
     .option('--beta', 'Include beta-stage rules')
@@ -268,7 +277,7 @@ Examples:
   shipguard scan ./my-app         Scan a specific directory
   shipguard scan --changed        Scan only git-diff files (faster)
   shipguard scan --json           Machine-readable output for CI/agents
-  shipguard scan --pro            Download the full current rulebook (needs login; uses 1 credit)
+  shipguard scan --pro            Require the full rulebook (needs login)
   shipguard scan --pro --allow-degraded  Fall back to local rules if the rulebook download fails (opt-in)
   shipguard scan --all            Scan any directory regardless of project markers
   shipguard scan --strict         CI hard gate: exit 1 on blocking findings
@@ -291,10 +300,10 @@ Exit codes (verdict-neutral by default — ShipGuard informs, you choose the gat
   2  Config error (bad policy file, bad flags, non-project directory, scan path
      that does not exist or is not a directory).
   3  Runtime error — the scan could not meaningfully run at all. This
-     INCLUDES an explicit --pro request whose rule fetch failed (auth,
-     credits, rate limit, server, an invalid bundle, no active rule
-     release on the server, or the platform being temporarily unavailable —
-     --json code PLATFORM_UNAVAILABLE, with retryAfterSeconds when known) — the requested gate did not run, so
+     INCLUDES an explicit --pro request whose rulebook could not be had (sign-in,
+     rate limit, server, an invalid bundle, no active release, or the platform
+     being temporarily unavailable: --json error.code RULEBOOK_UNREACHABLE, with
+     error.retryAfterSeconds when known) — the requested gate did not run, so
      ShipGuard fails loud instead of silently falling back to a free
      scan. Pass --allow-degraded to opt back into the free-scan
      fallback (degraded:true, exit code unaffected).
@@ -327,11 +336,16 @@ ${LEARN_MORE}`)
       if (scanPath) {
         const pathProblem = checkScanPath(cwd)
         if (pathProblem) {
-          logger.error(pathProblem.message)
-          if (machineOutput) {
-            console.log(JSON.stringify({ error: pathProblem.message, code: pathProblem.code }))
-          }
-          return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd(), outputKind(opts))
+          return failWith(
+            buildErrorEnvelope({
+              code: pathProblem.code,
+              message: pathProblem.message,
+              cliVersion: CLI_VERSION,
+              cause: pathProblem.code === 'PATH_NOT_FOUND' ? `The folder ${cwd} was not found or cannot be read.` : undefined,
+              extra: { path: cwd },
+            }),
+            { startTime, projectDir: process.cwd(), opts },
+          )
         }
       }
 
@@ -342,16 +356,17 @@ ${LEARN_MORE}`)
       // and almost certainly unintentional. Require either a project root or --all.
       // ---------------------------------------------------------------------------
       if (!scanPath && !opts.all && !isProjectRoot(cwd)) {
-        const refusal =
-          `Refusing to scan a non-project directory ${cwd}. ` +
-          `Pass a path (\`shipguard scan ./my-app\`) or \`--all\` to override.`
-        logger.error(refusal)
-        if (machineOutput) {
-          console.log(JSON.stringify({ error: refusal, code: 'NOT_A_PROJECT' }))
-        } else {
-          console.log(`\n${LEARN_MORE}`)
-        }
-        return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd(), outputKind(opts))
+        return failWith(
+          buildErrorEnvelope({
+            code: 'NOT_A_PROJECT',
+            message: `${cwd} does not look like a project (no package.json or .git).`,
+            cliVersion: CLI_VERSION,
+            cause: 'ShipGuard refuses to scan a folder that is not a project, to avoid scanning your home folder by mistake.',
+            fix: 'Pass the path of your project folder (for example ./my-app), or use --all to scan this folder anyway.',
+            extra: { path: cwd },
+          }),
+          { startTime, projectDir: process.cwd(), opts },
+        )
       }
 
       // Change working directory to the resolved scan root so scanner uses it as cwd
@@ -361,7 +376,7 @@ ${LEARN_MORE}`)
       }
 
       try {
-        await runScan({ cwd, opts, machineOutput, quiet, startTime })
+        await runScan({ cwd, invocationCwd: originalCwd, opts, machineOutput, quiet, startTime })
       } finally {
         if (scanPath) {
           process.chdir(originalCwd)
@@ -370,36 +385,42 @@ ${LEARN_MORE}`)
     })
 }
 
+const MANIFESTS = ['package.json', 'pyproject.toml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'Gemfile', 'composer.json', 'pom.xml', 'build.gradle']
+
+/** The manifest that made this folder a project (spec 06 "unsupported stack"), or null when none is known. */
+function firstManifest(dir: string): string | null {
+  return MANIFESTS.find((m) => existsSync(join(dir, m))) ?? null
+}
+
 /** Output kind for the usage ping. Same precedence as the output switch below: --sarif, then --json, else human (--quiet is human). */
 function outputKind(opts: Record<string, unknown>): TelemetryOutput {
   return opts.sarif ? 'sarif' : opts.json ? 'json' : 'human'
 }
 
 /**
- * The ONE exit path for every scan error (config 2 / runtime 3): sends a single telemetry ping with
- * verdict "error" (all opt-outs honoured inside sendTelemetry; it never rejects), awaited so the hard
- * exit cannot drop it, then sets the exit code and returns (callers must `return` it). Keep every error exit going through here - a source-guard test
+ * The ONE exit path for every scan error (config 2 / runtime 3 / 130): the error template on stderr and, with
+ * --json/--sarif, the error envelope on stdout (utils/exit.ts emitError); then a single telemetry ping with
+ * verdict "error" (all opt-outs honoured inside sendTelemetry; it never rejects), awaited so the hard exit
+ * cannot drop it. Callers must `return` it. Keep every error exit going through here - a source-guard test
  * fails on a bare process.exit(CONFIG_ERROR|RUNTIME_ERROR) in this file.
  */
-async function exitWithError(
-  exitCode: number,
-  startTime: number,
-  projectDir: string,
-  output: TelemetryOutput,
-  policy?: unknown,
+async function failWith(
+  env: ReturnType<typeof buildErrorEnvelope>,
+  ctx: { startTime: number; projectDir: string; opts: Record<string, unknown>; policy?: unknown },
 ): Promise<void> {
+  emitError(env, {
+    machine: Boolean(ctx.opts.json) || Boolean(ctx.opts.sarif),
+    legacySchema: ctx.opts.schemaVersion === LEGACY_SCHEMA_VERSION,
+  })
   try {
     await sendTelemetry(
-      { cliVersion: CLI_VERSION, verdict: 'error', durationMs: Date.now() - startTime, output },
-      { policy, projectDir },
+      { cliVersion: CLI_VERSION, verdict: 'error', durationMs: Date.now() - ctx.startTime, output: outputKind(ctx.opts) },
+      { policy: ctx.policy, projectDir: ctx.projectDir },
     )
   } catch (err) {
     // sendTelemetry never rejects; belt and braces so telemetry can never change the exit code.
     logger.debug(`telemetry: error ping skipped (ignored): ${err instanceof Error ? err.message : String(err)}`)
   }
-  // Set the code and return: never process.exit() while output may be queued (utils/exit.ts).
-  // Every caller must `return exitWithError(...)` so nothing runs after the error.
-  setExitCode(exitCode)
 }
 
 /** Why an explicit scan path cannot be scanned, or null when it is an existing directory. */
@@ -419,12 +440,14 @@ function checkScanPath(absPath: string): { code: 'PATH_NOT_FOUND' | 'PATH_NOT_A_
 
 async function runScan(ctx: {
   cwd: string
+  /** The folder the command was run from (before any chdir): the re-run command is relative to it. */
+  invocationCwd: string
   opts: Record<string, unknown>
   machineOutput: boolean
   quiet: boolean
   startTime: number
 }) {
-  const { cwd, opts, machineOutput, quiet, startTime } = ctx
+  const { cwd, invocationCwd, opts, machineOutput, quiet, startTime } = ctx
 
   // Load policy for header info and report path resolution
   let policy
@@ -432,12 +455,18 @@ async function runScan(ctx: {
     policy = await loadPolicy(cwd)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    logger.error(`Config error: ${message}`)
-    if (machineOutput) {
-      // Agents read stdout: give them one parseable error object (same shape as PATH_NOT_FOUND).
-      console.log(JSON.stringify({ error: message, code: 'INVALID_POLICY' }))
-    }
-    return exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, cwd, outputKind(opts))
+    const line = /line (\d+)/i.exec(message)
+    return failWith(
+      buildErrorEnvelope({
+        code: 'INVALID_POLICY',
+        message: `shipguard.policy.yml could not be read${line ? ` (line ${line[1]})` : ''}.`,
+        cliVersion: CLI_VERSION,
+        cause: message,
+        fix: `Fix shipguard.policy.yml${line ? ` at line ${line[1]}` : ''}, or move the file aside and run shipguard init to make a fresh one.`,
+        extra: { file: 'shipguard.policy.yml', ...(line ? { line: Number(line[1]) } : {}) },
+      }),
+      { startTime, projectDir: cwd, opts },
+    )
   }
 
   // -----------------------------------------------------------------------------------
@@ -480,7 +509,9 @@ async function runScan(ctx: {
     cliVersion: CLI_VERSION,
     changedOnly,
     categories,
-    proRequested: Boolean(opts.pro),
+    // "Rulebook requested" (not just the --pro flag): the key of the reservation behind the server-side
+    // dedup. Today only an explicit --pro asks for the rulebook; the signed-in default (W1b) will set it too.
+    rulebookRequested: Boolean(opts.pro),
     frameworks: frameworkNames,
   })
 
@@ -508,12 +539,13 @@ async function runScan(ctx: {
   }
 
   let proRules: QualityGateRule[] | undefined
-  let creditsRemaining: number | undefined
   let rulesVersion: string | undefined
   let degraded = false
   // Machine-readable reason for the pro-fetch failure — added to result.degradedReasons
   // after the scan completes, alongside any scanner-layer reasons (FILE_TOO_LARGE, etc.)
   let proFetchDegradeReason: DegradeReason | undefined
+  // Public-contract view of the same event (`rules.fallback`): code + one fixed sentence.
+  let rulesFallback: { code: string; message: string } | null = null
 
   // `changedOnly`/`categories` were hoisted above (scanId reuse) so resolveScanId can compute its
   // pre-scan reuse key before this point — the scope fingerprint (§2.2) below reuses the same
@@ -558,7 +590,6 @@ async function runScan(ctx: {
         scanId,
       )
       proRules = fetched.rules
-      creditsRemaining = fetched.creditsRemaining
       rulesVersion = fetched.rulesVersion
 
       if (!machineOutput && !quiet && proRules.length > 0) {
@@ -583,13 +614,16 @@ async function runScan(ctx: {
         (err instanceof Error && err.name === 'NoRulesAppliedError') ||
         (err as { code?: string })?.code === 'NO_RULES_APPLIED'
       if (isNoRulesApplied) {
-        if (!machineOutput) {
-          logger.error(`Rulebook unavailable (fail-closed): ${errMsg}`)
-          logger.error('This scan applied ZERO rules — it checked nothing. Refusing to report a clean pass.')
-        } else {
-          console.log(JSON.stringify({ error: errMsg, code: 'NO_RULES_APPLIED' }))
-        }
-        return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, outputKind(opts), policy)
+        return failWith(
+          buildErrorEnvelope({
+            code: 'NO_RULES_APPLIED',
+            message: 'This scan applied zero rules, so it checked nothing and cannot report a clean pass.',
+            cliVersion: CLI_VERSION,
+            runId: scanId,
+            cause: errMsg,
+          }),
+          { startTime, projectDir: cwd, opts, policy },
+        )
       }
 
       // ---------------------------------------------------------------------
@@ -621,6 +655,9 @@ async function runScan(ctx: {
           code: 'PRO_RULES_UNAVAILABLE',
           detail: `[${proErrorCode}] The rulebook could not be downloaded: ${errMsg}`,
         }
+        rulesFallback = proErrorCode === 'INSUFFICIENT_CREDITS'
+          ? { code: 'RULEBOOK_WITHHELD', message: 'The rulebook was not provided for this scan. This scan ran general rules only.' }
+          : { code: 'RULEBOOK_UNREACHABLE', message: 'Rulebook could not be reached. This scan ran general rules only; it is not a full rulebook scan.' }
       } else {
         // Default (amended A1, explicit-Pro-failure path only — see the
         // resolveExitCode doc comment above for the governance note): the
@@ -628,26 +665,27 @@ async function runScan(ctx: {
         // loud, exit 3 — never silently degrade to a free scan and report
         // green. Structured, machine-readable, and includes what the caller
         // can do next.
-        const action = proFetchActionHint(proErrorCode, retryAfterSeconds)
-        if (proErrorCode === 'PLATFORM_UNAVAILABLE' || proErrorCode === 'FRESHNESS_EXPIRED') {
-          // The action text IS the calm message (it already carries the --allow-degraded hint) —
-          // don't prefix it with the raw server string.
-          logger.error(action)
-        } else {
-          logger.error(`Rulebook request failed [${proErrorCode}]: ${errMsg}`)
-          logger.error(action)
-          logger.error('Pass --allow-degraded to fall back to a free (local-rules-only) scan instead.')
-        }
-        if (machineOutput) {
-          console.log(JSON.stringify({
-            error: errMsg,
-            code: proErrorCode,
-            degraded: false,
-            action,
-            ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
-          }))
-        }
-        return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, outputKind(opts), policy)
+        const publicCode: ErrorCode = mapProFetchCode(proErrorCode, errMsg)
+        const calm = proErrorCode === 'PLATFORM_UNAVAILABLE' || proErrorCode === 'FRESHNESS_EXPIRED'
+        // The 0.12 credit-balance wording is gone (no credit model in the CLI): say what happened.
+        const message =
+          proErrorCode === 'INSUFFICIENT_CREDITS'
+            ? 'The server did not provide the rulebook for this scan.'
+            : calm
+              ? proFetchActionHint(proErrorCode, retryAfterSeconds)
+              : errMsg
+        const extra: ExtraErrorFields = retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}
+        return failWith(
+          buildErrorEnvelope({
+            code: publicCode,
+            message,
+            cliVersion: CLI_VERSION,
+            runId: scanId,
+            ...(publicCode === 'RATE_LIMITED' && retryAfterSeconds !== undefined ? { fix: `Retry after ${retryAfterSeconds} seconds` } : {}),
+            extra,
+          }),
+          { startTime, projectDir: cwd, opts, policy },
+        )
       }
     }
   }
@@ -689,12 +727,11 @@ async function runScan(ctx: {
     if (showProgress) {
       process.stderr.write('\r\x1b[K')  // Clear the progress line
     }
-    if (!machineOutput) {
-      logger.error(`Scan failed: ${error instanceof Error ? error.message : error}`)
-    } else {
-      console.log(JSON.stringify({ error: String(error) }))
-    }
-    return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, outputKind(opts), policy)
+    const crash = error instanceof Error ? error.message : String(error)
+    return failWith(
+      buildErrorEnvelope({ code: 'INTERNAL_ERROR', message: `ShipGuard stopped unexpectedly (run ${scanId.slice(0, 8)}).`, cliVersion: CLI_VERSION, runId: scanId, cause: crash }),
+      { startTime, projectDir: cwd, opts, policy },
+    )
   }
 
   // Clear progress line before printing results
@@ -724,7 +761,9 @@ async function runScan(ctx: {
     const commandReasons: DegradeReason[] = proFetchDegradeReason ? [proFetchDegradeReason] : []
     result.degradedReasons = [...existingReasons, ...commandReasons]
   }
-  result.creditsWarning = creditsRemaining !== undefined && creditsRemaining < 10
+  // Deprecated alias (0.13.x): true when the SERVER's usage.state is warn or used. The CLI never decides a
+  // threshold itself (no plan facts); with no verified plan data there is no such state.
+  result.creditsWarning = false
   result.rulesVersion = rulesVersion
   // Receipt fields (rec #8). runId is the SAME id used for retry idempotency and for the
   // run-scoped report filenames, so a report on disk can always be traced back to a run.
@@ -839,11 +878,157 @@ async function runScan(ctx: {
   const notSafe = result.riskScore.blockingCount > 0 || effectiveRecommendation(result) === 'DO_NOT_SHIP'
   publicResult.exitMeaning = exitMeaning({ exitCode, strict: scanOptions.strict, notSafe, regressionBlocks })
 
+  // The loop state (spec 04 "Fix loop"): how many runs in a row still show the same blocking rule + file.
+  // Partial (--changed) scans never count: a blocker outside the changed files would look "fixed".
+  let sinceLastRun: SinceLastRun | null = null
+  if (!changedOnly) {
+    const warnLoop = (m: string): void => logger.warn(m)
+    const loop = computeSinceLastRun(readLastRun(cwd, warnLoop), {
+      runId: scanId,
+      treeDigest: result.treeDigest ?? null,
+      blocking: blockingOccurrences(result.findings),
+    })
+    sinceLastRun = loop.since
+    writeLastRun(cwd, loop.next, warnLoop)
+  }
+
+  const verdictValue = effectiveRecommendation(result)
+  const rerunCommand = buildRerunCommand({
+    invocationCwd,
+    scanRoot: cwd,
+    all: Boolean(opts.all),
+    pro: Boolean(opts.pro),
+    allowDegraded: Boolean(opts.allowDegraded),
+  })
+
   // Machine-readable output — exactly one format emitted to stdout
   if (opts.sarif) {
     console.log(JSON.stringify(toSarif(publicResult), null, 2))
+  } else if (scanOptions.json && opts.schemaVersion === LEGACY_SCHEMA_VERSION) {
+    // `--schema-version 6`: the 0.12 shape. Secrets keep a string `evidence`, but only the 0.13 redaction text.
+    console.log(JSON.stringify({
+      ...publicResult,
+      findings: publicResult.findings.map((f) => {
+        const e = evidenceOf(f)
+        return e && e.kind === 'secret' ? { ...f, evidence: secretEvidenceText(e.secretType, e.length) } : f
+      }),
+    }, null, 2))
   } else if (scanOptions.json) {
-    console.log(JSON.stringify(publicResult, null, 2))
+    const general = new Set(loadBundledRules().map((r) => r.id))
+    const rulebookRan = Boolean(proRules?.length) && !degraded
+    const rulebookRuleIds = new Set<string>(rulebookRan ? proRules!.filter((r) => !general.has(r.id)).map((r) => r.id) : [])
+    const extraRules = rulebookRan ? proRules!.filter((r) => rulebookRuleIds.has(r.id)) : []
+    const reasons = result.degradedReasons ?? []
+    const degradedJson = buildDegradedReasons(reasons, result.coverage)
+    const notScanned = buildNotScanned(result.coverage, reasons)
+    const blockingFindings = result.findings.filter((f) => f.blocking && !f.suppressed)
+    const warnings: Array<{ code: string; message: string; command: string | null }> = []
+    const steps = buildNextSteps({
+      value: verdictValue,
+      blockingFindings,
+      degraded: result.degraded === true,
+      degradedReasons: degradedJson,
+      notScanned,
+      sinceLastRun,
+      warnings,
+      rerunCommand,
+      install: null,
+      reportMarkdown: reportPaths?.mdPath ?? '.shipguard/reports/latest.md',
+    })
+    const safeMode = ((await import('../core/telemetry-config.js')) as { isSafeMode?: () => boolean }).isSafeMode?.() ?? false
+    const realStacks = detectedFrameworks.filter((f) => f.name !== 'generic')
+    const strictWouldExit = resolveExitCode({
+      strict: true,
+      blockingCount: result.riskScore.blockingCount,
+      degraded: result.degraded === true,
+      recommendation: verdictValue,
+    })
+    console.log(JSON.stringify(buildScanEnvelope({
+      cliVersion: CLI_VERSION,
+      runId: scanId,
+      timestamp: result.timestamp,
+      elapsedMs: Date.now() - startTime,
+      verdictValue,
+      verdict: buildVerdictJson({
+        value: verdictValue,
+        blockingCount: result.riskScore.blockingCount,
+        findingCount: result.findings.length,
+        degraded: result.degraded === true,
+        filesScanned: result.filesScanned,
+        filesDiscovered: result.coverage?.discovered ?? result.filesScanned,
+        rulebookFallback: rulesFallback !== null,
+      }),
+      exitCode,
+      strict: scanOptions.strict,
+      strictWouldExit,
+      agentAction: decideAgentAction({
+        value: verdictValue,
+        blockingCount: result.riskScore.blockingCount,
+        degraded: result.degraded === true,
+        steps,
+        sinceLastRun,
+      }),
+      report: reportPaths ? { markdown: reportPaths.mdPath, json: reportPaths.runJsonPath } : null,
+      stack: {
+        detected: realStacks.map((f) => `${f.name}${f.version ? `@${f.version}` : ''}`),
+        supported: realStacks.length > 0,
+        ...(realStacks.length === 0 ? { manifest: firstManifest(cwd) } : {}),
+      },
+      rules: {
+        corpus: rulebookRan ? 'rulebook' : 'general',
+        version: rulebookRan ? (rulesVersion ?? null) : CLI_VERSION,
+        applied: rulebookRan ? proRules!.length : loadBundledRules().length,
+        localChecks: true,
+        fallback: rulesFallback,
+        receipt: rulebookRan && rulesFallback === null
+          ? {
+              extraRules: extraRules.length,
+              extraCategories: [...new Set(extraRules.map((r) => r.category))].sort(),
+              // No per-rule area in the bundle yet: the category code stands in (spec 02 `rules.receipt`).
+              extraAreas: [...new Set(extraRules.map((r) => r.category))].sort(),
+              extraFindings: result.findings.filter((f) => rulebookRuleIds.has(f.id)).length,
+            }
+          : null,
+      },
+      plan: buildPlanJson({
+        stacks: realStacks.map((f) => f.name),
+        complete: result.degraded !== true,
+        blockingCount: result.riskScore.blockingCount,
+        rulebookRan,
+        rulebookFallbackCode: rulesFallback?.code ?? null,
+        ci: Boolean(process.env.CI),
+        // Safe mode suppresses every Free-to-Pro line (spec 06); same cast as cli.ts until W0 (#39) is merged.
+        muted: process.env.SHIPGUARD_NO_PROMO === '1' || safeMode,
+        jsonPitchAllowed: false,
+      }),
+      findings: result.findings,
+      findingCtx: { rerunCommand, rulebookRuleIds },
+      coverage: buildCoverageJson(result.coverage, reasons, result.filesScanned, 0),
+      degraded: result.degraded === true,
+      degradedReasons: degradedJson,
+      warnings,
+      nextSteps: steps,
+      telemetry: publicResult.telemetry,
+      regressions: publicResult.regressions ?? [],
+      coverageChanged: publicResult.coverageChanged ?? [],
+      sinceLastRun,
+      treeDigest: result.treeDigest,
+      riskScore: result.riskScore,
+      policyUsed: result.policyUsed,
+      scanIdReused,
+      legacy: {
+        stateStatus: result.stateStatus,
+        regressionCheckSkipped: result.regressionCheckSkipped,
+        regressionCheckSkippedReason: result.regressionCheckSkippedReason,
+        creditsWarning: Boolean(result.creditsWarning),
+        filesScanned: result.filesScanned,
+        exitMeaning: publicResult.exitMeaning ?? '',
+        rulesVersion: result.rulesVersion,
+        rulesApplied: result.rulesApplied,
+        rulesBreakdown: result.rulesBreakdown,
+        aiCodeIssues: result.aiCodeIssues,
+      },
+    }), null, 2))
   } else if (quiet) {
     // --quiet mode: one `key=value` line (spec 01); nothing else on stdout.
     console.log(renderQuietLine({
@@ -863,14 +1048,6 @@ async function runScan(ctx: {
     if (isTTY) {
       const banner = welcomeBanner()
       if (banner) console.log(banner)
-    }
-
-    if (creditsRemaining !== undefined) {
-      logger.info(`Credits remaining: ${creditsRemaining}`)
-    }
-
-    if (scanIdReused) {
-      logger.info('Retry detected — reused the prior scanId (no double charge for this retry)')
     }
 
     const gate = probeGate(cwd)

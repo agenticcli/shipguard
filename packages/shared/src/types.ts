@@ -394,7 +394,8 @@ export interface QualityGateRule {
   framework: string[]
   frameworkVersion?: string
   category: CheckCategory
-  tier: 'free' | 'pro' | 'enterprise'
+  /** Open token: the server decides which tiers exist; the CLI never enumerates them (spec 02). */
+  tier: string
   severity: Severity
   subcategory?: 'vuln' | 'audit' | 'secure-default'
   confidence?: Confidence
