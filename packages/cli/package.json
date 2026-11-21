@@ -1,7 +1,7 @@
 {
   "name": "@agenticcli/shipguard",
   "version": "0.12.1",
-  "description": "The security scanner your coding agent runs before every commit. Checks for leaked secrets, open routes, unsigned payment webhooks, risky migrations and unsafe deploy settings, on your machine.",
+  "description": "Review code with a rulebook to build secure code. Checks for leaked secrets, open routes, unsigned payment webhooks, risky migrations and unsafe deploy settings, on your machine.",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
@@ -30,10 +30,13 @@
     "chalk": "^5.4.0",
     "commander": "^13.1.0",
     "fast-glob": "^3.3.0",
-    "jose": "^6.2.13",
     "minimatch": "^11.0.1",
     "re2js": "2.8.7",
     "yaml": "^2.9.1"
+  },
+  "overrides": {
+    "picomatch@^2": "2.3.2",
+    "picomatch@^4": "4.0.4"
   },
   "devDependencies": {
     "@agenticcli/matcher-contract": "workspace:*",
