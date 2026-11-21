@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { relative } from 'node:path'
+import { relative, resolve } from 'node:path'
 import type { Policy } from '@agenticcli/shared'
 import { DEFAULT_SCAN_ID_REUSE_WINDOW_MINUTES, SCAN_ID_REUSE_WINDOW_ENV_VAR } from '@agenticcli/shared'
 import { resolveHistoryPath } from './path.js'
@@ -143,21 +143,21 @@ export async function resolveScanId(input: ResolveScanIdInput): Promise<ResolveS
     const historyRelPath = relative(cwd, historyPath).replace(/\\/g, '/')
     const excludePrefixes = ['.shipguard/', historyRelPath]
 
-    // Resolve the repo identity FIRST: in a non-git folder it creates ShipGuard's own `.shipguard/repo-id` and
-    // `.gitignore` line, and those must exist before the content identity is taken or the second run would
-    // see them as "changed files" and never reuse (the same run does this later in the history record anyway).
-    const identity = resolveRepoIdentity(cwd)
-
     // Git identity first (HEAD + dirty paths). With no resolvable git HEAD (not a git repo, no commits yet)
     // fall back to a local folder-listing identity (paths, sizes, mtimes; never file contents) so a re-run in
     // a non-git folder still reuses its scan id and a gate re-run is never counted twice. Neither available
     // (folder too big to list) → do not attempt reuse at all.
-    const contentIdentity =
-      resolveContentIdentity(cwd, excludePrefixes) ?? resolveListingIdentity(cwd, excludePrefixes)
+    const gitIdentity = resolveContentIdentity(cwd, excludePrefixes)
+    const contentIdentity = gitIdentity ?? resolveListingIdentity(cwd, excludePrefixes)
     if (!contentIdentity) {
       return { scanId: randomUUID(), scanIdReused: false }
     }
 
+    // Non-git folder: key the reservation by the folder path. resolveRepoIdentity would write `.gitignore` and
+    // `.shipguard/repo-id` BEFORE the scan, which would show up as a scanned/changed file of the scan itself.
+    const identity = gitIdentity
+      ? resolveRepoIdentity(cwd)
+      : { repoId: `path:${createHash('sha256').update(resolve(cwd)).digest('hex').slice(0, 32)}` }
     const reuseKey = computeScanIdReuseKey({
       changedOnly,
       categories,

@@ -94,7 +94,8 @@ vi.mock('../../src/core/config-generator.js', () => ({
   generateConfig: vi.fn(() => '.shipguard.yml'),
 }))
 
-vi.mock('../../src/core/pro-scanner.js', () => ({
+vi.mock('../../src/core/pro-scanner.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/core/pro-scanner.js')>()),
   fetchProRules: vi.fn().mockImplementation(async () => ({
     rules: [],
     creditsRemaining: 42,

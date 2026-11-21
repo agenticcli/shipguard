@@ -36,7 +36,7 @@ import {
 } from '../core/outcome.js'
 import type { ErrorCode, ExtraErrorFields, SinceLastRun } from '../core/outcome.js'
 import { buildRerunCommand } from '../core/rerun.js'
-import { loadBundledRules, bundledRulesMeta } from '../core/bundled-rules.js'
+import { loadBundledRules } from '../core/bundled-rules.js'
 import type { TelemetryOutput, TelemetryVerdict } from '../core/telemetry.js'
 // Type-only import — deliberately NOT a value import. pro-scanner.ts (re2js, matcher-contract,
 // coderef-dispatch, etc.) is dynamically imported ONLY inside the `if (opts.pro)` branch below to
@@ -302,10 +302,10 @@ Exit codes (verdict-neutral by default — ShipGuard informs, you choose the gat
   2  Config error (bad policy file, bad flags, non-project directory, scan path
      that does not exist or is not a directory).
   3  Runtime error — the scan could not meaningfully run at all. This
-     INCLUDES an explicit --pro request whose rule fetch failed (auth,
-     credits, rate limit, server, an invalid bundle, no active rule
-     release on the server, or the platform being temporarily unavailable —
-     --json code PLATFORM_UNAVAILABLE, with retryAfterSeconds when known) — the requested gate did not run, so
+     INCLUDES an explicit --pro request whose rulebook could not be had (sign-in,
+     rate limit, server, an invalid bundle, no active release, or the platform
+     being temporarily unavailable: --json error.code RULEBOOK_UNREACHABLE, with
+     error.retryAfterSeconds when known) — the requested gate did not run, so
      ShipGuard fails loud instead of silently falling back to a free
      scan. Pass --allow-degraded to opt back into the free-scan
      fallback (degraded:true, exit code unaffected).
@@ -936,6 +936,7 @@ async function runScan(ctx: {
       install: null,
       reportMarkdown: reportPaths?.mdPath ?? '.shipguard/reports/latest.md',
     })
+    const safeMode = ((await import('../core/telemetry-config.js')) as { isSafeMode?: () => boolean }).isSafeMode?.() ?? false
     const realStacks = detectedFrameworks.filter((f) => f.name !== 'generic')
     const strictWouldExit = resolveExitCode({
       strict: true,
@@ -997,7 +998,8 @@ async function runScan(ctx: {
         rulebookRan,
         rulebookFallbackCode: rulesFallback?.code ?? null,
         ci: Boolean(process.env.CI),
-        muted: process.env.SHIPGUARD_NO_PROMO === '1',
+        // Safe mode suppresses every Free-to-Pro line (spec 06); same cast as cli.ts until W0 (#39) is merged.
+        muted: process.env.SHIPGUARD_NO_PROMO === '1' || safeMode,
         jsonPitchAllowed: false,
       }),
       findings: result.findings,
@@ -1020,6 +1022,12 @@ async function runScan(ctx: {
         regressionCheckSkipped: result.regressionCheckSkipped,
         regressionCheckSkippedReason: result.regressionCheckSkippedReason,
         creditsWarning: Boolean(result.creditsWarning),
+        filesScanned: result.filesScanned,
+        exitMeaning: publicResult.exitMeaning ?? '',
+        rulesVersion: result.rulesVersion,
+        rulesApplied: result.rulesApplied,
+        rulesBreakdown: result.rulesBreakdown,
+        aiCodeIssues: result.aiCodeIssues,
       },
     }), null, 2))
   } else if (quiet) {

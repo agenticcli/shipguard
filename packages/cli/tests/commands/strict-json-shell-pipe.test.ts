@@ -60,7 +60,7 @@ describe.skipIf(process.platform === 'win32')('QA: strict JSON through a slow ba
     expect(run.out.length, run.stderr.slice(0, 300)).toBeGreaterThan(4 * 65_536)
     const parsed = JSON.parse(run.out.toString('utf-8'))
     expect(parsed.findings.length).toBe(expected)
-    expect(parsed.schemaVersion).toBe('6')
+    expect(parsed.schemaVersion).toBe('7')
     expect(run.cliCode).toBe(1)
   })
 

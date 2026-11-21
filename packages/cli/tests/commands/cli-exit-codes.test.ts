@@ -88,7 +88,7 @@ describe('spawned-binary exit-code contract ', () => {
     const { code, stderr } = await runCli(['totallyunknowncmd'])
     // unknown command MUST exit 2, never 0.
     expect(code).toBe(2)
-    expect(stderr.toLowerCase()).toContain('unknown command')
+    expect(stderr).toContain('UNKNOWN_COMMAND')
   })
 
   it('unknown command close to a real one → exit 2 with a suggestion', async () => {

@@ -154,6 +154,10 @@ const LISTING_MAX_ENTRIES = 5000
  * Returns undefined when the listing cannot be completed (too many entries, unreadable folder).
  */
 export function resolveListingIdentity(cwd: string, excludePrefixes: string[] = []): string | undefined {
+  // Only for folders git knows nothing about. Inside a git work tree (even one with no commit yet) the
+  // history store would have to write its own files (`.gitignore`) BEFORE the scan, and git would then
+  // report them as changed files: that keeps the old behaviour there (no reuse without a HEAD).
+  if (tryGit(cwd, ['rev-parse', '--is-inside-work-tree']) === 'true') return undefined
   const excludes = excludePrefixes.map((p) => p.replace(/\\/g, '/').replace(/^\.\//, '')).filter(Boolean)
   const lines: string[] = []
   const stack: string[] = ['']
@@ -168,6 +172,8 @@ export function resolveListingIdentity(cwd: string, excludePrefixes: string[] = 
           continue
         }
         if (lines.length >= LISTING_MAX_ENTRIES) return undefined
+        // ShipGuard's own courtesy `.gitignore` (only `.shipguard/`) appears after the first run: not a user change.
+        if (childRel === '.gitignore' && readFileSync(join(cwd, childRel), 'utf-8').trim() === '.shipguard/') continue
         const st = lstatSync(join(cwd, childRel))
         lines.push(`${childRel}\0${st.size}\0${Math.trunc(st.mtimeMs)}`)
       }

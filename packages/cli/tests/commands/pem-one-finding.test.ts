@@ -26,7 +26,7 @@ async function scan(content: string) {
   dirs.push(dir)
   writeFileSync(join(dir, 'package.json'), '{"name":"pem"}', 'utf-8')
   writeFileSync(join(dir, 'k.js'), content, 'utf-8')
-  const res = await spawnNode(distCli, ['scan', dir, '--json'], { cwd: dir })
+  const res = await spawnNode(distCli, ['scan', dir, '--json', '--schema-version', '6'], { cwd: dir })
   return JSON.parse(res.stdout) as {
     riskScore: { score: number }
     findings: Array<{ id: string; severity: string; blocking: boolean; explanation: string }>

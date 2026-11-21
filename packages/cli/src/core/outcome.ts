@@ -71,7 +71,7 @@ export type ErrorCode = keyof typeof ERROR_CODES
 export function mapProFetchCode(code: string, message = ''): ErrorCode {
   switch (code) {
     case 'AUTH_FAILED':
-      return /not authenticated|login/i.test(message) ? 'LOGIN_REQUIRED' : 'TOKEN_EXPIRED'
+      return /expired|no longer valid|refused/i.test(message) ? 'TOKEN_EXPIRED' : 'LOGIN_REQUIRED'
     case 'RATE_LIMITED':
       return 'RATE_LIMITED'
     // The 0.12 credit-balance refusal: the server withheld the rulebook (no credit wording in 0.13).
@@ -131,7 +131,10 @@ const DEGRADED_INFO: Record<string, DegradedInfo> = {
   COMPILE_FAILURE: { fix: 'a rulebook bundle failed to compile and was refused: retry; if it repeats: shipguard feedback', askUser: false },
   NO_FILES_SCANNED: { fix: 'nothing was scanned: check the folder, your ignore paths, or run shipguard scan without --changed', askUser: false },
 }
-/** Code names this CLI printed before schema "7" -> the 0.13 spec names. */
+/**
+ * Degraded codes keep the names 0.12 printed (rule 6: only three finding fields break in schema "7"). The spec's
+ * table spells UNREADABLE_FILE as FILE_UNREADABLE; both are accepted below, the CLI keeps emitting the old one.
+ */
 const DEGRADED_CODE_RENAME: Record<string, string> = { UNREADABLE_FILE: 'FILE_UNREADABLE' }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +335,8 @@ export function buildNotScanned(coverage: ScanCoverage | undefined, reasons: Deg
 
 export function buildDegradedReasons(reasons: DegradeReason[], coverage: ScanCoverage | undefined): Array<Record<string, unknown>> {
   return reasons.map((r) => {
-    const code = DEGRADED_CODE_RENAME[r.code] ?? r.code
-    const info = DEGRADED_INFO[code]
+    const code = r.code
+    const info = DEGRADED_INFO[DEGRADED_CODE_RENAME[code] ?? code]
     const files = info?.coverageKey && coverage ? [...coverage.files[info.coverageKey]] : []
     return {
       code,
@@ -352,18 +355,12 @@ export function buildCoverageJson(
   filesScanned: number,
   ignoredTestValues: number,
 ): Record<string, unknown> {
-  const notScanned = buildNotScanned(coverage, reasons)
-  const complete = reasons.length === 0
+  // Every 0.12 `coverage` key keeps its name, type and meaning (counts, decoded, files, ignoredByDefault as
+  // objects, ignoredByUser as a count); the 0.13 keys are added beside them.
   return {
-    discovered: coverage?.discovered ?? filesScanned,
-    scanned: coverage?.scanned ?? filesScanned,
-    complete,
-    truncated: coverage?.truncated ?? false,
-    mode: coverage?.mode ?? 'full',
-    notScanned,
-    ignoredByDefault: (coverage?.ignoredByDefault ?? []).map((i) => i.pattern),
-    ignoredByUser: [],
-    ignoredByUserCount: coverage?.ignoredByUser ?? 0,
+    ...(coverage ?? { discovered: filesScanned, scanned: filesScanned, truncated: false, mode: 'full' }),
+    complete: reasons.length === 0,
+    notScanned: buildNotScanned(coverage, reasons),
     ignoredTestValues,
   }
 }
@@ -447,7 +444,7 @@ export function buildNextSteps(i: OutcomeInput): NextStep[] {
   const reasonByCode = new Map(i.degradedReasons.map((r) => [String(r.code), r]))
   const namedCodes = new Set<string>()
   for (const n of i.notScanned.filter((x) => x.counts && x.file)) {
-    const r = reasonByCode.get(DEGRADED_CODE_RENAME[n.code] ?? n.code)
+    const r = reasonByCode.get(n.code)
     const askUser = Boolean(r?.askUser)
     namedCodes.add(n.code)
     steps.push({
@@ -706,13 +703,19 @@ export function legacyErrorJson(env: ErrorEnvelope): Record<string, unknown> {
  *     Fix: <one concrete step>
  *     Run: <command>     (only when a command fixes it AND the Fix line does not already contain it)
  */
-export function renderErrorTemplate(env: ErrorEnvelope): string {
+export function errorTemplateLines(env: ErrorEnvelope): { head: string; rest: string[] } {
   const e = env.error
-  const lines = [`${chalk.red('✗')} ${e.code}: ${e.message}`]
-  if (e.cause && !e.message.includes(e.cause)) lines.push(`  Cause: ${e.cause}`)
-  lines.push(`  Fix: ${e.fix}`)
-  if (e.command && !e.fix.includes(e.command)) lines.push(`  Run: ${e.command}`)
-  return lines.join('\n')
+  const rest: string[] = []
+  if (e.cause && !e.message.includes(e.cause)) rest.push(`  Cause: ${e.cause}`)
+  rest.push(`  Fix: ${e.fix}`)
+  if (e.command && !e.fix.includes(e.command)) rest.push(`  Run: ${e.command}`)
+  return { head: `${e.code}: ${e.message}`, rest }
+}
+
+/** The whole template as one string (the first line carries the red ✗). */
+export function renderErrorTemplate(env: ErrorEnvelope): string {
+  const { head, rest } = errorTemplateLines(env)
+  return [`${chalk.red('✗')} ${head}`, ...rest].join('\n')
 }
 
 export interface ScanEnvelopeInput {
@@ -746,7 +749,18 @@ export interface ScanEnvelopeInput {
   policyUsed: string
   scanIdReused: boolean
   /** Result fields kept as additive 0.12 keys (stateStatus etc.). */
-  legacy: { stateStatus?: string; regressionCheckSkipped?: boolean; regressionCheckSkippedReason?: string; creditsWarning: boolean }
+  legacy: {
+    stateStatus?: string
+    regressionCheckSkipped?: boolean
+    regressionCheckSkippedReason?: string
+    creditsWarning: boolean
+    filesScanned: number
+    exitMeaning: string
+    rulesVersion?: string
+    rulesApplied?: number
+    rulesBreakdown?: Record<string, number>
+    aiCodeIssues?: number
+  }
 }
 
 export function buildScanEnvelope(i: ScanEnvelopeInput): Record<string, unknown> {
@@ -784,8 +798,14 @@ export function buildScanEnvelope(i: ScanEnvelopeInput): Record<string, unknown>
     stateStatus: i.legacy.stateStatus,
     regressionCheckSkipped: i.legacy.regressionCheckSkipped,
     ...(i.legacy.regressionCheckSkippedReason ? { regressionCheckSkippedReason: i.legacy.regressionCheckSkippedReason } : {}),
-    exitMeaning: '(deprecated; use exit and verdict)',
+    // Deprecated 0.12 aliases, same values as before: read `exit` and `verdict` instead.
+    exitMeaning: i.legacy.exitMeaning,
     creditsWarning: i.legacy.creditsWarning,
+    filesScanned: i.legacy.filesScanned,
+    ...(i.legacy.rulesVersion !== undefined ? { rulesVersion: i.legacy.rulesVersion } : {}),
+    ...(i.legacy.rulesApplied !== undefined ? { rulesApplied: i.legacy.rulesApplied } : {}),
+    ...(i.legacy.rulesBreakdown !== undefined ? { rulesBreakdown: i.legacy.rulesBreakdown } : {}),
+    ...(i.legacy.aiCodeIssues !== undefined ? { aiCodeIssues: i.legacy.aiCodeIssues } : {}),
   }
   return out
 }

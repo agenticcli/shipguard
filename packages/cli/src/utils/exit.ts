@@ -9,7 +9,7 @@
  * the process wait (standard pipe back-pressure), a truncated JSON document is worse.
  */
 import { logger } from './logger.js'
-import { legacyErrorJson, renderErrorTemplate } from '../core/outcome.js'
+import { errorTemplateLines, legacyErrorJson } from '../core/outcome.js'
 import type { ErrorEnvelope } from '../core/outcome.js'
 
 /** Record the exit code. The caller must then return (stop executing); Node exits when output is drained. */
@@ -84,7 +84,11 @@ export function emitError(
   env: ErrorEnvelope,
   opts: { machine: boolean; legacySchema?: boolean },
 ): void {
-  process.stderr.write(`${renderErrorTemplate(env)}\n`)
+  // First line through the logger (`✗ <CODE>: <what happened>`, same glyph and colour as every error), the
+  // detail lines straight to stderr: the whole template stays on stderr, stdout is for the JSON object only.
+  const { head, rest } = errorTemplateLines(env)
+  logger.error(head)
+  for (const line of rest) console.error(line)
   if (opts.machine) {
     console.log(JSON.stringify(opts.legacySchema ? legacyErrorJson(env) : env))
   }

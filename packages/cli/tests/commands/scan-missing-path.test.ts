@@ -92,8 +92,9 @@ describe('scan with a missing / non-directory path', () => {
   it('--json: stdout is exactly one error object with a stable code, exit 2', async () => {
     const r = await run(['scan', '/nonexistent-shipguard-path', '--json'])
     const parsed = JSON.parse(r.stdout)
-    expect(parsed.code).toBe('PATH_NOT_FOUND')
-    expect(typeof parsed.error).toBe('string')
+    expect(parsed.error.code).toBe('PATH_NOT_FOUND')
+    expect(typeof parsed.error.message).toBe('string')
+    expect(parsed.error.command).toBeNull() // no real path is known: nothing an agent could run as written
     expect(r.code).toBe(2)
   })
 
@@ -102,7 +103,7 @@ describe('scan with a missing / non-directory path', () => {
     const file = join(dir, 'a.txt')
     writeFileSync(file, 'x')
     const r = await run(['scan', file, '--json'])
-    expect(JSON.parse(r.stdout).code).toBe('PATH_NOT_A_DIRECTORY')
+    expect(JSON.parse(r.stdout).error.code).toBe('PATH_NOT_A_DIRECTORY')
     expect(r.code).toBe(2)
   })
 
