@@ -9,6 +9,7 @@ import { statusCommand } from './commands/status.js'
 import { historyCommand } from './commands/history.js'
 import { hookCommand } from './commands/hook.js'
 import { setupCommand } from './commands/setup.js'
+import { uninstallCommand } from './commands/uninstall.js'
 import { schemaCommand } from './commands/schema.js'
 import { feedbackCommand, rateCommand } from './commands/feedback.js'
 import { telemetryCommand } from './commands/telemetry.js'
@@ -149,6 +150,7 @@ addSubcommand(statusCommand())
 addSubcommand(historyCommand())
 addSubcommand(hookCommand())
 addSubcommand(setupCommand())
+addSubcommand(uninstallCommand())
 addSubcommand(schemaCommand())
 addSubcommand(feedbackCommand())
 addSubcommand(rateCommand())
