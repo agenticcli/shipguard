@@ -69,6 +69,7 @@ vi.mock('../../src/core/policy.js', () => ({
 }))
 
 vi.mock('../../src/core/git.js', () => ({
+  listGitIgnored: vi.fn(() => null),
   isGitRepo: vi.fn(() => true),
   getChangedFiles: vi.fn(() => []),
 }))

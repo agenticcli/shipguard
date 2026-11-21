@@ -210,8 +210,8 @@ describe('secretsCheck — same-pattern matches: all same-pattern matches report
     const file = makeFile(
       'config/aws.ts',
       [
-        `const key1 = 'AKIA${"Q7WXR2MN4PLK6ZTB"}'`,
-        `const key2 = 'AKIA${"M3NXP8QL5RWK2YVD"}'`,
+        `const key1 = 'AKIAIOSFODNN7EXAMPLE01'`,
+        `const key2 = 'AKIAIOSFODNN7EXAMPLE02'`,
       ].join('\n')
     )
     const findings = secretsCheck.run([file], DEFAULT_POLICY)

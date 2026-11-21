@@ -2,7 +2,7 @@
   "200": {
     "files": 221,
     "findings": 158,
-    "sha256": "395c48c74b78a94217f7aa2acd1f8fe2653db999c32d59a3c166c81ea8b2b0e7",
+    "sha256": "5b34879c9e8f927b993ca731f493cf9081083486b531e3f121bdf0e6cc7498b2",
     "byRule": {
       "generic.auth.jwt-none-algorithm": 12,
       "generic.config.debug-endpoint-env-dump": 1,

@@ -130,10 +130,10 @@ describe('test values skipped and counted; real secrets caught', () => {
   const TEST_STRIPE = j('sk_', 'test_Zq8vKm3RtY7pLd2WxN5bHc4J')
   const DOC_AWS = j('AKIA', 'IOSFODNN7EXAMPLE')
 
-  it('sk_test_ and the documented AWS example key are skipped and counted, not reported', () => {
+  it('a sk_test_ key is skipped and counted, not reported; the documented AWS example stays a LOW finding', () => {
     const r = checkSecretsWithStats([f('lib/k.ts', `export const a = "${TEST_STRIPE}"\nexport const b = "${DOC_AWS}"\n`)], POLICY)
-    expect(r.findings).toEqual([])
-    expect(r.ignoredTestValues).toBe(2)
+    expect(r.findings.map((x) => [x.line, x.confidence])).toEqual([[2, 'LOW']])
+    expect(r.ignoredTestValues).toBe(1)
   })
   it('real-looking live keys are still caught (and not counted as test values)', () => {
     const r = checkSecretsWithStats([f('lib/k.ts', `export const a = "${REAL_STRIPE}"\nexport const b = "${REAL_AWS}"\n`)], POLICY)
@@ -148,6 +148,7 @@ describe('test values skipped and counted; real secrets caught', () => {
   })
   it('"example" in a connection URL host does not hide a real password', () => {
     expect(isTestValue('postgres://app:Xk93mQ7LpR2vTz81@sample-db.example.net/prod')).toBe(false)
+    expect(isTestValue(j('sk_', 'test_Zq8vKm3RtY7pLd2WxN5bHc4J'))).toBe(true)
     expect(isTestValue('postgres://app:your-password-here@db.example.net/prod')).toBe(true)
   })
   it('dropTestValueFindings removes a corpus finding whose matched text is a test value, keeps a real one', () => {
@@ -156,8 +157,8 @@ describe('test values skipped and counted; real secrets caught', () => {
       evidence, explanation: '', recommendation: '', blocking: true,
     })
     const list = [mk(TEST_STRIPE), mk(REAL_STRIPE), mk(DOC_AWS)]
-    expect(dropTestValueFindings(list)).toBe(2)
-    expect(list.map((x) => x.evidence)).toEqual([REAL_STRIPE])
+    expect(dropTestValueFindings(list)).toBe(1)
+    expect(list.map((x) => x.evidence)).toEqual([REAL_STRIPE, DOC_AWS])
   })
 })
 

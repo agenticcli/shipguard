@@ -631,9 +631,9 @@ export function envFileHasSecret(content: string): boolean {
 
 /**
  * True when a matched value is a documented test or placeholder value, not a credential: a
- * test-mode Stripe key (`sk_test_`, `rk_test_`), a placeholder, or a value that says so itself
- * (`AKIAIOSFODNN7EXAMPLE`, `ghp_FAKE...`, `dummy`). A keyboard run or repeated characters is NOT
- * skipped: it stays a finding at LOW confidence (looksFakeKey). Such matches are skipped and
+ * test-mode Stripe key (`sk_test_`, `rk_test_`) or a placeholder (`your-key-here`, `xxxx`). A value that only
+ * looks fake (`...EXAMPLE`, a keyboard run, repeated characters) is NOT skipped: it stays a finding
+ * at LOW confidence (looksFakeKey). Such matches are skipped and
  * COUNTED (`coverage.ignoredTestValues`), never reported as findings. Pure.
  */
 export function isTestValue(value: string): boolean {
@@ -641,8 +641,8 @@ export function isTestValue(value: string): boolean {
   // A connection URL is judged by its password only: `example`/`sample` in the HOST name must not
   // hide a real password (`postgres://app:Xk93...@sample-db.example.net/prod`).
   const urlPassword = URL_PASSWORD_RE.exec(v)
-  if (v.includes('://')) return isPlaceholderValue(v) || urlPassword?.groups[0] !== undefined && (isPlaceholderValue(urlPassword.groups[0]) || FAKE_MARKER_RE.test(urlPassword.groups[0]))
-  return TEST_MODE_KEY_RE.test(v) || isPlaceholderValue(v) || FAKE_MARKER_RE.test(v)
+  if (v.includes('://')) return isPlaceholderValue(v) || urlPassword?.groups[0] !== undefined && (isPlaceholderValue(urlPassword.groups[0]))
+  return TEST_MODE_KEY_RE.test(v) || isPlaceholderValue(v)
 }
 const URL_PASSWORD_RE = compileDetectorRegex(`://[^\\s:/@]*:([^\\s@]+)@`)
 const TEST_MODE_KEY_RE = compileDetectorRegex(`^[rs]k_test_`)

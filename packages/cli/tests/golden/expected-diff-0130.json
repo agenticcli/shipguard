@@ -612,8 +612,8 @@
   ]
  },
  "expected": {
-  "findings": 585,
-  "sha256": "75bad4076a2404a184f374ba50ef19d6bf73069cc68f7a47a4df592269fd87d6",
+  "findings": 587,
+  "sha256": "3a0acf3d50c824131bb91661e679ba22e2c67589d5b1e78bb6f296881b2574ad",
   "recommendation": "DO_NOT_SHIP"
  },
  "removed": [
@@ -653,13 +653,6 @@
    "reason": "new Function of a SCREAMING_CASE constant is not user input"
   },
   {
-   "id": "generic.secrets.aws-access-key",
-   "file": "overlay/keys.ts",
-   "line": 2,
-   "category": "test-value",
-   "reason": "documented AWS example key: skipped and counted"
-  },
-  {
    "id": "generic.secrets.stripe-live-key",
    "file": "ignored-secrets/note.ts",
    "line": 1,
@@ -678,14 +671,7 @@
    "file": "overlay/keys.ts",
    "line": 1,
    "category": "test-value",
-   "reason": "documented test value (sk_test_ key or AWS example key): skipped and counted"
-  },
-  {
-   "id": "hardcoded_secret",
-   "file": "overlay/keys.ts",
-   "line": 2,
-   "category": "test-value",
-   "reason": "documented test value (sk_test_ key or AWS example key): skipped and counted"
+   "reason": "documented test value (sk_test_ key): skipped and counted"
   },
   {
    "id": "public_admin_route",
@@ -716,6 +702,10 @@
   {
    "file": "overlay/keys.ts",
    "id": "generic.secrets.aws-access-key"
+  },
+  {
+   "file": "overlay/keys.ts",
+   "id": "hardcoded_secret"
   },
   {
    "file": "overlay/keys.ts",

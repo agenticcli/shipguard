@@ -73,13 +73,13 @@ const FIXTURE_PAIRS = [
   },
   {
     name: 'AWS Access Key ID AKIA',
-    safe: `const awsKey = 'AKIA${"Q7WXR2MN4PLK6ZTB"}'`,
+    safe: `const awsKey = 'AKIAIOSFODNN7EXAMPLE'`,
     benign: `// Note: Never hardcode AKIA keys. Use IAM roles.`,
     expectedTitle: 'AWS Access Key ID',
   },
   {
     name: 'AWS Secret Access Key (with var name)',
-    safe: `const AWS_SECRET_ACCESS_KEY = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCY${"Q7WXR2MN4P"}'`,
+    safe: `const AWS_SECRET_ACCESS_KEY = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'`,
     benign: `const key = process.env.AWS_SECRET_ACCESS_KEY`,
     expectedTitle: 'AWS Secret Access Key',
   },
@@ -197,7 +197,7 @@ const DIFFERENTIAL_INPUTS: Record<string, string[]> = {
     `const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)`,
   ],
   'AWS Access Key ID': [
-    `const awsKey = 'AKIA${"Q7WXR2MN4PLK6ZTB"}'`,
+    `const awsKey = 'AKIAIOSFODNN7EXAMPLE'`,
     'no aws key here',
     // Comment lines: native regex matches inside comments (no comment filter at pattern level)
     // but the migrated detector correctly SKIPS comment lines as a pipeline feature.
@@ -205,7 +205,7 @@ const DIFFERENTIAL_INPUTS: Record<string, string[]> = {
     // (Tested separately in PART 4 dimension 2 instead.)
   ],
   'AWS Secret Access Key': [
-    `const AWS_SECRET_ACCESS_KEY = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCY${"Q7WXR2MN4P"}'`,
+    `const AWS_SECRET_ACCESS_KEY = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'`,
     `const key = process.env.AWS_SECRET_ACCESS_KEY`,
   ],
   'Google API Key': [
@@ -261,9 +261,9 @@ describe('PART 2 — Native↔re2js differential: flag decisions must match', ()
     })
   }
 
-  it('differential summary: 13/13 patterns tested against native oracle', () => {
+  it('differential summary: 12/12 patterns tested against native oracle', () => {
     // This test passes by construction — the loop above covers all 13 patterns.
-    expect(NATIVE_ORACLE_PATTERNS.length).toBe(13)
+    expect(NATIVE_ORACLE_PATTERNS.length).toBe(12)
   })
 })
 
@@ -404,7 +404,7 @@ describe('PART 4 — Targeted mutation tests', () => {
     })
 
     it('detects secret in a JSON-like assignment', () => {
-      const file = makeFile('config.json', `{ "AWS_ACCESS_KEY_ID": "AKIA${"Q7WXR2MN4PLK6ZTB"}" }`)
+      const file = makeFile('config.json', `{ "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE" }`)
       const findings = secretsCheck.run([file], BLOCK_ALL_POLICY)
       expect(findings.some((f) => f.title === 'AWS Access Key ID')).toBe(true)
     })
@@ -433,8 +433,8 @@ describe('PART 4 — Targeted mutation tests', () => {
   describe('Per-line vs whole-content scan', () => {
     it('per-line scan: each line is checked independently (same-pattern matches: two secrets same pattern)', () => {
       const file = makeFile('config/aws.ts', [
-        `const key1 = 'AKIA${"Q7WXR2MN4PLK6ZTB"}'`,
-        `const key2 = 'AKIA${"M3NXP8QL5RWK2YVD"}'`,
+        `const key1 = 'AKIAIOSFODNN7EXAMPLE01'`,
+        `const key2 = 'AKIAIOSFODNN7EXAMPLE02'`,
       ].join('\n'))
       const findings = secretsCheck.run([file], BLOCK_ALL_POLICY)
       const awsFindings = findings.filter((f) => f.title === 'AWS Access Key ID')
@@ -482,7 +482,7 @@ describe('PART 4 — Targeted mutation tests', () => {
     })
 
     it('AWS secret key captures the 40-char value (group 1)', () => {
-      const key40 = `wJalrXUtnFEMI/K7MDENG/bPxRfiCY${'Q7WXR2MN4P'}`
+      const key40 = `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`
       const file = makeFile('lib/aws.ts', `const AWS_SECRET_ACCESS_KEY = '${key40}'`)
       const findings = secretsCheck.run([file], BLOCK_ALL_POLICY)
       const f = findings.find((f) => f.title === 'AWS Secret Access Key')

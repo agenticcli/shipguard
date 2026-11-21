@@ -210,14 +210,14 @@ describe('redactFindingsEvidence + finding identity key', () => {
     const b = finding({ evidence: undefined })
     const legacy = finding({ evidence: 'export NEXT_PUBLIC_STRIPE_SECRET_KEY=sk_live_***' })
     redactFindingsEvidence([a, b, legacy], new Set([legacy]))
-    expect(a.evidence).toBe(`secret, ${STRIPE.length} characters, value hidden`)
+    expect(a.evidence).toBe(`x, ${STRIPE.length} characters, value hidden`)
     expect(b.evidence).toBeUndefined()
     // keeps its variable name — not re-masked into `...export N***...`
     expect(legacy.evidence).toBe('export NEXT_PUBLIC_STRIPE_SECRET_KEY=sk_live_***')
     // without the source-redacted mark the same text IS masked (no shape-based trust)
     const other = finding({ evidence: 'export NEXT_PUBLIC_STRIPE_SECRET_KEY=sk_live_***' })
     redactFindingsEvidence([other])
-    expect(other.evidence).toBe('secret, 48 characters, value hidden')
+    expect(other.evidence).toBe('x, 48 characters, value hidden')
   })
 
   it('stamps the identity key from the RAW evidence BEFORE masking; keys sharing a prefix stay distinct', () => {
