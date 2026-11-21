@@ -28,6 +28,7 @@ import type { AccountStatus, PlanBlock } from './plan-types.js'
 import { clearHint, writeHint } from './hint.js'
 import { isMuted, lastAccountStatus, loadNag, markMoment, momentDue, recordAccountStatus, repoKey, type NagContext, type NagData } from './nag.js'
 import { readOffer } from './offer-cache.js'
+import { buildRerunCommand } from './rerun.js'
 import { gateGapLine, type DetectedStack } from './plan-lines.js'
 import { detectFrameworks } from './framework.js'
 import { loadPolicy } from './policy.js'
@@ -334,7 +335,11 @@ export function detectedStacks(dir: string): DetectedStack[] {
   }
 }
 
-export interface LastScan { runId: string; corpus: 'rulebook' | 'general'; applied: number; at: string }
+export interface LastScan {
+  runId: string; corpus: 'rulebook' | 'general'; applied: number; at: string
+  /** The re-run builder's command for that scan's target (history keeps the target only), word for word as the scan screen prints it. */
+  scanCommand: string
+}
 
 /** The newest run in this folder's history (`Last scan here`), or null. Read-only; never throws. */
 export async function lastScanHere(dir: string): Promise<LastScan | null> {
@@ -347,7 +352,8 @@ export async function lastScanHere(dir: string): Promise<LastScan | null> {
       const m = row?.rulesLabel ? /^(rulebook|general)(?::(\d+))?$/.exec(row.rulesLabel) : null
       if (!row || !m) return null
       const applied = m[2] !== undefined ? Number(m[2]) : bundledRulesMeta().ruleCount
-      return { runId: row.scanId, corpus: m[1] as 'rulebook' | 'general', applied, at: new Date(row.timestamp).toISOString() }
+      const scanCommand = buildRerunCommand({ invocationCwd: dir, scanRoot: resolve(dir, row.target ?? '.') })
+      return { runId: row.scanId, corpus: m[1] as 'rulebook' | 'general', applied, at: new Date(row.timestamp).toISOString(), scanCommand }
     } finally {
       opened.store.close()
     }

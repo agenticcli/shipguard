@@ -43,6 +43,7 @@ export function statusCommand(): Command {
         plan: fresh.plan,
         generalCount: general,
         lastScan,
+        ...(lastScan ? { scanCommand: lastScan.scanCommand } : {}),
       })
       for (const line of lines) console.log(line)
       if (fresh.retryAfterSeconds !== undefined && fresh.failure !== null) {

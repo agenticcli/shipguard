@@ -80,7 +80,7 @@ export function upgradeCommand(): Command {
       }
 
       const last = await lastScanHere(cwd)
-      const input: UpgradeInput = { plan, signedIn, accountStatus, detected, generalCount: generalRuleCount(), hasHistory: last !== null }
+      const input: UpgradeInput = { plan, signedIn, accountStatus, detected, generalCount: generalRuleCount(), hasHistory: last !== null, ...(last ? { scanCommand: last.scanCommand } : {}) }
 
       if (opts.json) {
         const planOut = planJson({
