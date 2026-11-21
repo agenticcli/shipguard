@@ -84,11 +84,14 @@ describe('#5 — shipguard hook --target git', () => {
     }
   })
 
-  it('the installed hook runs the ratified gate invocation', async () => {
+  it('the installed hook runs the gate through the shim, naming its hook', async () => {
     const repo = mkRepo()
     await runCli(['hook'], repo)
-    const body = readFileSync(join(repo, '.git', 'hooks', 'pre-push'), 'utf-8')
-    expect(body).toContain('scan --json --strict')
+    const push = readFileSync(join(repo, '.git', 'hooks', 'pre-push'), 'utf-8')
+    expect(push).toContain('gate --host git --hook pre-push')
+    expect(push).toContain('gate --supports')
+    const merge = readFileSync(join(repo, '.git', 'hooks', 'pre-merge-commit'), 'utf-8')
+    expect(merge).toContain('gate --host git --hook pre-merge-commit')
   })
 
   it('a missing shipguard binary makes the hook BLOCK, never silently pass', async () => {
@@ -96,7 +99,8 @@ describe('#5 — shipguard hook --target git', () => {
     await runCli(['hook'], repo)
     const body = readFileSync(join(repo, '.git', 'hooks', 'pre-push'), 'utf-8')
     // Fail-closed: a gate that did not run must not report a pass (same rule as rec #1).
-    expect(body).toContain('the security scan did NOT run')
+    expect(body).toContain('so nothing was scanned')
+    expect(body).toContain('code=GATE_NOT_STARTED')
     expect(body).toMatch(/exit 1/)
   })
 
@@ -122,7 +126,7 @@ describe('#5 — shipguard hook --target git', () => {
     expect(readFileSync(path, 'utf-8')).toContain('my own hook')
     expect(readFileSync(path, 'utf-8')).not.toContain('shipguard managed block')
     expect(stderr).toContain('written by something else')
-    expect(stderr).toContain('shipguard scan --json --strict')
+    expect(stderr).toContain('shipguard gate --host git --hook pre-push')
   })
 
   it('says out loud that a git hook does NOT bind an agent', async () => {
@@ -146,7 +150,8 @@ describe('#5 — the installed git hook actually gates (executed, not just writt
     const binDir = join(repo, 'stub-bin')
     mkdirSync(binDir, { recursive: true })
     const stub = join(binDir, 'shipguard')
-    writeFileSync(stub, `#!/bin/sh\necho '{"recommendation":"DO_NOT_SHIP"}'\nexit ${stubExitCode}\n`, 'utf-8')
+    // The hook first asks `gate --supports` (a 0.13+ binary answers 0), then runs the gate.
+    writeFileSync(stub, `#!/bin/sh\nif [ "$2" = "--supports" ]; then exit 0; fi\necho '{"recommendation":"DO_NOT_SHIP"}'\nexit ${stubExitCode}\n`, 'utf-8')
     chmodSync(stub, 0o755)
     const res = spawnSync('sh', [join(repo, '.git', 'hooks', 'pre-push')], {
       cwd: repo,
@@ -171,17 +176,45 @@ describe('#5 — the installed git hook actually gates (executed, not just writt
 })
 
 describe('#5 — shipguard hook --target claude', () => {
-  it('creates a PreToolUse Bash hook that blocks with exit 2', async () => {
+  it('creates a PreToolUse Bash hook that runs the readable shim, with the 180 s timeout', async () => {
     const repo = mkRepo()
     const { code } = (await runCli(['hook', '--target', 'claude'], repo))
     expect(code).toBe(0)
     const settings = JSON.parse(readFileSync(join(repo, '.claude', 'settings.json'), 'utf-8'))
     const entry = settings.hooks.PreToolUse[0]
     expect(entry.matcher).toBe('Bash')
-    expect(entry.hooks[0].command).toContain('scan --json --strict')
-    expect(entry.hooks[0].command).toContain('git merge')
-    expect(entry.hooks[0].command).toContain('git push')
-    expect(entry.hooks[0].command).toContain('exit 2')
+    expect(entry.hooks[0].command).toBe('sh "$CLAUDE_PROJECT_DIR/.claude/hooks/shipguard-gate.sh"')
+    expect(entry.hooks[0].timeout).toBe(180)
+    const shim = join(repo, '.claude', 'hooks', 'shipguard-gate.sh')
+    expect(statSync(shim).mode & 0o111).toBeGreaterThan(0)
+    const text = readFileSync(shim, 'utf-8')
+    expect(text.split('\n')[1]).toMatch(/^# shipguard-hook v2/)
+    expect(text).toContain('gate --host claude')
+    expect(text).toContain('exit 2')
+  })
+
+  it('upgrades a 0.12 inline hook entry in place (one entry, not two) and keeps other hooks', async () => {
+    const repo = mkRepo()
+    mkdirSync(join(repo, '.claude'), { recursive: true })
+    const legacy = `sh -c '_sg_in=$(cat); case "$_sg_in" in *"git push"*) _sg_run scan --json --strict;; esac; exit 0'`
+    writeFileSync(join(repo, '.claude', 'settings.json'), JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: 'echo hi' }] }, { matcher: 'Bash', hooks: [{ type: 'command', command: legacy }] }] },
+    }))
+    await runCli(['hook', '--target', 'claude'], repo)
+    const settings = JSON.parse(readFileSync(join(repo, '.claude', 'settings.json'), 'utf-8'))
+    expect(settings.hooks.PreToolUse).toHaveLength(2)
+    expect(settings.hooks.PreToolUse[0].matcher).toBe('Write')
+    expect(settings.hooks.PreToolUse[1].hooks[0].command).toContain('shipguard-gate.sh')
+  })
+
+  it('never overwrites a hook script somebody else wrote', async () => {
+    const repo = mkRepo()
+    mkdirSync(join(repo, '.claude', 'hooks'), { recursive: true })
+    writeFileSync(join(repo, '.claude', 'hooks', 'shipguard-gate.sh'), '#!/bin/sh\necho mine\n')
+    const { stderr } = await runCli(['hook', '--target', 'claude'], repo)
+    expect(readFileSync(join(repo, '.claude', 'hooks', 'shipguard-gate.sh'), 'utf-8')).toContain('echo mine')
+    expect(existsSync(join(repo, '.claude', 'settings.json'))).toBe(false)
+    expect(stderr).toContain('written by something else')
   })
 
   it('merges into an existing settings.json without destroying other keys', async () => {
@@ -216,9 +249,11 @@ describe('#5 — shipguard hook --target claude', () => {
     expect(stderr).toContain('Refusing to touch it')
   })
 
-  it('says out loud that this layer DOES bind the agent', async () => {
+  it('says what this layer does and does not do, without claiming the agent cannot get past it', async () => {
     const { stderr } = (await runCli(['hook', '--target', 'claude'], mkRepo()))
     expect(stderr).toContain('outside the model')
+    expect(stderr).toContain('can still edit or remove')
+    expect(stderr).not.toContain('cannot argue')
   })
 })
 
