@@ -21,6 +21,8 @@ import { effectiveRecommendation, VERDICT_WORDS } from './verdict.js'
 import { fixGuidance, firstSentence, orderFindings, realStacks, stackDisplayName } from './fix-guidance.js'
 import type { NotScannedSummary, NotScannedEntry } from './not-scanned.js'
 import type { GateState, NextAgent } from './screen-context.js'
+import { bundledRulesMeta } from './bundled-rules.js'
+import { logger } from '../utils/logger.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -232,7 +234,7 @@ export interface ScanScreenInput {
   /** Manifest that made the folder a project; used by the `Stack:` honesty line. */
   manifest?: string | null
   /** Number of bundled general rules, counted at run time (never typed). */
-  generalRuleCount: number
+  generalRuleCount: number | null
   rulesRan?: RulesRan
   notScanned?: NotScannedSummary
   next?: NextContext
@@ -253,6 +255,24 @@ export interface ScanScreenInput {
 }
 
 const DEFAULT_RERUN = 'shipguard scan --strict'
+
+/**
+ * The number of bundled general rules, counted at run time (never typed in text). If the bundle cannot
+ * be read the number is left out of the text (the line then says "general rules") and one warning is
+ * logged: the scan itself would already have failed loudly on a broken bundle.
+ */
+export function generalRuleCountOrNull(): number | null {
+  try {
+    return bundledRulesMeta().ruleCount
+  } catch (err) {
+    logger.warn(`Could not count the bundled general rules (${err instanceof Error ? err.message : String(err)}); the count is left out of the output.`)
+    return null
+  }
+}
+
+function generalRulesText(n: number | null): string {
+  return n === null ? 'general rules' : `${n} general rules`
+}
 
 function formatElapsed(ms: number): string {
   return `${(Math.max(0, ms) / 1000).toFixed(1)}s`
@@ -326,16 +346,16 @@ function dropPeriod(s: string): string {
   return s.replace(/[.]+$/, '')
 }
 
-function rulesCountText(r: RulesRan | undefined, generalRuleCount: number): string {
+function rulesCountText(r: RulesRan | undefined, generalRuleCount: number | null): string {
   if (r && r.kind === 'rulebook') return `${r.count} rules`
   if (r && r.kind === 'partial') return `${r.count} rules`
-  return `${generalRuleCount} general rules`
+  return generalRulesText(generalRuleCount)
 }
 
 /** The `Rules ran:` line (spec 05) and, for a fallback, the sentence that goes under the header. */
-export function rulesRanLines(r: RulesRan | undefined, generalRuleCount: number, terminal = true): { runSentence: string | null; line: string } {
-  const n = generalRuleCount
-  if (!r || r.kind === 'general') return { runSentence: null, line: `Rules ran: ${n} general rules (Free).` }
+export function rulesRanLines(r: RulesRan | undefined, generalRuleCount: number | null, terminal = true): { runSentence: string | null; line: string } {
+  const n = generalRulesText(generalRuleCount)
+  if (!r || r.kind === 'general') return { runSentence: null, line: `Rules ran: ${n} (Free).` }
   if (r.kind === 'rulebook') {
     const who = r.label && r.label.length > 0 ? `${r.label} rulebook` : 'full rulebook'
     return { runSentence: null, line: `Rules ran: ${who}, ${r.count} rules.` }
@@ -346,7 +366,7 @@ export function rulesRanLines(r: RulesRan | undefined, generalRuleCount: number,
       line: `Rules ran: ${r.count} rules (part of the rulebook).`,
     }
   }
-  const line = `Rules ran: ${n} general rules (full rulebook not used).`
+  const line = `Rules ran: ${n} (full rulebook not used).`
   if (r.code === 'RULEBOOK_UNREACHABLE') {
     return {
       runSentence: 'Rulebook could not be reached. This scan ran general rules only; it is not a full rulebook scan. Retry when you are online.',
@@ -371,7 +391,9 @@ export function rulesRanLines(r: RulesRan | undefined, generalRuleCount: number,
 function otherReasonPhrase(ns: NotScannedSummary | undefined, input: ScanScreenInput): string {
   const cov = input.result.coverage
   if (input.nothingToCheck) return 'nothing was scanned (git reports no changed files)'
-  if (cov && cov.scanned === 0) return `nothing was scanned (0 of ${cov.discovered} files could be read)`
+  if (cov && cov.scanned === 0) {
+    return cov.discovered === 0 ? 'nothing was scanned (no readable files were found)' : `nothing was scanned (0 of ${cov.discovered} files could be read)`
+  }
   if (ns && ns.fileCount > 0 && cov) return `${ns.fileCount} of ${cov.discovered} files were not scanned`
   if (ns && ns.entries.some((e) => e.code === 'OUTPUT_TRUNCATED')) return 'the scan stopped at a limit'
   if (ns && ns.otherReasons.length > 0) return dropPeriod(ns.otherReasons[0].text)

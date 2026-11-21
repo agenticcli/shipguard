@@ -18,7 +18,7 @@ export const VERDICT_WORDS: Record<Recommendation, string> = {
  * WHY (the false-safe verdict): a scan that could not read every file it was
  * asked to read has not checked the thing it is being asked about. Printing
  * "SAFE_TO_SHIP" beside its own `degraded: true` flag is the single worst output a
- * release gate can produce — it is a truthful field and a false headline in the same
+ * ship check can produce — it is a truthful field and a false headline in the same
  * document, and every consumer that keys on the headline is misled.
  *
  * WHAT THIS DOES NOT DO — the load-bearing distinction:

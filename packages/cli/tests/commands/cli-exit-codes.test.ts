@@ -188,7 +188,9 @@ describe('spawned-binary A1 exit-code contract: verdict-neutral by default (2026
     const fixture = mkSecretFixture()
     const { code, stdout } = await runCli(['scan', fixture, '--quiet'])
     expect(code).toBe(0)
-    expect(stdout.toLowerCase()).toMatch(/informational|exit 0/)
+    // 0.13 quiet line (spec 01): pure key=value pairs; the verdict is in the line, exit stays 0, and
+    // `agentAction` tells an agent what to do next, so no prose caveat is needed.
+    expect(stdout).toMatch(/^shipguard: verdict=DO_NOT_SHIP blocking=\d+ .*agentAction=fix_and_rerun/)
   })
 })
 

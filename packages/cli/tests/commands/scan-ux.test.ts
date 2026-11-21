@@ -460,13 +460,15 @@ describe('first-run welcome banner (scan command integration)', () => {
 // ---------------------------------------------------------------------------
 
 describe('verbose human output (default)', () => {
-  it('default output includes agenticcli.dev link', async () => {
+  it('default output has no links box and no tips (spec 01 rule 4); line 1 is the verdict', async () => {
     const dir = makeProjectDir()
     const originalCwd = process.cwd()
     process.chdir(dir)
     try {
       const { stdout } = await captureStdout([])
-      expect(stdout).toContain('agenticcli.dev')
+      expect(stdout).not.toContain('Learn more')
+      expect(stdout).not.toContain('What now')
+      expect(stdout.split('\n')[0]).toMatch(/^(SAFE TO SHIP|REVIEW BEFORE SHIP|DO NOT SHIP) · /)
     } finally {
       process.chdir(originalCwd)
     }
@@ -485,20 +487,19 @@ describe('verbose human output (default)', () => {
     }
   })
 
-  it('default output includes coverage line mentioning free categories', async () => {
+  it('default output ends with the Rules ran line (what ran, as a fact)', async () => {
     const dir = makeProjectDir()
     const originalCwd = process.cwd()
     process.chdir(dir)
     try {
       const { stdout } = await captureStdout([])
-      // Coverage line should mention checked categories
-      expect(stdout).toMatch(/secrets|auth|payments|database|deployment|coverage/i)
+      expect(stdout).toMatch(/^Rules ran: \d+ general rules \(Free\)\.$/m)
     } finally {
       process.chdir(originalCwd)
     }
   })
 
-  it('output with findings includes confidence/FP label', async () => {
+  it('output with a blocking finding lists it under "Fix first" with a fix line', async () => {
     const dir = makeProjectDir()
     vi.mocked(mockScan).mockResolvedValue(
       makeScanResult({
@@ -531,8 +532,9 @@ describe('verbose human output (default)', () => {
     process.chdir(dir)
     try {
       const { stdout } = await captureStdout([])
-      // Should include FP label for HIGH confidence
-      expect(stdout).toMatch(/low false.positive|false.positive/i)
+      expect(stdout).toMatch(/^Fix first \(1 blocking\):$/m)
+      expect(stdout).toMatch(/^ 1\. HIGH {5}src\/config\.ts:10 {2}/m)
+      expect(stdout).toMatch(/^ {4}fix: /m)
     } finally {
       process.chdir(originalCwd)
     }

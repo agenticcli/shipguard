@@ -11,6 +11,7 @@ import { goLink } from '../core/links.js'
 import {
   renderScanScreen,
   renderQuietLine,
+  generalRuleCountOrNull,
   welcomeBanner,
   shouldShowProgress,
   renderProgressBar,
@@ -18,7 +19,7 @@ import {
 import type { RulesRan } from '../core/render.js'
 import { collectNotScanned } from '../core/not-scanned.js'
 import { probeGate, detectNextAgent, detectManifest } from '../core/screen-context.js'
-import { bundledRulesMeta } from '../core/bundled-rules.js'
+
 import { EXIT_CODES, DEFAULT_REPORT_FILE } from '@agenticcli/shared'
 import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation } from '@agenticcli/shared'
 import { recordScanHistory, resolveScanId } from '../core/history/index.js'
@@ -789,7 +790,7 @@ async function runScan(ctx: {
   // unconditional-on-request and independent of output mode, exactly as before.
   // -----------------------------------------------------------------------
   // Facts shared by the report and the screen (one source, so they never disagree).
-  const generalRuleCount = bundledRulesMeta().ruleCount
+  const generalRuleCount = generalRuleCountOrNull()
   const screenRulesRan: RulesRan = opts.pro && proRules && !degraded
     ? { kind: 'rulebook', count: proRules.length }
     : degraded && proFetchDegradeReason

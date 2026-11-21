@@ -669,10 +669,10 @@ describe('TC-RPT-01 — report markdown structure', () => {
 
     const { readFileSync } = await import('node:fs')
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('# ShipGuard Release Report')
-    expect(content).toContain('## SUMMARY')       // new structure: SUMMARY at top
-    expect(content).toContain('## Suggested Fix Order')
-    expect(content).toContain('## Final Recommendation')
+    expect(content).toMatch(/^# ShipGuard report: DO NOT SHIP \(run /)  // verdict title at the top (spec 01 layout)
+    expect(content).toContain('## Fix in this order')
+    expect(content).toContain('## Not scanned (0)')
+    expect(content).toContain('## Ignored (0)')
   })
 
   it('summary has status, risk score, files, finding count, timestamp', async () => {
@@ -682,11 +682,10 @@ describe('TC-RPT-01 — report markdown structure', () => {
 
     const { readFileSync } = await import('node:fs')
     const content = readFileSync(outputPath, 'utf-8')
-    // New SUMMARY format: verdict + attitude + fields inline
-    expect(content).toContain('DO_NOT_SHIP')
-    expect(content).toContain('80/100')
-    expect(content).toContain('15')          // Files scanned
-    expect(content).toContain('2026-06-09')  // Generated timestamp
+    // Header line: same field names and order as the screen
+    expect(content).toContain('verdict: DO NOT SHIP')
+    expect(content).toMatch(/files: 15 /)          // Files scanned
+    expect(content).toContain('when: 2026-06-09')  // timestamp (UTC)
   })
 })
 
@@ -698,12 +697,12 @@ describe('TC-RPT-02 — report groups findings by severity', () => {
 
     const { readFileSync } = await import('node:fs')
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('## Critical Findings')
-    expect(content).toContain('Hardcoded API Key')
-    expect(content).toContain('## High Findings')
+    // Blocking findings are listed in fix order (critical first); the rest follow under their own heading.
+    expect(content).toContain('## Fix in this order')
+    expect(content).toMatch(/CRITICAL .*Hardcoded API Key/)
     expect(content).toContain('CORS wildcard')
-    expect(content).toContain('## Medium Findings')
     expect(content).toContain('.env tracked in git')
+    expect(content.indexOf('Hardcoded API Key')).toBeLessThan(content.indexOf('CORS wildcard'))
   })
 })
 
@@ -715,7 +714,7 @@ describe('TC-RPT-03 — report fix order and final recommendation', () => {
 
     const { readFileSync } = await import('node:fs')
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('**DO_NOT_SHIP**')
+    expect(content).toContain('verdict: DO NOT SHIP')
   })
 })
 
@@ -731,8 +730,9 @@ describe('TC-RPT-04 — report handles zero findings', () => {
 
     const { readFileSync } = await import('node:fs')
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('SAFE_TO_SHIP')
-    expect(content).toContain('**Risk Score:** 0/100')
+    expect(content).toContain('verdict: SAFE TO SHIP')
+    expect(content).toContain('findings: 0')
+    expect(content).toContain('"Safe" here means no rule matched. It is not a security audit.')
   })
 })
 

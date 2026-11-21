@@ -95,13 +95,13 @@ describe('scan degrades on oversized-file skip', () => {
     expect(code).toBe(0)
   })
 
-  it('human mode: loud warning NAMES the skipped oversized file (stderr); exit 0 per A1', () => {
+  it('human mode: the screen NAMES the skipped oversized file with its reason (stdout); exit 0 per A1', () => {
     const fixture = mkOversizedFixture('secret-bundle.js')
-    const { code, stderr } = runCli(['scan', fixture])
+    const { code, stdout } = runCli(['scan', fixture])
     expect(code).toBe(0)
-    // The warning must name the file so the user knows WHAT was not scanned.
-    expect(stderr).toMatch(/secret-bundle\.js/)
-    expect(stderr.toLowerCase()).toMatch(/skip|too large|incomplete|not scanned/)
+    // The screen must name the file so the user knows WHAT was not scanned, and why.
+    expect(stdout).toMatch(/ - secret-bundle\.js {2}too large/)
+    expect(stdout.split('\n')[0]).toMatch(/^DO NOT SHIP · cannot clear this repo: 1 of \d+ files were not scanned/)
   })
 
   it('--json: oversized-file degrade carries degradedReasons with FILE_TOO_LARGE code ', () => {

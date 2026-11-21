@@ -22,13 +22,7 @@ import type { ScanResult, Policy } from '@agenticcli/shared'
 // All top-level imports (await at module level is fine in ESM vitest)
 // ---------------------------------------------------------------------------
 
-const {
-  quickstartHelp,
-  verdictPanel,
-  severityBar,
-  actionFooter,
-  SEVERITY_ICONS,
-} = await import('../../src/core/render.js')
+const { quickstartHelp } = await import('../../src/core/render.js')
 
 const { generateReport } = await import('../../src/core/report.js')
 
@@ -202,175 +196,6 @@ describe('quickstartHelp', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 3. Personality — verdict attitude lines (deterministic, no RNG)
-// ---------------------------------------------------------------------------
-
-describe('verdictPanel personality', () => {
-  it('SAFE_TO_SHIP: attitude line contains "SHIP IT"', () => {
-    const panel = stripAnsi(verdictPanel(makeScanResult(), 100))
-    expect(panel).toMatch(/SHIP IT/i)
-  })
-
-  it('REVIEW_BEFORE_SHIP: attitude line contains "HOLD UP"', () => {
-    const result = makeScanResult({
-      riskScore: {
-        score: 35,
-        recommendation: 'REVIEW_BEFORE_SHIP',
-        totalFindings: 2,
-        criticalCount: 0,
-        highCount: 1,
-        mediumCount: 1,
-        lowCount: 0,
-        infoCount: 0,
-        blockingCount: 2,
-      },
-    })
-    const panel = stripAnsi(verdictPanel(result, 100))
-    expect(panel).toMatch(/HOLD UP/i)
-  })
-
-  it('DO_NOT_SHIP: attitude line contains "BLOCKED"', () => {
-    const result = makeScanResult({
-      riskScore: {
-        score: 80,
-        recommendation: 'DO_NOT_SHIP',
-        totalFindings: 3,
-        criticalCount: 2,
-        highCount: 1,
-        mediumCount: 0,
-        lowCount: 0,
-        infoCount: 0,
-        blockingCount: 3,
-      },
-    })
-    const panel = stripAnsi(verdictPanel(result, 100))
-    expect(panel).toMatch(/BLOCKED/i)
-  })
-
-  it('attitude is deterministic — same result same output on repeated calls', () => {
-    const result = makeScanResult()
-    expect(verdictPanel(result, 100)).toBe(verdictPanel(result, 100))
-  })
-})
-
-// ---------------------------------------------------------------------------
-// 3b. Severity icons
-// ---------------------------------------------------------------------------
-
-describe('SEVERITY_ICONS', () => {
-  it('critical → 🛑', () => { expect(SEVERITY_ICONS['critical']).toBe('🛑') })
-  it('high → ⛔', () => { expect(SEVERITY_ICONS['high']).toBe('⛔') })
-  it('medium → ⚠️', () => { expect(SEVERITY_ICONS['medium']).toBe('⚠️') })
-  it('low → 🐛', () => { expect(SEVERITY_ICONS['low']).toBe('🐛') })
-  it('info → ℹ️', () => { expect(SEVERITY_ICONS['info']).toBe('ℹ️') })
-})
-
-// ---------------------------------------------------------------------------
-// 3c. Severity bar
-// ---------------------------------------------------------------------------
-
-describe('severityBar', () => {
-  it('returns non-empty string with findings', () => {
-    const result = makeScanResult({
-      riskScore: {
-        score: 50,
-        recommendation: 'DO_NOT_SHIP',
-        totalFindings: 3,
-        criticalCount: 1,
-        highCount: 1,
-        mediumCount: 1,
-        lowCount: 0,
-        infoCount: 0,
-        blockingCount: 2,
-      },
-    })
-    expect(stripAnsi(severityBar(result.riskScore)).trim()).not.toBe('')
-  })
-
-  it('uses block characters █', () => {
-    const result = makeScanResult({
-      riskScore: {
-        score: 80,
-        recommendation: 'DO_NOT_SHIP',
-        totalFindings: 2,
-        criticalCount: 2,
-        highCount: 0,
-        mediumCount: 0,
-        lowCount: 0,
-        infoCount: 0,
-        blockingCount: 2,
-      },
-    })
-    expect(stripAnsi(severityBar(result.riskScore))).toContain('█')
-  })
-
-  it('zero findings → "all clear" message', () => {
-    const result = makeScanResult()
-    expect(stripAnsi(severityBar(result.riskScore))).toMatch(/all clear/i)
-  })
-
-  it('includes counts in legend', () => {
-    const result = makeScanResult({
-      riskScore: {
-        score: 50,
-        recommendation: 'REVIEW_BEFORE_SHIP',
-        totalFindings: 3,
-        criticalCount: 0,
-        highCount: 2,
-        mediumCount: 1,
-        lowCount: 0,
-        infoCount: 0,
-        blockingCount: 2,
-      },
-    })
-    const bar = stripAnsi(severityBar(result.riskScore))
-    expect(bar).toContain('2')
-    expect(bar).toContain('1')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// 4. Action footer
-// ---------------------------------------------------------------------------
-
-describe('actionFooter', () => {
-  it('suggests only commands that exist (no `shipguard report`; hook --target git)', () => {
-    const footer = stripAnsi(actionFooter({ hasFindings: false }))
-    expect(footer).not.toContain('shipguard report')
-    expect(footer).toContain('shipguard hook --target git')
-  })
-
-  it('contains feedback command', () => {
-    expect(stripAnsi(actionFooter({ hasFindings: false }))).toContain('shipguard feedback')
-  })
-
-  it('contains rate command with topRuleId when findings present', () => {
-    const footer = stripAnsi(actionFooter({ hasFindings: true, topRuleId: 'hardcoded_secret' }))
-    // `rate` takes a finding NUMBER and helpful|not-helpful (commands/feedback.ts)
-    expect(footer).toContain('shipguard rate 1 helpful')
-    expect(footer).toContain('shipguard rate 1 not-helpful')
-    expect(footer).not.toMatch(/rate \S+ (up|down)\b/)
-  })
-
-  it('contains login nudge when not logged in', () => {
-    const footer = stripAnsi(actionFooter({ hasFindings: false, isLoggedIn: false }))
-    expect(footer).toContain('shipguard login')
-    expect(footer).toContain('--pro')
-  })
-
-  it('does NOT show login nudge when already logged in', () => {
-    const footer = stripAnsi(actionFooter({ hasFindings: false, isLoggedIn: true }))
-    expect(footer).not.toContain('shipguard login')
-  })
-
-  it('is non-empty and a string', () => {
-    const footer = actionFooter({ hasFindings: true, topRuleId: 'my-rule' })
-    expect(typeof footer).toBe('string')
-    expect(stripAnsi(footer).trim().length).toBeGreaterThan(0)
-  })
-})
-
-// ---------------------------------------------------------------------------
 // 5. Dual reports — both .md and .json written
 // ---------------------------------------------------------------------------
 
@@ -434,17 +259,16 @@ describe('generateReport — dual reports', () => {
     expect(parsed).not.toHaveProperty('_truncated')
   })
 
-  it('md starts with SUMMARY block (verdict at top)', async () => {
+  it('md starts with the verdict title and header line (verdict at top, spec 01 report layout)', async () => {
     const dir = mkTemp()
     const paths = await generateReport(makeScanResult(), join(dir, 'report.md'))
     const content = readFileSync(paths.mdPath, 'utf-8')
 
-    // SUMMARY within first 300 chars
-    expect(content.indexOf('## SUMMARY')).toBeLessThan(300)
-    expect(content).toContain('SAFE_TO_SHIP')
+    expect(content.split('\n')[0]).toMatch(/^# ShipGuard report: SAFE TO SHIP \(run /)
+    expect(content.split('\n')[1]).toMatch(/^verdict: SAFE TO SHIP {3}blocking: 0 {3}findings: 0 {3}incomplete: no /)
   })
 
-  it('md contains "Top 3 Things to Fix" section', async () => {
+  it('md contains the "Fix in this order" section with the finding', async () => {
     const dir = mkTemp()
     const result = makeScanResult({
       findings: [{
@@ -459,8 +283,8 @@ describe('generateReport — dual reports', () => {
     const paths = await generateReport(result, join(dir, 'report.md'))
     const content = readFileSync(paths.mdPath, 'utf-8')
 
-    expect(content).toContain('Top 3 Things to Fix')
-    expect(content).toContain('Critical Issue')
+    expect(content).toContain('## Fix in this order (1 blocking)')
+    expect(content).toContain('src/a.ts:1')
   })
 
   it('returns ReportPaths with mdPath and jsonPath', async () => {
@@ -519,32 +343,21 @@ async function captureOutput(args: string[]): Promise<{ stdout: string }> {
   return { stdout: stdoutLines.join('\n') }
 }
 
-describe('scan command — action footer wired', () => {
+describe('scan command — no footer tips', () => {
   afterEach(() => {
     vi.clearAllMocks()
     vi.mocked(mockScan).mockResolvedValue(makeScanResult())
   })
 
-  it('verbose output includes the hook command in the action footer', async () => {
+  it('human output carries no tips: no "What now?", no feedback or rate lines (spec 01 rule 4)', async () => {
     const dir = makeProjectDir()
     const orig = process.cwd()
     process.chdir(dir)
     try {
       const { stdout } = await captureOutput([])
-      expect(stdout).toContain('shipguard hook --target git')
+      expect(stdout).not.toContain('What now')
+      expect(stdout).not.toContain('shipguard feedback')
       expect(stdout).not.toContain('shipguard report')
-    } finally {
-      process.chdir(orig)
-    }
-  })
-
-  it('verbose output includes "shipguard feedback" in footer', async () => {
-    const dir = makeProjectDir()
-    const orig = process.cwd()
-    process.chdir(dir)
-    try {
-      const { stdout } = await captureOutput([])
-      expect(stdout).toContain('shipguard feedback')
     } finally {
       process.chdir(orig)
     }

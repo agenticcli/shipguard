@@ -4,8 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { Finding, ScanResult } from '@agenticcli/shared'
 import { effectiveRecommendation, VERDICT_WORDS } from './verdict.js'
 import { fixGuidance, orderFindings, fixOrderGroup } from './fix-guidance.js'
-import { bundledRulesMeta } from './bundled-rules.js'
-import { rulesRanLines } from './render.js'
+import { rulesRanLines, generalRuleCountOrNull } from './render.js'
 import type { RulesRan } from './render.js'
 import type { NotScannedSummary } from './not-scanned.js'
 import { assertCwdAlive } from '../utils/cwd-guard.js'
@@ -21,7 +20,7 @@ import { assertCwdAlive } from '../utils/cwd-guard.js'
 export interface ReportContext {
   stacks?: readonly string[]
   rerunCommand?: string
-  generalRuleCount?: number
+  generalRuleCount?: number | null
   rulesRan?: RulesRan
   notScanned?: NotScannedSummary
   ignoredTestValues?: number
@@ -65,12 +64,12 @@ function buildUserMarkdown(result: ScanResult, ctx: ReportContext): string {
   const word = VERDICT_WORDS[rec]
   const incomplete = result.degraded === true
   const rerun = ctx.rerunCommand ?? 'shipguard scan --strict'
-  const n = ctx.generalRuleCount ?? bundledRulesMeta().ruleCount
+  const n = ctx.generalRuleCount === undefined ? generalRuleCountOrNull() : ctx.generalRuleCount
   const rr = rulesRanLines(ctx.rulesRan, n)
   const rulesLabel =
     ctx.rulesRan && (ctx.rulesRan.kind === 'rulebook' || ctx.rulesRan.kind === 'partial')
       ? `rulebook:${ctx.rulesRan.count}`
-      : `general:${n}`
+      : n === null ? 'general' : `general:${n}`
   const runId = result.runId ? result.runId.replace(/[^A-Za-z0-9]/g, '').slice(0, 8) : 'unknown'
   const files = result.coverage ? result.coverage.scanned : result.filesScanned
 
