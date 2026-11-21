@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createInterface } from 'node:readline'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -142,6 +142,8 @@ function display(cwd: string, abs: string): string {
 
 function readText(path: string): string | null {
   try {
+    // A symlink is never followed (the plan refuses it by name); to the planner it looks like "not there".
+    if (lstatSync(path).isSymbolicLink()) return null
     return readFileSync(path, 'utf-8')
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -161,6 +163,43 @@ function gitOut(cwd: string, args: string[]): string | null {
 // ---------------------------------------------------------------------------
 // The plan: every write is an Action, computed before anything is written
 // ---------------------------------------------------------------------------
+
+
+/**
+ * The first symlink on the way from the project folder down to `abs` (inclusive), or null. Setup never writes
+ * through a link: it could land outside the project. A path outside the project (git hooks of a worktree or a
+ * custom core.hooksPath) is checked on the file itself only.
+ */
+export function symlinkProblem(cwd: string, abs: string): string | null {
+  const rel = relative(cwd, abs)
+  const inside = rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+  const parts = inside ? rel.split(/[\\/]/) : []
+  let cur = inside ? cwd : dirname(abs)
+  for (const part of inside ? parts : [basename(abs)]) {
+    cur = join(cur, part)
+    try {
+      if (lstatSync(cur).isSymbolicLink()) return cur
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+      logger.debug(`setup: cannot check ${cur}: ${err instanceof Error ? err.message : String(err)}`)
+      return cur
+    }
+  }
+  return null
+}
+
+/** Project-relative folders on the way to `abs` that do not exist yet (setup creates them; uninstall may tidy them). */
+function missingDirs(cwd: string, abs: string): string[] {
+  const rel = relative(cwd, dirname(abs))
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return []
+  const out: string[] = []
+  let cur = cwd
+  for (const part of rel.split(/[\\/]/)) {
+    cur = join(cur, part)
+    if (!existsSync(cur)) out.push(toPosix(relative(cwd, cur)))
+  }
+  return out
+}
 
 interface Action {
   path: string
@@ -206,13 +245,21 @@ function planClaudeSettings(cwd: string, claudeVersion: string | null): { action
       }
     }
   }
-  const hooksRoot = (typeof settings['hooks'] === 'object' && settings['hooks'] !== null && !Array.isArray(settings['hooks']) ? settings['hooks'] : {}) as Record<string, unknown>
+  const found = raw === null ? null : /^\{[ \t]*\r?\n([ \t]+)\S/.exec(raw)
+  const indent: string | number = found ? found[1] : 2
+  if (raw !== null && !found && raw.trim() !== '{}' && raw.trim() !== '') notes.push(`${label} is rewritten with 2-space indentation (its own layout could not be kept).`)
+  const rawHooks = settings['hooks']
+  if (rawHooks !== undefined && (typeof rawHooks !== 'object' || rawHooks === null || Array.isArray(rawHooks))) {
+    return { action: { path, label, note: '"hooks" is not an object; not changed', status: 'refused', manual: `fix "hooks" in ${label} by hand (it must be an object), then run setup again`, agents: ['claude'] }, notes }
+  }
+  const hooksRoot = (rawHooks ?? {}) as Record<string, unknown>
   const pre = hooksRoot['PreToolUse']
   if (pre !== undefined && !Array.isArray(pre)) {
     return { action: { path, label, note: 'hooks > PreToolUse is not a list; not changed', status: 'refused', manual: 'fix hooks > PreToolUse by hand, then run setup again', agents: ['claude'] }, notes }
   }
   let ours: Record<string, unknown> | null = null
   let sawLegacy = false
+  let hadShim = false
   const next: unknown[] = []
   for (const entry of (pre ?? []) as unknown[]) {
     const e = entry as { hooks?: unknown } | null
@@ -225,6 +272,7 @@ function planClaudeSettings(cwd: string, claudeVersion: string | null): { action
       const cmd = (h as { command?: unknown } | null)?.command
       const kind = typeof cmd === 'string' ? classifyClaudeHookCommand(cmd) : 'foreign'
       if (kind === 'shim' && ours === null) {
+        hadShim = true
         const old = h as Record<string, unknown>
         // Keep what is there: a timeout or onFailure the user already set is theirs.
         ours = { ...old, type: 'command', command: CLAUDE_HOOK_COMMAND }
@@ -259,11 +307,11 @@ function planClaudeSettings(cwd: string, claudeVersion: string | null): { action
   }
   const flags = `timeout ${String(ours['timeout'])} s, onFailure ${ours['onFailure'] === 'block' ? 'block' : String(ours['onFailure'] ?? 'not set')}`
   const note =
-    raw === null || !JSON.stringify(settings).includes('PreToolUse')
-      ? `add 1 PreToolUse hook (matcher Bash, ${flags}) that runs ${SHIM_RELATIVE_PATH}`
-      : sawLegacy
-        ? `Hook is v1 (0.11 or 0.12, can skip the gate silently): will be updated to v2 (${flags})`
-        : `update the ShipGuard PreToolUse hook entry only (${flags})`
+    sawLegacy
+      ? `Hook is v1 (0.11 or 0.12, can skip the gate silently): will be updated to v2 (${flags})`
+      : hadShim
+        ? `update the ShipGuard PreToolUse hook entry only (${flags})`
+        : `add 1 PreToolUse hook (matcher Bash, ${flags}) that runs ${SHIM_RELATIVE_PATH}`
   const status: Action['status'] = same ? 'unchanged' : raw === null ? 'new' : 'update'
   return {
     action: {
@@ -271,7 +319,7 @@ function planClaudeSettings(cwd: string, claudeVersion: string | null): { action
       label,
       note,
       status,
-      content: JSON.stringify(merged, null, 2) + '\n',
+      content: JSON.stringify(merged, null, indent) + (raw === null || raw.endsWith('\n') ? '\n' : ''),
       entry: { path: toPosix(relative(cwd, path)), kind: 'json-hook', sha256: sha256(JSON.stringify(ours)), version: SHIM_VERSION },
       agents: ['claude'],
     },
@@ -547,6 +595,21 @@ export async function runSetup(opts: SetupOptions, d: SetupDeps): Promise<number
   }
   if (wants('ci')) actions.push(planCi(cwd, d.cliVersion))
 
+  // Never write through a link: a symlink (or a path under one) is refused and named.
+  for (let i = 0; i < actions.length; i++) {
+    const a = actions[i]
+    const bad = symlinkProblem(cwd, a.path)
+    if (bad !== null) {
+      const { content: _c, entry: _e, executable: _x, ...rest } = a
+      actions[i] = { ...rest, note: `${display(cwd, bad)} is a symbolic link; setup does not write through links`, status: 'refused', manual: `replace the link ${display(cwd, bad)} with a real ${bad === a.path ? 'file' : 'folder'} (or tell your agent where ShipGuard should write instead), then run setup again` }
+    }
+  }
+  const recordLink = [join(cwd, '.shipguard'), join(cwd, INSTALL_STATE_FILE), join(cwd, INSTALL_STATE_GITIGNORE)].map((x) => symlinkProblem(cwd, x)).find((x) => x !== null)
+  if (recordLink) {
+    logger.error(`SETUP_FAILED: ${display(cwd, recordLink)} is a symbolic link; setup does not write through links. Replace it with a real folder or file, then run setup again.`)
+    return EXIT_CODES.RUNTIME_ERROR
+  }
+
   // The CLI the hooks run
   const hooksPlanned = wants('claude') || actions.some((a) => GIT_HOOK_NAMES.some((n) => a.path.endsWith('/' + n)))
   let cliLine: string | null = null
@@ -555,7 +618,9 @@ export async function runSetup(opts: SetupOptions, d: SetupDeps): Promise<number
     const cli = d.findCli(cwd)
     if (cli) cliLine = `ShipGuard CLI: found ${cli.where === 'local' ? `at ./node_modules/.bin/shipguard` : 'on PATH'} (${cli.version}). The hook uses it, so a push does not need the network.`
     else if (opts.noInstall) cliLine = `ShipGuard CLI: not installed in this project (--no-install). The gate then fetches ShipGuard with npx on every push, needs the network, and blocks when it cannot download within the 150 s deadline.`
-    else if (existsSync(join(cwd, 'package.json')) && versionAtLeast(d.cliVersion, GATE_MIN_VERSION)) {
+    else if (existsSync(join(cwd, 'package.json')) && versionAtLeast(d.cliVersion, GATE_MIN_VERSION) && 'manual' in dependencyCommand(cwd, d.cliVersion)) {
+      cliLine = `ShipGuard CLI: not installed in this project, and setup cannot add it safely with this package manager. Add it yourself, exact-pinned: ${(dependencyCommand(cwd, d.cliVersion) as { manual: string }).manual}. Without it the gate fetches ShipGuard with npx on every push, needs the network, and blocks when it cannot download within the 150 s deadline.`
+    } else if (existsSync(join(cwd, 'package.json')) && versionAtLeast(d.cliVersion, GATE_MIN_VERSION)) {
       willInstall = true
       cliLine = `ShipGuard CLI: not installed in this project. The plan also adds @agenticcli/shipguard@${d.cliVersion} as an exact-pinned devDependency (package.json and the lockfile change). Or skip it with --no-install: the gate then fetches ShipGuard with npx on every push, needs the network, and blocks when it cannot download within the 150 s deadline.`
     } else cliLine = `ShipGuard CLI: not installed in this project and setup cannot add it here (${existsSync(join(cwd, 'package.json')) ? `this ShipGuard is ${d.cliVersion}, older than ${GATE_MIN_VERSION}` : 'no package.json'}). The gate fetches ShipGuard with npx on every push, needs the network, and blocks when it cannot download within the 150 s deadline. Install it: npm i -D @agenticcli/shipguard`
@@ -638,6 +703,8 @@ export async function runSetup(opts: SetupOptions, d: SetupDeps): Promise<number
     }
   }
   const written: string[] = []
+  const created = new Set<string>()
+  for (const a of [...changing.map((x) => x.path), ...(recordWrite ? [join(cwd, INSTALL_STATE_FILE)] : [])]) for (const m of missingDirs(cwd, a)) created.add(m)
   try {
     for (const a of changing) {
       mkdirSync(dirname(a.path), { recursive: true })
@@ -649,8 +716,12 @@ export async function runSetup(opts: SetupOptions, d: SetupDeps): Promise<number
     const entries = actions.filter((a) => a.entry !== undefined && (a.status === 'new' || a.status === 'update' || a.status === 'unchanged')).map((a) => a.entry as InstallEntry)
     if (recordWrite) {
       const hookVersion = Math.max(wants('claude') ? SHIM_VERSION : 0, needsGit ? HOOK_BLOCK_VERSION : 0)
-      const recordedAgents = agents.filter((g) => entries.length > 0 && actions.some((a) => a.agents.includes(g) && a.entry !== undefined && a.status !== 'refused' && a.status !== 'kept'))
-      writeInstallState(cwd, mergeInstallState(state, { shipguardVersion: d.cliVersion, agents: recordedAgents, entries, hookVersion }))
+      // An agent is recorded only when none of its files was refused and its own hook/block really stands.
+      const recordedAgents = agents.filter((g) => {
+        const mine = actions.filter((a) => a.agents.includes(g))
+        return mine.some((a) => a.entry !== undefined && a.status !== 'refused' && a.status !== 'kept') && !mine.some((a) => a.status === 'refused')
+      })
+      writeInstallState(cwd, mergeInstallState(state, { shipguardVersion: d.cliVersion, agents: recordedAgents, entries, hookVersion, createdDirs: [...created] }))
       written.push(join(cwd, INSTALL_STATE_FILE), join(cwd, INSTALL_STATE_GITIGNORE))
       out(`✓ wrote ${INSTALL_STATE_FILE}`)
     }
@@ -748,6 +819,28 @@ export async function runSetup(opts: SetupOptions, d: SetupDeps): Promise<number
 // Real dependencies and the command
 // ---------------------------------------------------------------------------
 
+/**
+ * The package-manager call that adds the exact-pinned devDependency, or the command for the user to run when
+ * a safe one is not known (yarn 2+ has no --ignore-scripts for `add`). pnpm needs -w at a workspace root.
+ */
+export function dependencyCommand(dir: string, version: string): { pm: string; args: string[] } | { manual: string } {
+  const spec = `@agenticcli/shipguard@${version}`
+  if (existsSync(join(dir, 'pnpm-lock.yaml')) || existsSync(join(dir, 'pnpm-workspace.yaml'))) {
+    return { pm: 'pnpm', args: ['add', '-D', '-E', '--ignore-scripts', ...(existsSync(join(dir, 'pnpm-workspace.yaml')) ? ['-w'] : []), spec] }
+  }
+  if (existsSync(join(dir, 'yarn.lock'))) {
+    let berry = existsSync(join(dir, '.yarnrc.yml'))
+    try {
+      const pmField = (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8')) as { packageManager?: unknown }).packageManager
+      if (typeof pmField === 'string' && /^yarn@([2-9]|\d{2,})/.test(pmField)) berry = true
+    } catch (err) {
+      logger.debug(`setup: cannot read package.json packageManager: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    return berry ? { manual: `yarn add -D -E ${spec}` } : { pm: 'yarn', args: ['add', '-D', '-E', '--ignore-scripts', spec] }
+  }
+  return { pm: 'npm', args: ['install', '--save-dev', '--save-exact', '--ignore-scripts', spec] }
+}
+
 function probeVersion(bin: string, cwd: string): string | null {
   try {
     const text = execFileSync(bin, ['--version'], { cwd, encoding: 'utf-8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] })
@@ -786,10 +879,9 @@ function realDeps(cwd: string): SetupDeps {
       return versionAtLeast(v, GATE_MIN_VERSION) ? { where: 'PATH', version: v as string, path: 'shipguard' } : null
     },
     installDependency: (dir, version) => {
-      const spec = `@agenticcli/shipguard@${version}`
-      const pm = existsSync(join(dir, 'pnpm-lock.yaml')) ? 'pnpm' : existsSync(join(dir, 'yarn.lock')) ? 'yarn' : 'npm'
-      const args = pm === 'npm' ? ['install', '--save-dev', '--save-exact', '--ignore-scripts', spec] : ['add', '-D', '-E', '--ignore-scripts', spec]
-      execFileSync(pm, args, { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 })
+      const c = dependencyCommand(dir, version)
+      if ('manual' in c) throw new Error(`run it yourself: ${c.manual}`)
+      execFileSync(c.pm, c.args, { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 })
     },
     prime: (g, now) => primeOfferCache({ configDir: getConfigDir(), now, safeMode: g.safeMode }, g),
     signedIn: () => loadCredentials() !== null || Boolean(process.env['SHIPGUARD_API_KEY']),

@@ -405,10 +405,14 @@ function parseAgents(opt: string | undefined): Agent[] | null | 'bad' {
 }
 
 /** Remove empty folders setup made, walking up from the file's folder, never above the project. */
-function tidyDirs(cwd: string, file: string): void {
+const toPosixPath = (p: string): string => p.split('\\').join('/')
+
+function tidyDirs(cwd: string, file: string, created: readonly string[]): void {
   let dir = dirname(file)
   const root = resolve(cwd)
   while (dir.startsWith(root + '/') && dir !== root) {
+    // Only a folder the install record says setup created; a folder that was already there is never removed.
+    if (!created.includes(toPosixPath(dir.slice(root.length + 1)))) return
     try {
       rmdirSync(dir)
     } catch (err) {
@@ -605,7 +609,7 @@ export async function runUninstall(opts: UninstallOptions, d: UninstallDeps): Pr
   try {
     for (const i of removing) {
       i.apply()
-      if (i.deletes) tidyDirs(cwd, i.path)
+      if (i.deletes) tidyDirs(cwd, i.path, state?.createdDirs ?? [])
       done.push(i)
       out(`✓ removed ${i.label === SETTINGS ? 'hook entry from ' + i.label : i.note.includes('managed block') ? 'managed block from ' + i.label : i.note.includes('ShipGuard block') ? 'ShipGuard block from ' + i.label : i.label}`)
     }
