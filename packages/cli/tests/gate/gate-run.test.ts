@@ -309,7 +309,7 @@ describe('the block text', () => {
     expect(t).toContain('Nothing was pushed. Do not retry with --no-verify or another route; fix, commit, then push again.')
     expect(t).toContain('Fix these 1 (')
     expect(t).toMatch(/ 1\. CRITICAL {1}lib\/stripe\.ts:2 {2}live Stripe secret key in source/)
-    expect(t).toContain('    fix: Rotate it first, then read the new one from process.env.STRIPE_SECRET_KEY.')
+    expect(t).toContain('    fix: rotate the key in Stripe first (the old one is exposed), then read the new one from process.env.STRIPE_SECRET_KEY')
     expect(t).toContain('Check: shipguard scan --strict')
     expect(t).toContain('If a finding is wrong for this repo: shipguard ignore <finding-id> --file <path> --reason "<why>"')
     expect(t).toContain('Ask the user before ignoring a critical finding.')

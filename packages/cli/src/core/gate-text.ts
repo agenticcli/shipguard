@@ -28,6 +28,8 @@ export interface GateFinding {
   fix: string | null
   category: string | null
   occurrence: string
+  /** For a secret finding: `36 chars, value hidden` (the one masked form, core/redact.ts); never any part of the value. */
+  secretLabel?: string | null
 }
 
 export interface NotScanned {
@@ -235,7 +237,7 @@ export function scanBlockText(input: BlockInput): string {
     out.push(`Fix ${blocking.length > 3 ? 'these 3 first' : `these ${listed.length}`}${detail ? ` (${detail})` : ''}:`)
     listed.forEach((f, i) => {
       const loc = `${f.file}${f.line ? `:${f.line}` : ''}`
-      out.push(` ${i + 1}. ${sevLabel(f.severity)} ${loc}  ${trim(f.title, 110)}`)
+      out.push(` ${i + 1}. ${sevLabel(f.severity)} ${loc}  ${trim(f.title, 110)}${f.secretLabel ? ` (${f.secretLabel})` : ''}`)
       if (f.fix) out.push(`    fix: ${trim(f.fix, 300)}`)
     })
     if (blocking.length > 3) out.push(` +${blocking.length - 3} more blocking: see the report`)

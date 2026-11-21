@@ -28,7 +28,7 @@ import { computeReceipt, receiptLines, screenPitch, usageNoticeLines, updateNoti
 import { unavailableBlock } from '../core/plan.js'
 import { reportPathsFor } from '../core/report.js'
 import type { DetectedStack, Receipt } from '../core/plan-lines.js'
-import { parseMaskedSecret } from '../core/redact.js'
+import { parseMaskedSecret, secretScreenLabel } from '../core/redact.js'
 
 import { EXIT_CODES, DEFAULT_REPORT_FILE } from '@agenticcli/shared'
 import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation, Finding } from '@agenticcli/shared'
@@ -796,7 +796,7 @@ async function runScan(ctx: {
   const maskedOf = (f: Finding) => (f.evidence ? parseMaskedSecret(f.evidence) : undefined)
   const secretLabel = (f: Finding): string | null => {
     const m = maskedOf(f)
-    return m ? `${m.length} chars, value hidden` : null
+    return m ? secretScreenLabel(m.length) : null
   }
   const secretEvidence = (f: Finding): string | null => (maskedOf(f) && f.evidence ? f.evidence : null)
 

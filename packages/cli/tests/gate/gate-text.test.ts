@@ -87,11 +87,13 @@ describe('reading the scan JSON', () => {
     expect(p.summary.runId).toBe('247f9045')
     expect(p.summary.filesScanned).toBe(16)
     expect(p.summary.rulesApplied).toBe(36)
-    expect(p.summary.findings.map((x) => [x.id, x.blocking, x.fix])).toEqual([
-      ['auth_route_without_guard', true, 'Add a check at the top.'],
-      ['generic.secrets.stripe-live-key', true, 'Replace with process.env.STRIPE_SECRET_KEY.'],
-      ['quiet', false, null],
+    // The same wording the scan screen shows (core/fix-guidance.ts); a rule without guidance keeps its own first sentence.
+    expect(p.summary.findings.map((x) => [x.id, x.blocking, x.title, x.fix])).toEqual([
+      ['auth_route_without_guard', true, 'no sign-in check on an admin route', expect.stringContaining('check the signed-in user at the top of the handler')],
+      ['generic.secrets.stripe-live-key', true, 'live Stripe secret key in source', 'rotate the key in Stripe first (the old one is exposed), then read the new one from process.env.STRIPE_SECRET_KEY'],
+      ['quiet', false, 'quiet', null],
     ])
+    expect(p.summary.findings[1].secretLabel).toBe('value hidden')
     expect(p.suppressed).toEqual([{ id: 'quiet', file: 'b.ts' }])
     expect(p.summary.findings[0].occurrence).toMatch(/^[0-9a-f]{12}$/)
     expect(p.summary.seconds).toBe(1.5)
@@ -112,7 +114,7 @@ describe('reading the scan JSON', () => {
     expect(p.summary.corpus).toBe('general')
     expect(p.summary.fallbackCode).toBe('RULEBOOK_PARTIAL')
     expect(p.usageState).toBe('warn')
-    expect(p.summary.findings[0]).toMatchObject({ occurrence: '9c41e07ab3d2', fix: 'Do the thing.' })
+    expect(p.summary.findings[0]).toMatchObject({ occurrence: '9c41e07ab3d2', fix: 'Do the thing' })
     expect(p.summary.degraded).toBe(false)
   })
 
