@@ -112,14 +112,15 @@ export function noAccountWrites(env: PlanEnv): boolean {
  * read), remember the last account status (never pitch a paying user who is later offline), and set or clear the
  * hint. A document that did not verify teaches nothing. Best effort: a failed write is logged by the stores.
  */
-export function persistLivePlan(env: PlanEnv, read: PlanRead, acct: string | null): void {
+export function persistLivePlan(env: PlanEnv, read: PlanRead, acct: string | null, opts: { hint?: boolean } = {}): void {
   if (!read.live || read.token === null || acct === null || noAccountWrites(env)) return
   writeAccountCache(env.configDir, read.token, { noWrite: false })
   const status = read.block.server?.account?.status
   if (status !== undefined) recordAccountStatus(nagCtx(env), acct, status)
   // The server's "no plan" answer sets the hint (an hour at most); a pending payment never does (it may land any minute).
   const noPlan = status === 'none' || status === 'lapsed'
-  if (noPlan) writeHint({ configDir: env.configDir, now: env.now, safeMode: env.safeMode }, acct)
+  // `status`, `upgrade` and `login` clear the hint (spec 02): only a scan's "no plan" answer sets it.
+  if (noPlan && opts.hint !== false) writeHint({ configDir: env.configDir, now: env.now, safeMode: env.safeMode }, acct)
   else clearHint(env.configDir)
 }
 
@@ -211,6 +212,7 @@ async function liveRead(apiUrl: string, token: string, acct: string | null, env:
  * verified cached copy (status `cached`, reason OFFLINE or FETCH_FAILED), else "unavailable". Never throws.
  */
 export async function readPlanFresh(apiUrl: string, env: PlanEnv): Promise<FreshPlan> {
+  if (!env.safeMode) clearHint(env.configDir)
   const nag = loadNagFor(env)
   const creds = loadCredentials()
   const keyMode = env.apiKeyMode
@@ -242,7 +244,7 @@ export async function readPlanFresh(apiUrl: string, env: PlanEnv): Promise<Fresh
   const acct = acctFromAccessToken(token)
   const live = await liveRead(apiUrl, token, acct, env)
   if (live.ok) {
-    persistLivePlan(env, live.read, acct)
+    persistLivePlan(env, live.read, acct, { hint: false })
     return {
       signIn: 'signed-in',
       plan: live.read.block,
@@ -311,5 +313,57 @@ export async function gateGapFromCache(dir: string): Promise<string | null> {
   } catch (err) {
     logger.debug(`plan-client: the gate gap line is not available: ${err instanceof Error ? err.message : String(err)}`)
     return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Facts the plan commands share (local, read-only)
+// ---------------------------------------------------------------------------
+
+/** The frameworks detected in a folder (never 'generic'). A failed detection is "none", logged. */
+export function detectedStacks(dir: string): DetectedStack[] {
+  try {
+    return detectFrameworks(dir).frameworks
+      .filter((f) => f.name !== 'generic')
+      .map((f) => ({ key: f.name, display: stackDisplayName(f.name), version: f.version ?? null }))
+  } catch (err) {
+    logger.debug(`plan-client: stack detection failed: ${err instanceof Error ? err.message : String(err)}`)
+    return []
+  }
+}
+
+export interface LastScan { runId: string; corpus: 'rulebook' | 'general'; applied: number; at: string }
+
+/** The newest run in this folder's history (`Last scan here`), or null. Read-only; never throws. */
+export async function lastScanHere(dir: string): Promise<LastScan | null> {
+  try {
+    const { loadPolicy } = await import('./policy.js')
+    const { resolveHistoryPath, resolveRepoIdentity, HistoryStore } = await import('./history/index.js')
+    const policy = await loadPolicy(dir)
+    const opened = await HistoryStore.open(resolveHistoryPath(dir, policy), CLI_VERSION)
+    if (!opened.ok) return null
+    try {
+      const row = opened.store.listRecentScans(resolveRepoIdentity(dir).repoId, 1)[0]
+      const m = row?.rulesLabel ? /^(rulebook|general)(?::(\d+))?$/.exec(row.rulesLabel) : null
+      if (!row || !m) return null
+      const applied = m[2] !== undefined ? Number(m[2]) : bundledRulesMeta().ruleCount
+      return { runId: row.scanId, corpus: m[1] as 'rulebook' | 'general', applied, at: new Date(row.timestamp).toISOString() }
+    } finally {
+      opened.store.close()
+    }
+  } catch (err) {
+    logger.debug(`plan-client: no last scan (${err instanceof Error ? err.message : String(err)})`)
+    return null
+  }
+}
+
+export const generalRuleCount = (): number => bundledRulesMeta().ruleCount
+
+/** Header fields every plan command's `--json` envelope shares (spec 05: same as a scan, exit keys null where not applicable). */
+export function planEnvelope(cliVersion: string, plan: Record<string, unknown>, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schemaVersion: '7', cliVersion, runId: null, ok: true, agentAction: 'proceed',
+    exit: { code: 0, strict: null, strictWouldExit: null },
+    plan, ...extra,
   }
 }

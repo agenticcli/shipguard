@@ -242,7 +242,8 @@ function finishFallback(
 ): RulebookStepResult {
   const applies = fallbackApplies(cause.code, status)
   // The signed "limit used up" answer is the server saying the account has a plan: it always counts as a fallback.
-  const show = applies || soft === 'ALLOWANCE_USED'
+  // An explicit --pro (with --allow-degraded) asked for the rulebook: the run always says it did not get it.
+  const show = applies || soft === 'ALLOWANCE_USED' || i.explicitPro
   const fallback: StepFallback | null = show
     ? { code: cause.code, reason: soft, message: fallbackMessage(cause.code, cause.serverText ?? null), serverText: cause.serverText ?? null }
     : null
