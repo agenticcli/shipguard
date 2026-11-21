@@ -17,7 +17,7 @@ import {
   DEFAULT_MAX_FILES,
   type ReadFilesResult,
 } from '../utils/fs.js'
-import { buildIgnoreRules, classifyIgnored, isShipguardArtifactPath, selfArtifactIgnorePatterns } from './ignore.js'
+import { buildIgnoreRules, classifyIgnored, isShipguardArtifactPath, readIgnoreEntries, selfArtifactIgnorePatterns } from './ignore.js'
 import { logger } from '../utils/logger.js'
 import { assertCwdAlive } from '../utils/cwd-guard.js'
 import { secretsCheck } from '../checks/secrets.js'
@@ -28,7 +28,7 @@ import { deploymentCheck } from '../checks/deployment.js'
 import type { FileInfo, Finding, ScanOptions, ScanResult, QualityGateRule, DegradeReason, ScanCoverage } from '@agenticcli/shared'
 import { runProRulesWithDispatch, runProRules } from './pro-scanner.js'
 import { loadChecksumManifest } from './coderef-dispatch.js'
-import { applySuppressions, isLineSuppressed } from './suppression.js'
+import { applyPolicyIgnores, applySuppressions, isLineSuppressed } from './suppression.js'
 import { loadBundledRules } from './bundled-rules.js'
 import { dedupeLegacyAgainstCorpus } from './legacy-corpus-map.js'
 import { collapseSameIssueFindings } from './collapse-findings.js'
@@ -400,6 +400,9 @@ export async function scan(
     )
   }
   allFindings = collapsed.findings
+
+  // Reasoned `finding` exceptions from `shipguard ignore` (policy file): suppressed like an inline comment.
+  allFindings = applyPolicyIgnores(allFindings, readIgnoreEntries(policy))
 
   // Tidy-up on the final list: a line for every file finding, LOW confidence for stand-in keys.
   // Before redaction: judging a key needs the matched text.
