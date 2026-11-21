@@ -11,6 +11,8 @@ import { ignoreCommand } from './commands/ignore.js'
 import { upgradeCommand } from './commands/upgrade.js'
 import { historyCommand } from './commands/history.js'
 import { hookCommand } from './commands/hook.js'
+import { setupCommand } from './commands/setup.js'
+import { uninstallCommand } from './commands/uninstall.js'
 import { schemaCommand } from './commands/schema.js'
 import { feedbackCommand, rateCommand } from './commands/feedback.js'
 import { telemetryCommand } from './commands/telemetry.js'
@@ -153,6 +155,8 @@ addSubcommand(gateCommand())
 addSubcommand(ignoreCommand())
 addSubcommand(historyCommand())
 addSubcommand(hookCommand())
+addSubcommand(setupCommand())
+addSubcommand(uninstallCommand())
 addSubcommand(schemaCommand())
 addSubcommand(feedbackCommand())
 addSubcommand(rateCommand())
