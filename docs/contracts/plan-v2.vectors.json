@@ -139,6 +139,32 @@
       "token": "eyJhbGciOiJFZERTQSIsImtpZCI6InRlc3QtcGxhbi12Mi1kZXYiLCJ0eXAiOiJzaGlwZ3VhcmQtYWNjb3VudCtqd3MifQ.eyJkdiI6MSwiaXNzIjoiYWdlbnRpY2NsaS5kZXYiLCJhdWQiOiJzaGlwZ3VhcmQtY2xpIiwiYWNjdCI6ImFseFROUGF0V25JdExIZUlsdVRGUnQ4M2lRbWZtWmlBN2NmNFd4TmdWQjAiLCJpYXQiOjE3OTUwMDM2MDAsImV4cCI6MTc5NTAwNzIwMCwicmVmcmVzaEFmdGVyIjo2MDAsIm5vbmNlIjoiWm05dlltRnlZbUY2Y1hWNE1USXpOQSIsImJpbmRpbmciOnsic2NhbklkIjoic2Nhbi0wMTIzNDU2Nzg5YWJjZGVmIn0sImxhYmVsIjoiVGVzdCBwbGFuIiwiYWNjb3VudCI6eyJzdGF0dXMiOiJhY3RpdmUiLCJ0ZXh0IjoiVGVzdCBhY2NvdW50IHRleHQuIn0sInVzYWdlIjp7InBlcmNlbnQiOjQwLCJzdGF0ZSI6Im9rIiwicmVzZXRzQXQiOiIyMDI2LTEyLTAxVDAwOjAwOjAwWiIsInRleHQiOiJUZXN0IHVzYWdlIHRleHQuIiwiY291bnRlZCI6dHJ1ZX0sImxpbWl0Ijp7InRleHQiOiJUZXN0IGxpbWl0IHRleHQuIn0sImNhcGFiaWxpdGllcyI6eyJydWxlYm9va0RlZmF1bHQiOnRydWUsInJ1bGVib29rVGllcnMiOlsiZnJlZSIsInBybyJdfSwicHJvQWRkcyI6eyJwbGFuTmFtZSI6IlRlc3QgcGxhbiIsInJ1bGVzIjo3LCJzdGFja3MiOlsibmV4dGpzIl0sImFyZWFzIjpbIlRlc3QgYXJlYSJdfSwib2ZmZXIiOnsidGV4dCI6IlRlc3Qgb2ZmZXIgdGV4dC4iLCJzbG90IjoicHJpY2luZyJ9LCJ1cGRhdGVOb3RpY2UiOm51bGx9.o-QLJAuGcxoN3Xg5mTa3xLoSA9FgOaObOT4Y4RrVJwrIM1aiexP2QXF0WYvqKSIybYwA4MMQYND5ls8Wze-MBQ"
     },
     {
+      "name": "live-expired",
+      "kind": "account",
+      "expect": "PLAN_UNVERIFIED",
+      "ctx": {
+        "now": 1795172800,
+        "acct": "alxTNPatWnItLHeIluTFRt83iQmfmZiA7cf4WxNgVB0",
+        "nonce": "Zm9vYmFyYmF6cXV4MTIzNA",
+        "scanId": "scan-0123456789abcdef"
+      },
+      "note": "live reply (nonce and scanId match) already past exp: plain Free, same as a cached copy",
+      "token": "eyJhbGciOiJFZERTQSIsImtpZCI6InRlc3QtcGxhbi12Mi1kZXYiLCJ0eXAiOiJzaGlwZ3VhcmQtYWNjb3VudCtqd3MifQ.eyJkdiI6MSwiaXNzIjoiYWdlbnRpY2NsaS5kZXYiLCJhdWQiOiJzaGlwZ3VhcmQtY2xpIiwiYWNjdCI6ImFseFROUGF0V25JdExIZUlsdVRGUnQ4M2lRbWZtWmlBN2NmNFd4TmdWQjAiLCJpYXQiOjE3OTQ5OTk5NDAsImV4cCI6MTc5NTA4NjQwMCwicmVmcmVzaEFmdGVyIjo2MDAsIm5vbmNlIjoiWm05dlltRnlZbUY2Y1hWNE1USXpOQSIsImJpbmRpbmciOnsic2NhbklkIjoic2Nhbi0wMTIzNDU2Nzg5YWJjZGVmIn0sImxhYmVsIjoiVGVzdCBwbGFuIiwiYWNjb3VudCI6eyJzdGF0dXMiOiJhY3RpdmUiLCJ0ZXh0IjoiVGVzdCBhY2NvdW50IHRleHQuIn0sInVzYWdlIjp7InBlcmNlbnQiOjQwLCJzdGF0ZSI6Im9rIiwicmVzZXRzQXQiOiIyMDI2LTEyLTAxVDAwOjAwOjAwWiIsInRleHQiOiJUZXN0IHVzYWdlIHRleHQuIiwiY291bnRlZCI6dHJ1ZX0sImxpbWl0Ijp7InRleHQiOiJUZXN0IGxpbWl0IHRleHQuIn0sImNhcGFiaWxpdGllcyI6eyJydWxlYm9va0RlZmF1bHQiOnRydWUsInJ1bGVib29rVGllcnMiOlsiZnJlZSIsInBybyJdfSwicHJvQWRkcyI6eyJwbGFuTmFtZSI6IlRlc3QgcGxhbiIsInJ1bGVzIjo3LCJzdGFja3MiOlsibmV4dGpzIl0sImFyZWFzIjpbIlRlc3QgYXJlYSJdfSwib2ZmZXIiOnsidGV4dCI6IlRlc3Qgb2ZmZXIgdGV4dC4iLCJzbG90IjoicHJpY2luZyJ9LCJ1cGRhdGVOb3RpY2UiOm51bGx9.fgwfao5Mo6xeFZmy3bY5BBTyYWqy2ox3XrUk2GqMaEDqtZ1rjIIZ-MaPM-yVVSNus_VQOnVKzPIPj1TNbiHDAw"
+    },
+    {
+      "name": "live-issued-in-future",
+      "kind": "account",
+      "expect": "PLAN_UNVERIFIED",
+      "ctx": {
+        "now": 1794992800,
+        "acct": "alxTNPatWnItLHeIluTFRt83iQmfmZiA7cf4WxNgVB0",
+        "nonce": "Zm9vYmFyYmF6cXV4MTIzNA",
+        "scanId": "scan-0123456789abcdef"
+      },
+      "note": "live reply with iat > now + 5 min: plain Free",
+      "token": "eyJhbGciOiJFZERTQSIsImtpZCI6InRlc3QtcGxhbi12Mi1kZXYiLCJ0eXAiOiJzaGlwZ3VhcmQtYWNjb3VudCtqd3MifQ.eyJkdiI6MSwiaXNzIjoiYWdlbnRpY2NsaS5kZXYiLCJhdWQiOiJzaGlwZ3VhcmQtY2xpIiwiYWNjdCI6ImFseFROUGF0V25JdExIZUlsdVRGUnQ4M2lRbWZtWmlBN2NmNFd4TmdWQjAiLCJpYXQiOjE3OTQ5OTk5NDAsImV4cCI6MTc5NTA4NjQwMCwicmVmcmVzaEFmdGVyIjo2MDAsIm5vbmNlIjoiWm05dlltRnlZbUY2Y1hWNE1USXpOQSIsImJpbmRpbmciOnsic2NhbklkIjoic2Nhbi0wMTIzNDU2Nzg5YWJjZGVmIn0sImxhYmVsIjoiVGVzdCBwbGFuIiwiYWNjb3VudCI6eyJzdGF0dXMiOiJhY3RpdmUiLCJ0ZXh0IjoiVGVzdCBhY2NvdW50IHRleHQuIn0sInVzYWdlIjp7InBlcmNlbnQiOjQwLCJzdGF0ZSI6Im9rIiwicmVzZXRzQXQiOiIyMDI2LTEyLTAxVDAwOjAwOjAwWiIsInRleHQiOiJUZXN0IHVzYWdlIHRleHQuIiwiY291bnRlZCI6dHJ1ZX0sImxpbWl0Ijp7InRleHQiOiJUZXN0IGxpbWl0IHRleHQuIn0sImNhcGFiaWxpdGllcyI6eyJydWxlYm9va0RlZmF1bHQiOnRydWUsInJ1bGVib29rVGllcnMiOlsiZnJlZSIsInBybyJdfSwicHJvQWRkcyI6eyJwbGFuTmFtZSI6IlRlc3QgcGxhbiIsInJ1bGVzIjo3LCJzdGFja3MiOlsibmV4dGpzIl0sImFyZWFzIjpbIlRlc3QgYXJlYSJdfSwib2ZmZXIiOnsidGV4dCI6IlRlc3Qgb2ZmZXIgdGV4dC4iLCJzbG90IjoicHJpY2luZyJ9LCJ1cGRhdGVOb3RpY2UiOm51bGx9.fgwfao5Mo6xeFZmy3bY5BBTyYWqy2ox3XrUk2GqMaEDqtZ1rjIIZ-MaPM-yVVSNus_VQOnVKzPIPj1TNbiHDAw"
+    },
+    {
       "name": "wrong-account",
       "kind": "account",
       "expect": "PLAN_UNVERIFIED",

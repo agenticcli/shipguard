@@ -70,6 +70,8 @@ add('bad-signature', 'account', `${gh}.${gp}.${b64u(Buffer.alloc(64, 1))}`, 'PLA
 add('expired', 'account', jws(hdr(), JSON.stringify(plan({ iat: NOW - 7200, exp: NOW - 3600 }))), 'PLAN_UNVERIFIED', { now: NOW, acct: ACCT, nonce: null, scanId: null }, 'cached copy past exp');
 add('too-long-lived', 'account', jws(hdr(), JSON.stringify(plan({ iat: NOW - 60, exp: NOW + 80 * 3600 }))), 'PLAN_UNVERIFIED', { now: NOW, acct: ACCT, nonce: null, scanId: null }, 'cached copy: exp - iat > 72 h');
 add('issued-in-future', 'account', jws(hdr(), JSON.stringify(plan({ iat: NOW + 3600, exp: NOW + 7200 }))), 'PLAN_UNVERIFIED', { now: NOW, acct: ACCT, nonce: null, scanId: null }, 'cached copy: iat > now + 5 min');
+add('live-expired', 'account', goodJws, 'PLAN_UNVERIFIED', { ...ok, now: NOW + 2 * 86400 }, 'live reply (nonce and scanId match) already past exp: plain Free, same as a cached copy');
+add('live-issued-in-future', 'account', goodJws, 'PLAN_UNVERIFIED', { ...ok, now: NOW - 2 * 3600 }, 'live reply with iat > now + 5 min: plain Free');
 add('wrong-account', 'account', jws(hdr(), JSON.stringify(plan({ acct: acct('test-account-2') }))), 'PLAN_UNVERIFIED', ok, 'bound to another account');
 add('replayed-nonce', 'account', jws(hdr(), JSON.stringify(plan({ nonce: 'b2xkbm9uY2VvbGRub25jZQ' }))), 'PLAN_UNVERIFIED', ok, 'old nonce on a live reply');
 add('replayed-scanid', 'account', jws(hdr(), JSON.stringify(plan({ binding: { scanId: 'scan-old' } }))), 'PLAN_UNVERIFIED', ok, 'old scanId on a live reply');

@@ -142,7 +142,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * Verify one compact JWS plan or offer document. Never throws; a document that is not trusted returns
  * { ok: false, step }. Order: size cap, three base64url parts, strict header (alg, kid, typ only), alg and
  * typ exact, pinned key (role bundle), signature, strict payload parse (duplicate keys rejected), iss + aud + dv,
- * account binding, live nonce + scanId (replay) or cached time window.
+ * account binding, live nonce + scanId (replay), then the time window (iat, exp, lifetime) for live and cached alike.
  */
 export async function verifyPlanDocument(kind: PlanDocKind, token: unknown, ctx: VerifyContext): Promise<VerifyResult> {
   const rules = DOC_RULES[kind]
@@ -185,12 +185,14 @@ export async function verifyPlanDocument(kind: PlanDocKind, token: unknown, ctx:
         const binding = payload['binding']
         if (!isRecord(binding) || binding['scanId'] !== ctx.scanId) return fail('scanId mismatch')
       }
-    } else {
-      const nowSeconds = Math.floor(ctx.now / 1000)
-      if ((iat as number) > nowSeconds + SKEW_FUTURE_SECONDS) return fail('issued in the future')
-      if (nowSeconds >= (exp as number)) return fail('expired', true)
-      if ((exp as number) - (iat as number) > rules.maxLifeSeconds) return fail('lifetime too long')
     }
+    // Time window: live replies AND cached copies (plan section 10 item 13(c), spec 02: an expired plan block is
+    // plain Free, whether it just arrived or was kept). A signed reply that is already past exp, or issued in the
+    // future, is never trusted.
+    const nowSeconds = Math.floor(ctx.now / 1000)
+    if ((iat as number) > nowSeconds + SKEW_FUTURE_SECONDS) return fail('issued in the future')
+    if (nowSeconds >= (exp as number)) return fail('expired', true)
+    if ((exp as number) - (iat as number) > rules.maxLifeSeconds) return fail('lifetime too long')
     return { ok: true, payload, live }
   } catch (err) {
     logger.debug(`plan: ${kind} document rejected: ${err instanceof Error ? err.message : String(err)}`)

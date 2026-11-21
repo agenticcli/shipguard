@@ -77,11 +77,9 @@ async function verify(kind: 'account' | 'offer', token: string, ctx: Ctx): Promi
       if (ctx.nonce !== null && p.nonce !== ctx.nonce) return 'PLAN_UNVERIFIED';
       if (ctx.scanId !== null && p.binding?.scanId !== ctx.scanId) return 'PLAN_UNVERIFIED';
     }
-    const live = ctx.nonce !== null;
-    if (!live) {
-      const maxLife = kind === 'account' ? 72 * 3600 : 7 * 86400;
-      if (p.iat > ctx.now + 300 || ctx.now >= p.exp || p.exp - p.iat > maxLife) return 'PLAN_UNVERIFIED';
-    }
+    // Time window applies to live replies and cached copies alike (an expired live reply is plain Free).
+    const maxLife = kind === 'account' ? 72 * 3600 : 7 * 86400;
+    if (p.iat > ctx.now + 300 || ctx.now >= p.exp || p.exp - p.iat > maxLife) return 'PLAN_UNVERIFIED';
     return 'ok';
   } catch {
     return 'PLAN_UNVERIFIED';
