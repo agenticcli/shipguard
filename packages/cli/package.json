@@ -1,6 +1,6 @@
 {
   "name": "@agenticcli/shipguard",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "The security scanner your coding agent runs before every commit. Review code with a rulebook to build secure code. Checks for secrets, open routes, webhooks, migrations and deploy settings, on your machine.",
   "type": "module",
   "main": "./dist/cli.js",
