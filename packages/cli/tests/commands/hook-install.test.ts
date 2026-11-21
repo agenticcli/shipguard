@@ -196,7 +196,7 @@ describe('#5 — shipguard hook --target claude', () => {
   it('upgrades a 0.12 inline hook entry in place (one entry, not two) and keeps other hooks', async () => {
     const repo = mkRepo()
     mkdirSync(join(repo, '.claude'), { recursive: true })
-    const legacy = `sh -c '_sg_in=$(cat); case "$_sg_in" in *"git push"*) _sg_run scan --json --strict;; esac; exit 0'`
+    const legacy = `sh -c '_sg_in=$(cat); case "$_sg_in" in *"git push"*) ./node_modules/.bin/shipguard scan --json --strict;; esac; exit 0'`
     writeFileSync(join(repo, '.claude', 'settings.json'), JSON.stringify({
       hooks: { PreToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: 'echo hi' }] }, { matcher: 'Bash', hooks: [{ type: 'command', command: legacy }] }] },
     }))

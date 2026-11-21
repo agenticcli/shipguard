@@ -265,6 +265,7 @@ export function shimFileVersion(content: string): number {
 /** Which kind of entry a settings.json PreToolUse command string is. */
 export function classifyClaudeHookCommand(command: string): 'shim' | 'legacy' | 'foreign' {
   if (command.includes(CLAUDE_HOOK_FINGERPRINT)) return 'shim'
-  if (command.includes(LEGACY_CLAUDE_HOOK_FINGERPRINT)) return 'legacy'
+  // Legacy only when it also names shipguard: someone else's `scan --json --strict` (trivy, semgrep) is not ours.
+  if (command.includes(LEGACY_CLAUDE_HOOK_FINGERPRINT) && command.includes('shipguard')) return 'legacy'
   return 'foreign'
 }

@@ -192,7 +192,7 @@ describe('stale hook detection', () => {
   it('the 0.12 inline Claude hook is stale', () => {
     const d = tmp()
     mkdirSync(join(d, '.claude'), { recursive: true })
-    const legacy = `sh -c '_sg_in=$(cat); case "$_sg_in" in *"git push"*) _sg_run scan --json --strict;; esac; exit 0'`
+    const legacy = `sh -c '_sg_in=$(cat); case "$_sg_in" in *"git push"*) ./node_modules/.bin/shipguard scan --json --strict;; esac; exit 0'`
     writeFileSync(join(d, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: legacy }] }] } }))
     const stale = detectStaleHook(d)
     expect(stale?.layer).toBe('claude')

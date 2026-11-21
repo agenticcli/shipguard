@@ -189,7 +189,7 @@ describe('setup --agent claude', () => {
   })
 
   it('updates the 0.12 inline hook in place and names it', async () => {
-    const legacy = `sh -c '_sg_in=$(cat); _sg_run scan --json --strict'`
+    const legacy = `sh -c '_sg_in=$(cat); ./node_modules/.bin/shipguard scan --json --strict'`
     const d = repo({ files: { '.claude/settings.json': JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: legacy }] }] } }) } })
     const h = harness(d)
     await run({ agent: 'claude' }, h)

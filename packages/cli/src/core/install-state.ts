@@ -7,7 +7,7 @@
  * file of the wrong shape is "no record", never a half-trusted one.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { logger } from '../utils/logger.js'
 
@@ -42,6 +42,8 @@ export interface InstallState {
   hookVersion: number
   agents: InstallAgent[]
   entries: InstallEntry[]
+  /** Project-relative folders setup created (they did not exist before); uninstall tidies only these. */
+  createdDirs?: string[]
 }
 
 export function sha256(text: string): string {
@@ -69,7 +71,9 @@ function parseState(raw: unknown): InstallState | null {
       ...(typeof e['version'] === 'number' ? { version: e['version'] } : {}),
     })
   }
-  return { version: 1, shipguardVersion: raw['shipguardVersion'], hookVersion: raw['hookVersion'], agents: outAgents, entries: outEntries }
+  const dirs = raw['createdDirs']
+  const createdDirs = Array.isArray(dirs) ? dirs.filter((x): x is string => typeof x === 'string' && x !== '' && !x.startsWith('/') && !x.split('/').includes('..')) : undefined
+  return { version: 1, shipguardVersion: raw['shipguardVersion'], hookVersion: raw['hookVersion'], agents: outAgents, entries: outEntries, ...(createdDirs ? { createdDirs } : {}) }
 }
 
 /** The record, or null when there is none or it is not a valid record (a bad file is logged, never trusted). */
@@ -77,6 +81,7 @@ export function readInstallState(dir: string): InstallState | null {
   const file = join(dir, INSTALL_STATE_FILE)
   if (!existsSync(file)) return null
   try {
+    if (lstatSync(file).isSymbolicLink()) return null
     const text = readFileSync(file, 'utf-8')
     if (text.length > MAX_BYTES) {
       logger.debug(`install-state: ${INSTALL_STATE_FILE} is too large, ignoring it`)
@@ -94,7 +99,7 @@ export function readInstallState(dir: string): InstallState | null {
 /** Merge new entries into the old record (same path + kind replaces) and return the next record. */
 export function mergeInstallState(
   prev: InstallState | null,
-  next: { shipguardVersion: string; agents: readonly InstallAgent[]; entries: readonly InstallEntry[]; hookVersion?: number },
+  next: { shipguardVersion: string; agents: readonly InstallAgent[]; entries: readonly InstallEntry[]; hookVersion?: number; createdDirs?: readonly string[] },
 ): InstallState {
   const entries = [...(prev?.entries ?? [])]
   for (const e of next.entries) {
@@ -109,6 +114,7 @@ export function mergeInstallState(
     hookVersion: Math.max(prev?.hookVersion ?? 0, next.hookVersion ?? 0),
     agents: INSTALL_AGENTS.filter((a) => agents.includes(a)),
     entries,
+    ...(prev?.createdDirs || next.createdDirs ? { createdDirs: [...new Set([...(prev?.createdDirs ?? []), ...(next.createdDirs ?? [])])] } : {}),
   }
 }
 
