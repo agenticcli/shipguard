@@ -86,6 +86,7 @@ add('unsupported-dv', 'account', jws(hdr(), JSON.stringify(plan({ dv: 99 }))), '
 add('duplicate-key', 'account', jws(hdr(), good.replace('"label":"Test plan"', '"label":"Test plan","label":"Other"')), 'PLAN_UNVERIFIED', ok, 'duplicate JSON keys are rejected');
 add('not-three-parts', 'account', `${gh}.${gp}`, 'PLAN_UNVERIFIED');
 add('valid-offer', 'offer', jws(hdr('shipguard-offer+jws'), JSON.stringify(offer())), 'ok', { now: NOW, acct: null, nonce: null, scanId: null }, 'public offer: no acct, no nonce');
+add('valid-offer-combined', 'offer', jws(hdr('shipguard-offer+jws'), JSON.stringify(offer({ counts: { nextjs: { rules: 7, areas: ['Test area'] }, supabase: { rules: 5, areas: ['Test db area'] } }, combined: { 'nextjs+supabase': 10 } }))), 'ok', { now: NOW, acct: null, nonce: null, scanId: null }, 'offer with the server-computed union count for a stack set: key = sorted stack names joined with +, value = integer');
 add('offer-expired', 'offer', jws(hdr('shipguard-offer+jws'), JSON.stringify(offer({ iat: NOW - 9 * 86400, exp: NOW - 86400 }))), 'PLAN_UNVERIFIED', { now: NOW, acct: null, nonce: null, scanId: null });
 add('offer-wrong-typ', 'offer', jws(hdr('shipguard-account+jws'), JSON.stringify(offer())), 'PLAN_UNVERIFIED', { now: NOW, acct: null, nonce: null, scanId: null });
 

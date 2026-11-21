@@ -51,7 +51,8 @@
     "required": ["dv", "iss", "aud", "iat", "exp"],
     "optional": {
       "offer": "{ text, slot } as above",
-      "counts": "{ '<stack>': { rules: integer, areas: string[] } }, per-stack Pro rule counts (file format owned by W9)"
+      "counts": "{ '<stack>': { rules: integer, areas: string[] } }, per-stack Pro rule counts (file format owned by W9)",
+      "combined": "{ '<stackA>+<stackB>': integer }, server-computed union count for a set of stacks (key = sorted stack names joined with +). The CLI never adds per-stack counts: for several stacks it shows combined[key] when present, else no number. Unknown keys and non-integer or negative values are ignored."
     },
     "note": "Public, no auth, no acct, no nonce. Request carries stack names only (or none for the generic offer)."
   },
