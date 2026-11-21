@@ -328,7 +328,8 @@ describe('secretsCheck — Supabase service-role key (free-tier secret gaps)', (
     expect(f!.line).toBe(3)
     expect(f!.blocking).toBe(true)
     // Evidence must be redacted, never the full key
-    expect(f!.evidence).not.toContain('service_role')
+    expect(f!.evidence).toMatch(/^supabase_service_role_key, \d+ characters, value hidden$/)
+    expect(f!.evidence).not.toContain(SERVICE_ROLE_JWT.slice(0, 12))
   })
 
   it('precision guard: the anon-role JWT (public by design) is NEVER flagged as service-role', () => {

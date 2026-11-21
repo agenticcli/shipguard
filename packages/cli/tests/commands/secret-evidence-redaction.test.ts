@@ -4,7 +4,7 @@
  *
  * INCIDENT (SEC-EVID-1): findings from the governed corpus rules (`generic.secrets.*`)
  * carried the matched text verbatim in `evidence`, while the legacy `hardcoded_secret`
- * check redacted correctly (`...sk_live_***...`). The raw key therefore landed in `--json`
+ * check redacted correctly (type and length only). The raw key therefore landed in `--json`
  * stdout, the default text view, `.shipguard/reports/latest.md` and the run-scoped
  * reports, and the `--strict` hook dump (which prints the whole JSON to stderr) — i.e. in
  * CI logs, agent transcripts and committed/uploaded report files.
@@ -132,6 +132,7 @@ beforeAll(() => {
   src(
     'exec.ts',
     [
+      `import { exec } from 'child_process'`,
       `export function a(db: string) { exec(${BT}mysql -uroot -p${SECRETS.execPw} \${db}${BT}) }`,
       `export function b(u: string) { exec(${BT}curl -H "Authorization: Bearer ${SECRETS.bearer}" \${u}${BT}) }`,
       `export function c(u: string) { exec(${BT}curl -u admin:${SECRETS.curlPw} \${u}${BT}) }`,
@@ -238,17 +239,17 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
     })
   }
 
-  it('the --json evidence uses the legacy redacted shape for corpus findings', () => {
+  it('the --json evidence is type, length and "value hidden" for corpus findings (no character of the value)', () => {
     const json = JSON.parse(captured.json)
     const byId = (id: string): string =>
       json.findings.find((f: { id: string }) => f.id === id)?.evidence
-    expect(byId('generic.secrets.stripe-live-key')).toBe('...sk_live_***...')
-    expect(byId('generic.secrets.aws-access-key')).toBe('...AKIAQ7WX***...')
-    expect(byId('generic.secrets.github-token')).toBe('...ghp_R4tY***...')
-    expect(byId('generic.secrets.anthropic-api-key')).toBe('...sk-ant-a***...')
+    expect(byId('generic.secrets.stripe-live-key')).toBe(`stripe_live_key, ${SECRETS.stripe.length} characters, value hidden`)
+    expect(byId('generic.secrets.aws-access-key')).toBe(`aws_access_key, ${SECRETS.aws.length} characters, value hidden`)
+    expect(byId('generic.secrets.github-token')).toBe(`github_token, ${SECRETS.github.length} characters, value hidden`)
+    expect(byId('generic.secrets.anthropic-api-key')).toBe(`anthropic_api_key, ${SECRETS.anthropic.length} characters, value hidden`)
     // The corpus PEM rule matches the header AND the first line of key body, so the evidence
     // holds real key material and is masked whole (the bare header alone would stay readable).
-    expect(byId('generic.secrets.private-key-pem')).toBe('...-----BEG***...')
+    expect(byId('generic.secrets.private-key-pem')).toMatch(/^private_key_pem, \d+ characters, value hidden$/)
   })
 
   it('the --json schema is unchanged: exact top-level key set and per-finding key set are pinned', () => {
@@ -338,7 +339,7 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
     const sha = (v: string): string => createHash('sha256').update(v).digest('hex').slice(0, 16)
     const salt = loadOrCreateSalt(join(proj, '.shipguard', 'history.db'))
     if (!salt.ok) throw new Error(salt.reason)
-    // Both scans emit the SAME masked evidence (`...sk_live_***...`) yet get different keys. Each key
+    // Both scans emit the SAME masked evidence (type and length only) yet get different keys. Each key
     // is the keyed digest (HMAC with the history salt) of the raw value: never the plain hash.
     expect(rows.map((r) => r.finding_key)).toEqual([keyFindingIdentity(salt.salt, sha(keyA)), keyFindingIdentity(salt.salt, sha(keyB))])
     expect(rows.map((r) => r.finding_key)).not.toContain(sha(keyA))

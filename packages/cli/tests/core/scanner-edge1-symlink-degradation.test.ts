@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os'
 // ---------------------------------------------------------------------------
 
 vi.mock('../../src/core/git.js', () => ({
+  listGitIgnored: vi.fn(() => null),
   isGitRepo: vi.fn(() => false),
   getChangedFiles: vi.fn(() => []),
 }))
@@ -86,10 +87,9 @@ describe('scan() — EDGE-1: symlinked src/ no longer scans silently near-clean'
       })
 
       expect(result.filesScanned).toBeGreaterThan(1)
-      // Evidence is redacted centrally (core/redact.ts) — the finding is identified by its
-      // visible 8-char prefix; the full key must never appear.
+      // Evidence is redacted centrally (core/redact.ts): type and length only, no prefix.
       expect(
-        result.findings.some((f) => f.evidence?.includes(PLANTED_SECRET.slice(0, 8))),
+        result.findings.some((f) => f.evidence === 'aws_access_key, 20 characters, value hidden'),
       ).toBe(true)
       expect(
         result.findings.some((f) => f.evidence?.includes(PLANTED_SECRET)),

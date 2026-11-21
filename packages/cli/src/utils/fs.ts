@@ -5,6 +5,7 @@ import type { FileInfo } from '@agenticcli/shared'
 import { decodeUtf8Strict } from '@agenticcli/matcher-contract'
 import { classifyFile, headLooksLikeRealBinary, HEAD_BYTES } from './classify.js'
 import { DEFAULT_IGNORE, classifyIgnored, isDirectoryRule, isShipguardArtifactPath, type IgnoreRule } from '../core/ignore.js'
+import { listGitIgnored } from '../core/git.js'
 import { logger } from './logger.js'
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,12 @@ export interface ReadFilesOptions {
    * defaults are used and the `ignorePatterns` argument of readFiles counts as user rules.
    */
   ignoreRules?: IgnoreRule[]
+  /**
+   * Scan files that .gitignore hides (default false). Git-ignored files are not part of what is
+   * committed or shipped; they are skipped, counted in `ignoredByDefault` and never silent. A tracked
+   * file is never skipped, and outside a git work tree nothing is skipped.
+   */
+  includeGitIgnored?: boolean
 }
 
 /** One entry of `coverage.ignoredByDefault`. */
@@ -115,6 +122,23 @@ export interface ReadFilesResult {
   /** Bytes read so far (cap bookkeeping; not part of any public output). */
   bytesRead: number
 }
+
+const BUILT_IN_IGNORE = new Set(DEFAULT_IGNORE)
+
+/**
+ * Only the built-in ignore patterns (constants of this program) are glob syntax handed to fast-glob,
+ * and so to its glob library (picomatch). A "default" rule that came from the scanned project's own
+ * policy (report.output, history.path: ShipGuard's artifact paths) is a file path, not a pattern:
+ * its extglob, bracket, brace and negation characters are escaped, so project-controlled text can
+ * never be compiled as an extglob there. `*` is kept (the per-run folder rule ends in `/**`).
+ * This is what makes the OpenVEX statement "picomatch: not reachable" true.
+ */
+export function literalizeGlobPattern(pattern: string): string {
+  return BUILT_IN_IGNORE.has(pattern) ? pattern : pattern.replace(/[()[\]{}!+@?\\]/g, '\\$&')
+}
+
+/** The `coverage.ignoredByDefault` entry that counts files skipped because git ignores them. */
+export const GIT_IGNORED_PATTERN = '.gitignore (git-ignored files)'
 
 /** Cap on how many skipped file names we retain for the warning. */
 export const MAX_SKIPPED_NAMES = 50
@@ -453,10 +477,10 @@ export async function readFiles(
   const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES
   const { onProgress } = options
 
-  const rules: IgnoreRule[] = options.ignoreRules ?? [
+  const rules: IgnoreRule[] = (options.ignoreRules ?? [
     ...DEFAULT_IGNORE.map((pattern): IgnoreRule => ({ pattern, by: 'default' })),
     ...ignorePatterns.map((pattern): IgnoreRule => ({ pattern, by: 'user' })),
-  ]
+  ]).map((r) => (r.by === 'default' ? { ...r, pattern: literalizeGlobPattern(r.pattern) } : r))
   // Only the DEFAULT rules prune the walk. The policy's own ignore.paths are applied right after,
   // with the same helper `--changed` uses, so the files they remove can be COUNTED (ignoredByUser)
   // instead of vanishing.
@@ -497,10 +521,15 @@ export async function readFiles(
   const recovered = await recoverUnenteredDirs(rootDir, probeAll, patterns, (p) => classifyIgnored(p, defaultRules) !== null)
   const extraFiles = recovered.entries.filter((e) => e.dirent.isFile()).map((e) => e.path)
   const listedWithRecovered = [...listedAll, ...extraFiles]
+  // Git-ignored files (untracked, hidden by .gitignore): not part of the project's committed content.
+  const gitIgnored = options.includeGitIgnored === true ? null : listGitIgnored(rootDir, (m) => logger.warn(m))
+  const notGitIgnored = (p: string): boolean => gitIgnored === null || !gitIgnored.isIgnored(p)
   const listedNoUser = listedWithRecovered.filter(notUserIgnored)
   // ShipGuard's own artifacts at any depth (.shipguard/ history and reports) are never project content.
-  const listed = listedNoUser.filter((p) => !isShipguardArtifactPath(p))
-  const selfArtifactCount = listedNoUser.length - listed.length
+  const listedAfterArtifacts = listedNoUser.filter((p) => !isShipguardArtifactPath(p))
+  const selfArtifactCount = listedNoUser.length - listedAfterArtifacts.length
+  const listed = listedAfterArtifacts.filter(notGitIgnored)
+  const gitIgnoredCount = listedAfterArtifacts.length - listed.length
 
   // Names that are not valid UTF-8 must never be read as a different file (see above).
   const named = await resolveUndecodableNames(rootDir, [...new Set(listed)])
@@ -508,7 +537,7 @@ export async function readFiles(
   // SORT BEFORE THE CAP. Must happen before the collection loop below.
   filePaths.sort(compareScanPaths)
 
-  const probeEntries = [...probeAll, ...recovered.entries].filter((e) => notUserIgnored(e.path) && !isShipguardArtifactPath(e.path))
+  const probeEntries = [...probeAll, ...recovered.entries].filter((e) => notUserIgnored(e.path) && notGitIgnored(e.path) && !isShipguardArtifactPath(e.path))
   const state = createReadState()
   const symlinkPaths = probeEntries.filter((e) => e.dirent.isSymbolicLink()).map((e) => e.path).sort(compareScanPaths)
   const specialPaths = probeEntries
@@ -547,6 +576,7 @@ export async function readFiles(
   const counted = await countIgnored(rootDir, rules)
   state.ignoredByDefault = counted.ignoredByDefault
   state.ignoredByUser = listedWithRecovered.length - listedNoUser.length
+  if (gitIgnoredCount > 0) state.ignoredByDefault.push({ pattern: GIT_IGNORED_PATTERN, files: gitIgnoredCount })
   state.selfArtifacts += selfArtifactCount
   for (const p of listedNoUser) if (isShipguardArtifactPath(p)) pushName(state.selfArtifactFiles, p)
 

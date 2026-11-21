@@ -2,9 +2,9 @@
 // Phase D.4: migrated to re2js engine via compileDetectorRegex() (ReDoS-immune, engine-consistent).
 import type { CheckModule, FileInfo, Finding, Policy } from '@agenticcli/shared'
 import { compileDetectorRegex } from '../core/re2-detector-engine.js'
-// Single definition of the redaction format lives in core/redact.ts (also used centrally
-// by scan() for corpus/Pro findings) — this alias keeps every call site below unchanged.
-import { redactSecretValue as redact } from '../core/redact.js'
+// Single definition of the masked-secret format lives in core/redact.ts (also used centrally
+// by scan() for corpus/Pro findings): evidence is `<type>, <length> characters, value hidden`.
+import { maskSecret, stampFindingIdentity } from '../core/redact.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -17,7 +17,7 @@ const SECRET_SEVERITY_RANK: Readonly<Record<string, number>> = { critical: 4, hi
  *
  * Several patterns can hit the SAME secret on one line, each capturing a different-length
  * slice of it (e.g. `JWT Secret` captures the whole value, `High-Entropy Secret String`
- * captures the first 64 characters of it). Reported evidence is redacted to 8 characters, so
+ * captures the first 64 characters of it). Reported evidence is the type and length only, so
  * the output cannot tell "two patterns, one secret" from "two secrets" — only the check, which
  * still holds the raw text and the match offsets, can.
  *
@@ -544,7 +544,7 @@ function checkSupabaseServiceRoleJwt(file: FileInfo, findings: Finding[], policy
         category: 'secrets',
         file: relativePath,
         line: i + 1,
-        evidence: `...${redact(m.match)}...`,
+        evidence: maskSecret('supabase_service_role_key', m.match),
         confidence: 'HIGH',
         explanation:
           'A legacy-format Supabase service-role key was found — a JWT whose decoded payload contains "role":"service_role". ' +
@@ -555,6 +555,7 @@ function checkSupabaseServiceRoleJwt(file: FileInfo, findings: Finding[], policy
           'dashboard (Project Settings → API) since any repo exposure must be treated as compromised.',
         blocking: policy.block.includes(id),
       }
+      stampFindingIdentity(jwtFinding, m.match)
       if (!dedupe.fold(findings, i, m.index, m.match, jwtFinding)) findings.push(jwtFinding)
     }
   }
@@ -628,8 +629,38 @@ export function envFileHasSecret(content: string): boolean {
   return false
 }
 
+/**
+ * True when a matched value is a documented test or placeholder value, not a credential: a
+ * test-mode Stripe key (`sk_test_`, `rk_test_`) or a placeholder (`your-key-here`, `xxxx`). A value that only
+ * looks fake (`...EXAMPLE`, a keyboard run, repeated characters) is NOT skipped: it stays a finding
+ * at LOW confidence (looksFakeKey). Such matches are skipped and
+ * COUNTED (`coverage.ignoredTestValues`), never reported as findings. Pure.
+ */
+export function isTestValue(value: string): boolean {
+  const v = value.trim()
+  // A connection URL is judged by its password only: `example`/`sample` in the HOST name must not
+  // hide a real password (`postgres://app:Xk93...@sample-db.example.net/prod`).
+  const urlPassword = URL_PASSWORD_RE.exec(v)
+  if (v.includes('://')) return isPlaceholderValue(v) || urlPassword?.groups[0] !== undefined && (isPlaceholderValue(urlPassword.groups[0]))
+  return TEST_MODE_KEY_RE.test(v) || isPlaceholderValue(v)
+}
+const URL_PASSWORD_RE = compileDetectorRegex(`://[^\\s:/@]*:([^\\s@]+)@`)
+const TEST_MODE_KEY_RE = compileDetectorRegex(`^[rs]k_test_`)
+
+export interface SecretsResult {
+  findings: Finding[]
+  /** Matches skipped because the value is a documented test or placeholder value. */
+  ignoredTestValues: number
+}
+
 function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
+  return checkSecretsWithStats(files, policy).findings
+}
+
+/** The secrets check plus the number of test values it skipped (for `coverage.ignoredTestValues`). */
+export function checkSecretsWithStats(files: FileInfo[], policy: Policy): SecretsResult {
   const findings: Finding[] = []
+  let ignoredTestValues = 0
 
   for (const file of files) {
     const { content, relativePath } = file
@@ -694,7 +725,8 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
         const match = NEXT_PUBLIC_SECRET_RE.exec(line)
         if (match && match.groups[0]) {
           // A publishable key (Supabase anon, Stripe/Clerk pk_) or placeholder text is meant to be public.
-          if (isPublicKeyValue(assignedLiteral(line.slice(match.index))) || isPlaceholderValue(match.groups[0])) continue
+          if (isPublicKeyValue(assignedLiteral(line.slice(match.index)))) continue
+          if (isTestValue(match.groups[0])) { ignoredTestValues++; continue }
           const id = 'exposed_env'
           findings.push({
             id,
@@ -703,7 +735,7 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
             category: 'secrets',
             file: relativePath,
             line: i + 1,
-            evidence: `${line.split('=')[0].trim()}=${redact(match.groups[0])}`,
+            evidence: `${line.split('=')[0].trim()}=${maskSecret('next_public_secret', match.groups[0])}`,
             confidence: 'HIGH',
             explanation:
               'An environment variable with NEXT_PUBLIC_ prefix containing a secret-sounding name is declared ' +
@@ -773,7 +805,7 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
           // Extract the captured group (the secret value) for redaction
           const secretValue = lineMatch.groups[0] ?? lineMatch.match
           // Public keys and placeholder text are not leaked secrets (see isPublicKeyValue).
-          if (isPlaceholderValue(secretValue)) continue
+          if (isTestValue(secretValue)) { ignoredTestValues++; continue }
           // Only a keyword-style match (`name = value`) may look past its captured slice to the full value
           // (a JWT's capture stops at the first dot); never read a LATER value on the line for a bare-token match.
           const isAssignMatch = lineMatch.match.includes('=') || lineMatch.match.includes(':')
@@ -785,12 +817,13 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
             category: 'secrets',
             file: relativePath,
             line: i + 1,
-            evidence: `...${redact(secretValue)}...`,
+            evidence: maskSecret(pattern.name, secretValue),
             confidence: looksFakeKey(secretValue) ? 'LOW' : pattern.confidence,
             explanation: pattern.explanation,
             recommendation: pattern.recommendation,
             blocking: policy.block.includes(pattern.id),
           }
+          stampFindingIdentity(secretFinding, secretValue)
           if (!secretDedupe.fold(findings, i, secretStart(lineMatch, secretValue), secretValue, secretFinding)) {
             findings.push(secretFinding)
           }
@@ -806,7 +839,7 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
     }
   }
 
-  return findings
+  return { findings, ignoredTestValues }
 }
 
 // ---------------------------------------------------------------------------

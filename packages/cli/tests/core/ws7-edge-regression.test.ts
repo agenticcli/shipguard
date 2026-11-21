@@ -320,6 +320,7 @@ describe('EDGE-001b / E2E-009 — empty repository: scan returns filesScanned: 0
   it('scan on empty directory returns filesScanned: 0 and does NOT crash', async () => {
     // Mock git module to avoid git detection
     vi.mock('../../src/core/git.js', () => ({
+      listGitIgnored: vi.fn(() => null),
       isGitRepo: vi.fn(() => false),
       getChangedFiles: vi.fn(() => []),
     }))
@@ -356,6 +357,7 @@ describe('EDGE-001b / E2E-009 — empty repository: scan returns filesScanned: 0
 describe('E2E-010 — large file scan: completes within time budget', () => {
   it('scans a 2MB .ts file without crashing or exceeding 10s', async () => {
     vi.mock('../../src/core/git.js', () => ({
+      listGitIgnored: vi.fn(() => null),
       isGitRepo: vi.fn(() => false),
       getChangedFiles: vi.fn(() => []),
     }))
@@ -429,6 +431,7 @@ describe('E2E-010 — large file scan: completes within time budget', () => {
 describe('E2E-011 — binary file alongside .ts: no crash, no false positive', () => {
   it('binary file is skipped gracefully (read error caught silently)', async () => {
     vi.mock('../../src/core/git.js', () => ({
+      listGitIgnored: vi.fn(() => null),
       isGitRepo: vi.fn(() => false),
       getChangedFiles: vi.fn(() => []),
     }))
@@ -471,6 +474,7 @@ describe('E2E-011 — binary file alongside .ts: no crash, no false positive', (
 describe('E2E-012 — unicode in source files: no crash, correct filesScanned', () => {
   it('Chinese/Japanese/emoji in comments scanned without crash', async () => {
     vi.mock('../../src/core/git.js', () => ({
+      listGitIgnored: vi.fn(() => null),
       isGitRepo: vi.fn(() => false),
       getChangedFiles: vi.fn(() => []),
     }))

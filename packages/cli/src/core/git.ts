@@ -193,3 +193,40 @@ export function getChangedFilesDetailed(dir: string): ChangedFiles {
 export function getChangedFiles(dir: string): string[] {
   return getChangedFilesDetailed(dir).paths
 }
+
+/** Untracked files and folders that .gitignore (and the other standard git excludes) hide. */
+export interface GitIgnored {
+  /** Ignored files, relative to the scan directory. */
+  files: Set<string>
+  /** Ignored folders, relative to the scan directory, each ending in `/`. */
+  dirs: string[]
+  /** True when `rel` is an ignored file or lies under an ignored folder. */
+  isIgnored(rel: string): boolean
+}
+
+/**
+ * What git itself treats as ignored under `dir` (`git ls-files --others --ignored --exclude-standard`).
+ * A TRACKED file is never listed, even when a .gitignore pattern matches it, so it stays scanned.
+ * Returns null when `dir` is not a git work tree or git fails: the caller then ignores nothing,
+ * so a git problem can only ever lead to MORE files being scanned, never fewer (a failure is logged).
+ * Names that are not valid UTF-8 are not listed here (they stay scanned).
+ */
+export function listGitIgnored(dir: string, warn: (msg: string) => void): GitIgnored | null {
+  if (!isGitRepo(dir)) return null
+  let out: Buffer
+  try {
+    out = runGit(dir, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])
+  } catch (err) {
+    warn(`[shipguard] Could not ask git which files are ignored; scanning git-ignored files too: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+  const files = new Set<string>()
+  const dirs: string[] = []
+  for (const raw of splitNul(out)) {
+    const decoded = decodeUtf8Strict(raw)
+    if (!decoded.ok) continue
+    if (decoded.text.endsWith('/')) dirs.push(decoded.text)
+    else files.add(decoded.text)
+  }
+  return { files, dirs, isIgnored: (rel) => files.has(rel) || dirs.some((d) => rel.startsWith(d)) }
+}
