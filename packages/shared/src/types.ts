@@ -279,6 +279,11 @@ export interface ScanCoverage {
   selfArtifacts: number
   mode: 'full' | 'changed'
   /**
+   * Matches skipped because the value is a documented test or placeholder value (a `sk_test_` key, an example
+   * key). Counted so the skip is auditable; never a finding. Optional: absent on a result built before it was counted.
+   */
+  ignoredTestValues?: number
+  /**
    * `--changed` only. `listed` = every path git reported; `outsideScope` = those outside the scan folder.
    * `nothingToCheck` is present (always `true`) only when git ran fine and nothing but ShipGuard's own
    * files changed: nothing was scanned because there was nothing to scan. That scan is still degraded (NO_FILES_SCANNED) and never SAFE_TO_SHIP.

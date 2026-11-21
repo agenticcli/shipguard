@@ -27,6 +27,8 @@ import {
 import type { AccountStatus, PlanBlock } from './plan-types.js'
 import { clearHint, writeHint } from './hint.js'
 import { lastAccountStatus, loadNag, recordAccountStatus, type NagContext, type NagData } from './nag.js'
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { assertTrustedApiUrl } from '../utils/trust.js'
 import { logger } from '../utils/logger.js'
 
@@ -66,6 +68,23 @@ export function getPlanEnv(opts: { policy?: unknown; projectDir?: string } = {})
     terminal: Boolean(process.stdout.isTTY),
     apiKeyMode: Boolean(process.env.SHIPGUARD_API_KEY),
     trackingOff,
+  }
+}
+
+/** A hook or the gate runs this process (the gate sets SHIPGUARD_GATE_KIND; only the three known values count). */
+export function isHookOrGate(env: NodeJS.ProcessEnv = process.env): boolean {
+  const kind = env.SHIPGUARD_GATE_KIND
+  return kind === 'claude' || kind === 'git' || kind === 'ci'
+}
+
+/** The id the display counters are keyed by: the git root path of the scanned folder, else the folder itself. */
+export function repoIdOf(cwd: string): string {
+  let dir = resolve(cwd)
+  for (;;) {
+    if (existsSync(join(dir, '.git'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) return resolve(cwd)
+    dir = parent
   }
 }
 

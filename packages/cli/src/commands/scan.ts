@@ -19,9 +19,19 @@ import {
 import type { RulesRan } from '../core/render.js'
 import { collectNotScanned } from '../core/not-scanned.js'
 import { probeGate, detectNextAgent, detectManifest } from '../core/screen-context.js'
+import { runRulebookStep, readPublicOffer } from '../core/rulebook-step.js'
+import type { RulebookStepResult, StepError } from '../core/rulebook-step.js'
+import { getPlanEnv, isHookOrGate, loadNagFor, nagCtx, repoIdOf } from '../core/plan-client.js'
+import { repoKey, markMoment, momentDue, isMuted } from '../core/nag.js'
+import { maybeFetchWeeklyOffer } from '../core/offer-cache.js'
+import { computeReceipt, receiptLines, screenPitch, usageNoticeLines, updateNoticeLines } from '../core/plan-lines.js'
+import { unavailableBlock } from '../core/plan.js'
+import { reportPathsFor } from '../core/report.js'
+import type { DetectedStack, Receipt } from '../core/plan-lines.js'
+import { parseMaskedSecret } from '../core/redact.js'
 
 import { EXIT_CODES, DEFAULT_REPORT_FILE } from '@agenticcli/shared'
-import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation } from '@agenticcli/shared'
+import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation, Finding } from '@agenticcli/shared'
 import { recordScanHistory, resolveScanId } from '../core/history/index.js'
 import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
@@ -31,7 +41,7 @@ import { emitError, setExitCode } from '../utils/exit.js'
 import {
   CORE_LINE, SCHEMA_VERSION, buildErrorEnvelope, buildScanEnvelope, buildVerdictJson, buildPlanJson,
   buildNextSteps, buildCoverageJson, buildDegradedReasons, buildNotScanned, decideAgentAction, blockingOccurrences,
-  computeSinceLastRun, readLastRun, writeLastRun, mapProFetchCode, secretEvidenceText, evidenceOf, stackDisplayName,
+  computeSinceLastRun, readLastRun, writeLastRun, maxRepeatRuns, REPEAT_LABELS, stackDisplayName,
 } from '../core/outcome.js'
 import type { ErrorCode, ExtraErrorFields, SinceLastRun } from '../core/outcome.js'
 import { buildRerunCommand } from '../core/rerun.js'
@@ -178,6 +188,8 @@ export function proFetchActionHint(code: ProFetchErrorCode, retryAfterSeconds?: 
     case 'AUTH_FAILED':
       return 'Run `shipguard login` to re-authenticate, or pass --allow-degraded to run local rules only.'
     case 'INSUFFICIENT_CREDITS':
+    case 'ALLOWANCE_USED':
+    case 'PLAN_INACTIVE':
       return `The server did not provide the rulebook for this scan. Run \`shipguard upgrade\` for details, or pass --allow-degraded to run general rules only.`
     case 'RATE_LIMITED':
       return retryAfterSeconds !== undefined
@@ -255,7 +267,8 @@ export function scanCommand(): Command {
     .option('--json', 'Output results as JSON (machine-readable; suppresses all decoration)')
     .option('--sarif', 'Output results as SARIF 2.1.0 (for GitHub Code Scanning)')
     .option('-q, --quiet', 'One-line verdict only (suppresses progress, panel, and tips)')
-    .option('--pro', 'Require the full rulebook for this scan (needs `shipguard login`; exits 3 when it cannot be had)')
+    .option('--pro', 'Require the full rulebook; exit 3 if it is not used (signed out, unreachable, partial, withheld by the server, plan inactive). A plain scan uses the rulebook when it is served and otherwise runs general rules and says so; its exit code does not change. At the monthly limit, when the server says so in a signed reply, a plain scan and --pro both run general rules and the exit code does not change.')
+    .option('--general', 'Run the general rules only (no rulebook request)')
     .option('--api-url <url>', 'API server URL', 'https://agenticcli.dev')
     .option('--category <categories>', 'Comma-separated category filter for rulebook rules')
     .option('--beta', 'Include beta-stage rules')
@@ -277,7 +290,8 @@ Examples:
   shipguard scan ./my-app         Scan a specific directory
   shipguard scan --changed        Scan only git-diff files (faster)
   shipguard scan --json           Machine-readable output for CI/agents
-  shipguard scan --pro            Require the full rulebook (needs login)
+  shipguard scan --pro            Require the full rulebook (needs login; exit 3 if it is not used)
+  shipguard scan --general        General rules only, no rulebook request
   shipguard scan --pro --allow-degraded  Fall back to local rules if the rulebook download fails (opt-in)
   shipguard scan --all            Scan any directory regardless of project markers
   shipguard scan --strict         CI hard gate: exit 1 on blocking findings
@@ -383,6 +397,38 @@ ${LEARN_MORE}`)
         }
       }
     })
+}
+
+/** The one repeat sentence above `Next:` (spec 04 "Fix loop"): states only what was measured. */
+function repeatLineFor(since: SinceLastRun, blockingCount: number): string | null {
+  if (blockingCount === 0) return null
+  const runs = maxRepeatRuns(since)
+  if (runs >= 2) return REPEAT_LABELS.stop
+  if (runs === 1) return since.treeChanged === false ? REPEAT_LABELS.unchangedScan : REPEAT_LABELS.changed
+  return null
+}
+
+/** A rulebook step failure (an explicit --pro that could not get the rulebook, or a zero-rule bundle) as the one error envelope. */
+function stepErrorEnvelope(err: StepError, ctx: { scanId: string; planEnv: ReturnType<typeof getPlanEnv> }): ReturnType<typeof buildErrorEnvelope> {
+  const code: ErrorCode = err.code
+  const calm = err.proErrorCode === 'PLATFORM_UNAVAILABLE' || err.proErrorCode === 'FRESHNESS_EXPIRED'
+  const signedOutPro = code === 'LOGIN_REQUIRED' && err.message.startsWith('--pro uses')
+  // The pointer to `upgrade` is left off in CI and when promotion is muted (spec 05).
+  const pointer = ctx.planEnv.ci || process.env.SHIPGUARD_NO_PROMO === '1' ? '' : '   (what the full rulebook adds for this repo: shipguard upgrade)'
+  return buildErrorEnvelope({
+    code,
+    message:
+      code === 'NO_RULES_APPLIED' ? 'This scan applied zero rules, so it checked nothing and cannot report a clean pass.'
+      : calm ? proFetchActionHint(err.proErrorCode as ProFetchErrorCode, err.retryAfterSeconds)
+      : code === 'TOKEN_EXPIRED' ? `${err.message} Your plan follows your account, so signing in again picks it up.`
+      : err.message,
+    cliVersion: CLI_VERSION,
+    runId: ctx.scanId,
+    ...(code === 'NO_RULES_APPLIED' ? { cause: err.message } : {}),
+    ...(signedOutPro ? { fix: `shipguard login${pointer}\n  Or run the free scan now: shipguard scan` } : {}),
+    ...(code === 'RATE_LIMITED' && err.retryAfterSeconds !== undefined ? { fix: `Retry after ${err.retryAfterSeconds} seconds` } : {}),
+    extra: err.retryAfterSeconds !== undefined ? { retryAfterSeconds: err.retryAfterSeconds } : {},
+  })
 }
 
 const MANIFESTS = ['package.json', 'pyproject.toml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'Gemfile', 'composer.json', 'pom.xml', 'build.gradle']
@@ -502,6 +548,8 @@ async function runScan(ctx: {
   }
   const frameworkNames = detectedFrameworks.map((f) => f.name)
 
+  const planEnv = getPlanEnv({ policy, projectDir: cwd })
+  const signedInForScanId = planEnv.apiKeyMode || existsSync(join(planEnv.configDir, 'credentials.json'))
   const { scanId, scanIdReused } = await resolveScanId({
     cwd,
     policy,
@@ -509,8 +557,8 @@ async function runScan(ctx: {
     changedOnly,
     categories,
     // "Rulebook requested" (not just the --pro flag): the key of the reservation behind the server-side
-    // dedup. Today only an explicit --pro asks for the rulebook; the signed-in default (W1b) will set it too.
-    rulebookRequested: Boolean(opts.pro),
+    // dedup. An explicit --pro asks for it, and so does the signed-in default scan (unless --general).
+    rulebookRequested: !opts.general && (Boolean(opts.pro) || signedInForScanId),
     frameworks: frameworkNames,
   })
 
@@ -537,156 +585,53 @@ async function runScan(ctx: {
     logger.divider()
   }
 
-  let proRules: QualityGateRule[] | undefined
-  let rulesVersion: string | undefined
-  let degraded = false
-  // Machine-readable reason for the pro-fetch failure — added to result.degradedReasons
-  // after the scan completes, alongside any scanner-layer reasons (FILE_TOO_LARGE, etc.)
-  let proFetchDegradeReason: DegradeReason | undefined
-  // Public-contract view of the same event (`rules.fallback`): code + one fixed sentence.
-  let rulesFallback: { code: string; message: string } | null = null
+  // ---- how this scan gets its rules (spec 02 "One rule for the rulebook did not run") ----
+  // One decision for every cause: general rules + what ran, or exit 3 for an explicit --pro. The rulebook is used only
+  // when the server serves a verified, attested bundle; the plan block is display data and unlocks nothing.
+  const explicitPro = Boolean(opts.pro)
+  const stackNames = detectedFrameworks.filter((f) => f.name !== 'generic').map((f) => f.name)
+  // The weekly public offer fetch (signed-out terminal scans only; stack names only) runs beside the scan itself.
+  const weeklyOffer = !signedInForScanId && !explicitPro && !opts.general
+    ? maybeFetchWeeklyOffer(nagCtx(planEnv), {
+        signedIn: false, terminal: planEnv.terminal, ci: planEnv.ci, quiet, hookOrGate: isHookOrGate(),
+        safeMode: planEnv.safeMode, trackingOff: planEnv.trackingOff, dryRun: false,
+      }, stackNames, { apiUrl: opts.apiUrl as string }).catch((err: unknown) => {
+        logger.debug(`offer fetch failed (ignored): ${err instanceof Error ? err.message : String(err)}`)
+        return { attempted: false } as const
+      })
+    : null
+  const step: RulebookStepResult = await runRulebookStep({
+    env: planEnv,
+    explicitPro,
+    general: Boolean(opts.general),
+    allowDegraded: Boolean(opts.allowDegraded),
+    hookOrGate: isHookOrGate(),
+    apiUrl: opts.apiUrl as string,
+    frameworks: detectedFrameworks.map((f) => f.name),
+    categories,
+    scanId,
+    fetchProRules: async (f, c, u, sid) => (await import('../core/pro-scanner.js')).fetchProRules(f, c, u, sid),
+  })
+  if (step.error) {
+    return failWith(stepErrorEnvelope(step.error, { scanId, planEnv }), { startTime, projectDir: cwd, opts, policy })
+  }
+  if (!machineOutput && !quiet) for (const n of step.notes) logger.warn(n)
+  // --allow-degraded kept a scan going without the rulebook that --pro required: say so on stderr, always.
+  if (step.degradedReason) logger.warn('--allow-degraded set — degrading to a local scan; the full rulebook will not be applied')
 
-  // `changedOnly`/`categories` were hoisted above (scanId reuse) so resolveScanId can compute its
-  // pre-scan reuse key before this point — the scope fingerprint (§2.2) below reuses the same
-  // values regardless of whether the pro fetch runs/succeeds.
-
-  if (opts.pro) {
-    if (!machineOutput && !quiet) {
-      logger.info('Detecting stack...')
-    }
-    try {
-      const { fetchProRules } = await import('../core/pro-scanner.js')
-      const { hasConfig, generateConfig } = await import('../core/config-generator.js')
-      // Reuse the framework set already detected above for the scanId reuse key — do NOT
-      // re-detect (a second read could disagree with the set that keyed the scanId).
-      const frameworks = detectedFrameworks
-
-      // Auto-generate .shipguard.yml on first scan
-      if (!hasConfig(cwd)) {
-        const configPath = generateConfig(cwd, frameworks)
-        if (!machineOutput && !quiet) {
-          logger.success(`Config saved to ${configPath}`)
-        }
-      }
-
-      if (!machineOutput && !quiet) {
-        for (const fw of frameworks) {
-          logger.info(`  + ${fw.name}${fw.version ? ` ${fw.version}` : ''}`)
-        }
-        logger.info('Downloading the full rulebook...')
-      }
-
-      // ScanId idempotency (scanId idempotency): pass the per-scan stable scanId (minted once in
-      // scanCommand) down to fetchProRules so it rides in the request body AND the
-      // Idempotency-Key header. The server's (userId, scanId) reservation then makes a
-      // dropped-response retry re-deliver the already-paid bundle instead of charging a
-      // second credit. Omitting it here forced the server to mint a fresh UUID per
-      // request, defeating the entire server-side idempotency machinery (money bug).
-      const fetched = await fetchProRules(
-        frameworks.map((f) => f.name),
-        categories.length > 0 ? categories : undefined,
-        opts.apiUrl as string,
-        scanId,
-      )
-      proRules = fetched.rules
-      rulesVersion = fetched.rulesVersion
-
-      if (!machineOutput && !quiet && proRules.length > 0) {
-        // Build category breakdown for display
-        const breakdown: Record<string, number> = {}
-        for (const r of proRules) {
-          breakdown[r.category] = (breakdown[r.category] ?? 0) + 1
-        }
-        const breakdownStr = Object.entries(breakdown)
-          .map(([cat, count]) => `${cat}: ${count}`)
-          .join(', ')
-        logger.info(`  + ${proRules.length} rules loaded (${breakdownStr})`)
-        logger.info('  + Encrypted | Signed | Memory-only')
-      }
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      // a NO_RULES_APPLIED (server fail-closed on an empty bundle) is an UNCHECKABLE scan,
-      // NOT a transient outage. We must NOT degrade to a free scan and report green (§11.1). Exit
-      // 3 (RUNTIME_ERROR) loudly and suppress the free-rule fallback — a scan that checked nothing
-      // can never be SAFE_TO_SHIP.
-      const isNoRulesApplied =
-        (err instanceof Error && err.name === 'NoRulesAppliedError') ||
-        (err as { code?: string })?.code === 'NO_RULES_APPLIED'
-      if (isNoRulesApplied) {
-        return failWith(
-          buildErrorEnvelope({
-            code: 'NO_RULES_APPLIED',
-            message: 'This scan applied zero rules, so it checked nothing and cannot report a clean pass.',
-            cliVersion: CLI_VERSION,
-            runId: scanId,
-            cause: errMsg,
-          }),
-          { startTime, projectDir: cwd, opts, policy },
-        )
-      }
-
-      // ---------------------------------------------------------------------
-      // every OTHER Pro-fetch failure class (auth, credits,
-      // rate limit, server/network, invalid bundle). Classify by duck-typing the
-      // `code` field pro-scanner.ts's ProFetchError carries (see the type-only
-      // import at the top of this file — we deliberately do NOT value-import
-      // pro-scanner.js here, to keep it lazy-loaded for non-pro scans).
-      // Unrecognized/untyped errors default to SERVER_ERROR: fail loud is the
-      // SAFE default (never silently reclassify an unknown error as a clean
-      // free-scan fallback).
-      // ---------------------------------------------------------------------
-      const rawErrCode = (err as { code?: unknown })?.code
-      const KNOWN_PRO_FETCH_ERROR_CODES: readonly ProFetchErrorCode[] = [
-        'AUTH_FAILED', 'INSUFFICIENT_CREDITS', 'RATE_LIMITED', 'SERVER_ERROR', 'BUNDLE_INVALID', 'NO_ACTIVE_RELEASE', 'PLATFORM_UNAVAILABLE', 'FRESHNESS_EXPIRED',
-      ]
-      const proErrorCode: ProFetchErrorCode =
-        typeof rawErrCode === 'string' && (KNOWN_PRO_FETCH_ERROR_CODES as string[]).includes(rawErrCode)
-          ? (rawErrCode as ProFetchErrorCode)
-          : 'SERVER_ERROR'
-      const retryAfterSeconds = (err as { retryAfterSeconds?: number })?.retryAfterSeconds
-
-      if (opts.allowDegraded) {
-        // Opt-in: restores the pre-2026-07-14 fallback — free scan, degraded:true,
-        // verdict-neutral exit (resolveExitCode is unaffected by this branch).
-        logger.warn('--allow-degraded set — degrading to a local scan; the full rulebook will not be applied')
-        degraded = true
-        proFetchDegradeReason = {
-          code: 'PRO_RULES_UNAVAILABLE',
-          detail: `[${proErrorCode}] The rulebook could not be downloaded: ${errMsg}`,
-        }
-        rulesFallback = proErrorCode === 'INSUFFICIENT_CREDITS'
-          ? { code: 'RULEBOOK_WITHHELD', message: 'The rulebook was not provided for this scan. This scan ran general rules only.' }
-          : { code: 'RULEBOOK_UNREACHABLE', message: 'Rulebook could not be reached. This scan ran general rules only; it is not a full rulebook scan.' }
-      } else {
-        // Default (amended A1, explicit-Pro-failure path only — see the
-        // resolveExitCode doc comment above for the governance note): the
-        // caller explicitly asked for the pro gate and it did NOT run. Fail
-        // loud, exit 3 — never silently degrade to a free scan and report
-        // green. Structured, machine-readable, and includes what the caller
-        // can do next.
-        const publicCode: ErrorCode = mapProFetchCode(proErrorCode, errMsg)
-        const calm = proErrorCode === 'PLATFORM_UNAVAILABLE' || proErrorCode === 'FRESHNESS_EXPIRED'
-        // The 0.12 credit-balance wording is gone (no credit model in the CLI): say what happened.
-        const message =
-          proErrorCode === 'INSUFFICIENT_CREDITS'
-            ? 'The server did not provide the rulebook for this scan.'
-            : calm
-              ? proFetchActionHint(proErrorCode, retryAfterSeconds)
-              : errMsg
-        const extra: ExtraErrorFields = retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}
-        return failWith(
-          buildErrorEnvelope({
-            code: publicCode,
-            message,
-            cliVersion: CLI_VERSION,
-            runId: scanId,
-            ...(publicCode === 'RATE_LIMITED' && retryAfterSeconds !== undefined ? { fix: `Retry after ${retryAfterSeconds} seconds` } : {}),
-            extra,
-          }),
-          { startTime, projectDir: cwd, opts, policy },
-        )
-      }
-    }
+  const proRules: QualityGateRule[] | undefined = step.proRules
+  const rulesVersion: string | undefined = step.rulesVersion
+  // An explicit --pro that --allow-degraded turned into a general run keeps the 0.12 degraded record.
+  const proFetchDegradeReason: DegradeReason | undefined = step.degradedReason ?? undefined
+  const degraded = proFetchDegradeReason !== undefined
+  // Public-contract view of the same event (`rules.fallback`): code, one fixed sentence, and the server's own reason.
+  const rulesFallback: { code: string; message: string; reason: string | null } | null = step.fallback
+    ? { code: step.fallback.code, message: step.fallback.message, reason: step.fallback.reason }
+    : null
+  if (!machineOutput && !quiet && proRules && proRules.length > 0 && step.rulebookRan) {
+    const breakdown: Record<string, number> = {}
+    for (const r of proRules) breakdown[r.category] = (breakdown[r.category] ?? 0) + 1
+    logger.info(`  + ${proRules.length} rules loaded (${Object.entries(breakdown).map(([cat, count]) => `${cat}: ${count}`).join(', ')})`)
   }
 
   // -----------------------------------------------------------------------
@@ -745,7 +690,7 @@ async function runScan(ctx: {
   // own documented evolution procedure (tests/commands/scan-json-schema-freeze.test.ts).
   // Bumped 5 → 6: the additive `coverage` object (what was scanned, skipped and ignored) and the
   // new degrade codes UNSCANNED_UNKNOWN_BINARY and NO_FILES_SCANNED.
-  result.schemaVersion = '6'
+  result.schemaVersion = SCHEMA_VERSION
   result.scanIdReused = scanIdReused
   // OR-merge: preserve coderef version-skip degradation from scanner,
   // combined with the pro-fetch failure flag from this command layer.
@@ -762,7 +707,8 @@ async function runScan(ctx: {
   }
   // Deprecated alias (0.13.x): true when the SERVER's usage.state is warn or used. The CLI never decides a
   // threshold itself (no plan facts); with no verified plan data there is no such state.
-  result.creditsWarning = false
+  const serverUsageState = step.plan.server?.usage?.state
+  result.creditsWarning = serverUsageState === 'warn' || serverUsageState === 'used'
   result.rulesVersion = rulesVersion
   // Receipt fields (rec #8). runId is the SAME id used for retry idempotency and for the
   // run-scoped report filenames, so a report on disk can always be traced back to a run.
@@ -829,30 +775,27 @@ async function runScan(ctx: {
   // -----------------------------------------------------------------------
   // Facts shared by the report and the screen (one source, so they never disagree).
   const generalRuleCount = generalRuleCountOrNull()
-  const screenRulesRan: RulesRan = opts.pro && proRules && !degraded
-    ? { kind: 'rulebook', count: proRules.length }
-    : degraded && proFetchDegradeReason
-      ? { kind: 'fallback', code: 'RULEBOOK_UNREACHABLE' }
-      : { kind: 'general' }
+  const bundledGeneral = loadBundledRules()
+  const generalIds = new Set(bundledGeneral.map((r) => r.id))
+  const fb = step.fallback
+  const rulebookRan = step.rulebookRan && !degraded && Boolean(proRules?.length)
+  const screenRulesRan: RulesRan = step.partial && proRules
+    ? { kind: 'partial', count: proRules.length }
+    : fb && fb.code !== 'RULEBOOK_PARTIAL'
+      ? { kind: 'fallback', code: fb.code, serverText: fb.serverText }
+      : rulebookRan && proRules
+        ? { kind: 'rulebook', label: step.plan.server?.label ?? null, count: proRules.length }
+        : { kind: 'general' }
   const notScannedSummary = collectNotScanned(result, { cwd, maxFileSizeBytes: policy.limits?.maxFileSizeBytes })
   const detectedStackNames = detectedFrameworks.map((f) => f.name)
-  const shouldReport = scanOptions.generateReport || policy.scan.generate_report
-  let reportPaths: Awaited<ReturnType<typeof generateReport>> | undefined
-  if (shouldReport) {
-    const reportElapsedMs = Date.now() - startTime
-    try {
-      reportPaths = await generateReport(result, scanOptions.reportPath, reportElapsedMs, {
-        stacks: detectedStackNames,
-        generalRuleCount,
-        rulesRan: screenRulesRan,
-        notScanned: notScannedSummary,
-      })
-    } catch (error) {
-      // Loud. A failed report write never changes the verdict or the exit
-      // code, but it is never swallowed either.
-      logger.error(`Report generation failed: ${error instanceof Error ? error.message : error}`)
-    }
+  const ignoredTestValues = result.coverage?.ignoredTestValues ?? 0
+  // W5 masking: the one masked text `<type>, <length> characters, value hidden` is read back for the screen and the report.
+  const maskedOf = (f: Finding) => (f.evidence ? parseMaskedSecret(f.evidence) : undefined)
+  const secretLabel = (f: Finding): string | null => {
+    const m = maskedOf(f)
+    return m ? `${m.length} chars, value hidden` : null
   }
+  const secretEvidence = (f: Finding): string | null => (maskedOf(f) && f.evidence ? f.evidence : null)
 
   // Exit code resolution (A1 contract) — computed BEFORE any output so the JSON can say what the
   // exit code means (`exitMeaning`) and the human output can end with the exit-code notice. The
@@ -896,44 +839,82 @@ async function runScan(ctx: {
     invocationCwd,
     scanRoot: cwd,
     all: Boolean(opts.all),
-    pro: Boolean(opts.pro),
+    pro: explicitPro,
+    general: Boolean(opts.general),
     allowDegraded: Boolean(opts.allowDegraded),
   })
 
-  // Machine-readable output — exactly one format emitted to stdout
-  if (opts.sarif) {
-    console.log(JSON.stringify(toSarif(publicResult), null, 2))
-  } else if (scanOptions.json) {
-    const general = new Set(loadBundledRules().map((r) => r.id))
-    const rulebookRan = Boolean(proRules?.length) && !degraded
-    const rulebookRuleIds = new Set<string>(rulebookRan ? proRules!.filter((r) => !general.has(r.id)).map((r) => r.id) : [])
-    const extraRules = rulebookRan ? proRules!.filter((r) => rulebookRuleIds.has(r.id)) : []
-    const reasons = result.degradedReasons ?? []
-    const degradedJson = buildDegradedReasons(reasons, result.coverage)
-    const notScanned = buildNotScanned(result.coverage, reasons)
-    const blockingFindings = result.findings.filter((f) => f.blocking && !f.suppressed)
-    const warnings: Array<{ code: string; message: string; command: string | null }> = []
-    const steps = buildNextSteps({
-      value: verdictValue,
-      blockingFindings,
-      degraded: result.degraded === true,
-      degradedReasons: degradedJson,
-      notScanned,
-      sinceLastRun,
-      warnings,
-      rerunCommand,
-      install: null,
-      reportMarkdown: reportPaths?.mdPath ?? '.shipguard/reports/latest.md',
+  // ---- the plan block for this run (display state only) ----
+  // Signed in: what the rulebook request (or the cache) said. Signed out: the cached public offer, plus the one weekly fetch
+  // that ran beside the scan (stack names only).
+  let plan = step.plan
+  if (!step.signedIn) {
+    const attempt = weeklyOffer ? await weeklyOffer : null
+    plan = attempt?.attempted && attempt.result.ok ? attempt.result.block : await readPublicOffer(planEnv, stackNames)
+    if (attempt?.attempted && !attempt.result.ok && plan.status === 'unavailable' && plan.reason !== 'PLAN_UNVERIFIED') {
+      plan = unavailableBlock(attempt.result.reason)
+    }
+  }
+  const nag = loadNagFor(planEnv)
+  const muted = isMuted(nag)
+  const rk = repoKey(repoIdOf(cwd))
+  const acctId = step.acct
+  const hookOrGate = isHookOrGate()
+  const detected: DetectedStack[] = detectedFrameworks
+    .filter((f) => f.name !== 'generic')
+    .map((f) => ({ key: f.name, display: stackDisplayName(f.name), version: f.version ?? null }))
+  const generalCountN = bundledGeneral.length
+  const complete = result.degraded !== true
+  const blockingCount = result.riskScore.blockingCount
+  const rulebookRuleIds = new Set<string>(proRules && (rulebookRan || step.partial) ? proRules.filter((r) => !generalIds.has(r.id)).map((r) => r.id) : [])
+  // First-Pro receipt data: what the rulebook ran that the bundled general set did not (never on a partial or fallback run).
+  const receipt: Receipt | null = rulebookRan && fb === null && proRules
+    ? computeReceipt(
+        proRules.map((r) => ({ id: r.id, category: r.category, area: step.areaByRuleId[r.id] ?? null })),
+        generalIds,
+        result.findings.map((f) => f.id),
+      )
+    : null
+
+  // Facts the next-steps and the screen share.
+  const reasons = result.degradedReasons ?? []
+  const degradedJson = buildDegradedReasons(reasons, result.coverage)
+  const notScanned = buildNotScanned(result.coverage, reasons)
+  const blockingFindings = result.findings.filter((f) => f.blocking && !f.suppressed)
+  const warnings: Array<{ code: string; message: string; command: string | null }> = []
+  const gate = probeGate(cwd)
+  const nextAgent = detectNextAgent(cwd)
+  const steps = buildNextSteps({
+    value: verdictValue,
+    blockingFindings,
+    degraded: result.degraded === true,
+    degradedReasons: degradedJson,
+    notScanned,
+    sinceLastRun,
+    warnings,
+    rerunCommand,
+    install: { agent: nextAgent, gateInstalled: gate.state !== 'none', hookStale: gate.state === 'stale' },
+    reportMarkdown: scanOptions.reportPath,
+  })
+  const agentAction = decideAgentAction({ value: verdictValue, blockingCount, degraded: result.degraded === true, steps, sinceLastRun })
+  const marks = { pitch: false, usage: false, receipt: false }
+
+  // The schema-7 result object: the SAME object goes to stdout (--json) and to the run's JSON record.
+  const buildEnvelope = (forStdout: boolean, reportPaths: { mdPath: string; runJsonPath: string } | null): Record<string, unknown> => {
+    const rulebookResult = rulebookRan && fb === null
+    const planOut = buildPlanJson({
+      plan, signedIn: step.signedIn, accountStatus: step.accountStatus, stacks: detected, generalRuleCount: generalCountN,
+      complete, blockingCount, fallbackActive: fb !== null, ci: planEnv.ci, safeMode: planEnv.safeMode, muted,
+      jsonPitchDue: forStdout && momentDue(nag, 'jsonPitch', rk, planEnv.now),
+      usageJsonDue: forStdout && acctId !== null && momentDue(nag, 'usageJson', acctId, planEnv.now),
+      receiptJsonDue: forStdout && acctId !== null && momentDue(nag, 'receiptJson', acctId, planEnv.now),
+      receipt: rulebookResult ? receipt : null,
     })
-    const safeMode = isSafeMode()
-    const realStacks = detectedFrameworks.filter((f) => f.name !== 'generic')
+    if (forStdout) { marks.pitch = planOut.mark.pitch; marks.usage = planOut.mark.usage; marks.receipt = planOut.mark.receipt }
     const strictWouldExit = resolveExitCode({
-      strict: true,
-      blockingCount: result.riskScore.blockingCount,
-      degraded: result.degraded === true,
-      recommendation: verdictValue,
+      strict: true, blockingCount, degraded: result.degraded === true, recommendation: verdictValue,
     })
-    console.log(JSON.stringify(buildScanEnvelope({
+    return buildScanEnvelope({
       cliVersion: CLI_VERSION,
       runId: scanId,
       timestamp: result.timestamp,
@@ -941,59 +922,36 @@ async function runScan(ctx: {
       verdictValue,
       verdict: buildVerdictJson({
         value: verdictValue,
-        blockingCount: result.riskScore.blockingCount,
+        blockingCount,
         findingCount: result.findings.length,
         degraded: result.degraded === true,
         filesScanned: result.filesScanned,
         filesDiscovered: result.coverage?.discovered ?? result.filesScanned,
-        rulebookFallback: rulesFallback !== null,
+        rulebookFallback: fb !== null && fb.code !== 'RULEBOOK_PARTIAL',
       }),
       exitCode,
       strict: scanOptions.strict,
       strictWouldExit,
-      agentAction: decideAgentAction({
-        value: verdictValue,
-        blockingCount: result.riskScore.blockingCount,
-        degraded: result.degraded === true,
-        steps,
-        sinceLastRun,
-      }),
+      agentAction,
       report: reportPaths ? { markdown: reportPaths.mdPath, json: reportPaths.runJsonPath } : null,
       stack: {
-        detected: realStacks.map((f) => `${f.name}${f.version ? `@${f.version}` : ''}`),
-        supported: realStacks.length > 0,
-        ...(realStacks.length === 0 ? { manifest: firstManifest(cwd) } : {}),
+        detected: detected.map((f) => `${f.key}${f.version ? `@${f.version}` : ''}`),
+        supported: detected.length > 0,
+        ...(detected.length === 0 ? { manifest: firstManifest(cwd) } : {}),
       },
       rules: {
         corpus: rulebookRan ? 'rulebook' : 'general',
         version: rulebookRan ? (rulesVersion ?? null) : CLI_VERSION,
-        applied: rulebookRan ? proRules!.length : loadBundledRules().length,
+        applied: rulebookRan ? proRules!.length : generalCountN,
         localChecks: true,
         fallback: rulesFallback,
-        receipt: rulebookRan && rulesFallback === null
-          ? {
-              extraRules: extraRules.length,
-              extraCategories: [...new Set(extraRules.map((r) => r.category))].sort(),
-              // No per-rule area in the bundle yet: the category code stands in (spec 02 `rules.receipt`).
-              extraAreas: [...new Set(extraRules.map((r) => r.category))].sort(),
-              extraFindings: result.findings.filter((f) => rulebookRuleIds.has(f.id)).length,
-            }
-          : null,
+        ...(step.partial ? { tiersApplied: step.tiersApplied ?? [] } : {}),
+        receipt: rulebookResult && receipt ? receipt : null,
       },
-      plan: buildPlanJson({
-        stacks: realStacks.map((f) => f.name),
-        complete: result.degraded !== true,
-        blockingCount: result.riskScore.blockingCount,
-        rulebookRan,
-        rulebookFallbackCode: rulesFallback?.code ?? null,
-        ci: Boolean(process.env.CI),
-        // Safe mode suppresses every Free-to-Pro line (spec 06).
-        muted: process.env.SHIPGUARD_NO_PROMO === '1' || safeMode,
-        jsonPitchAllowed: false,
-      }),
+      plan: planOut.json,
       findings: result.findings,
       findingCtx: { rerunCommand, rulebookRuleIds },
-      coverage: buildCoverageJson(result.coverage, reasons, result.filesScanned, 0),
+      coverage: buildCoverageJson(result.coverage, reasons, result.filesScanned, ignoredTestValues),
       degraded: result.degraded === true,
       degradedReasons: degradedJson,
       warnings,
@@ -1018,13 +976,53 @@ async function runScan(ctx: {
         rulesBreakdown: result.rulesBreakdown,
         aiCodeIssues: result.aiCodeIssues,
       },
-    }), null, 2))
+    })
+  }
+
+  // The envelope is built once: for stdout under --json, for the report's JSON record otherwise. The report's paths are
+  // known before it is written, so the result can carry them.
+  const shouldReport = scanOptions.generateReport || policy.scan.generate_report
+  const plannedReport = shouldReport ? reportPathsFor(scanOptions.reportPath, scanId) : null
+  const envelope = scanOptions.json || shouldReport ? buildEnvelope(Boolean(scanOptions.json), plannedReport) : null
+  let reportPaths: Awaited<ReturnType<typeof generateReport>> | undefined
+  if (shouldReport) {
+    const reportElapsedMs = Date.now() - startTime
+    try {
+      reportPaths = await generateReport(result, scanOptions.reportPath, reportElapsedMs, {
+        stacks: detectedStackNames,
+        rerunCommand,
+        generalRuleCount,
+        rulesRan: screenRulesRan,
+        notScanned: notScannedSummary,
+        ignoredTestValues,
+        secretEvidence,
+        agentJson: envelope ?? undefined,
+      })
+    } catch (error) {
+      // Loud. A failed report write never changes the verdict or the exit
+      // code, but it is never swallowed either.
+      logger.error(`Report generation failed: ${error instanceof Error ? error.message : error}`)
+    }
+  }
+
+  // Machine-readable output — exactly one format emitted to stdout
+  if (opts.sarif) {
+    console.log(JSON.stringify(toSarif(publicResult), null, 2))
+  } else if (scanOptions.json) {
+    console.log(JSON.stringify(envelope, null, 2))
+    // What this JSON read told an agent is marked as shown (its own counters: the terminal never loses its window).
+    const nctx = nagCtx(planEnv)
+    if (marks.pitch) markMoment(nctx, 'jsonPitch', rk)
+    if (acctId !== null && marks.usage) markMoment(nctx, 'usageJson', acctId)
+    if (acctId !== null && marks.receipt) markMoment(nctx, 'receiptJson', acctId)
   } else if (quiet) {
     // --quiet mode: one `key=value` line (spec 01); nothing else on stdout.
     console.log(renderQuietLine({
       result,
+      agentAction,
       notScanned: notScannedSummary.fileCount,
-      fallbackCode: degraded && proFetchDegradeReason ? 'RULEBOOK_UNREACHABLE' : null,
+      // PLAN_INACTIVE (a lapsed plan) is shown on a terminal only; the quiet line never carries it.
+      fallbackCode: fb && fb.code !== 'PLAN_INACTIVE' ? fb.code : null,
       reportPath: reportPaths?.mdPath ?? null,
     }))
   } else {
@@ -1032,6 +1030,7 @@ async function runScan(ctx: {
     // Human screen (spec 01): verdict first, at most 25 lines, same bytes piped or on a terminal.
     // -----------------------------------------------------------------------
     const elapsedMs = Date.now() - startTime
+    const nctx = nagCtx(planEnv)
 
     // First-run welcome text (TTY only, not in --json/--sarif/--quiet)
     const isTTY = Boolean(process.stdout.isTTY)
@@ -1040,12 +1039,24 @@ async function runScan(ctx: {
       if (banner) console.log(banner)
     }
 
-    const gate = probeGate(cwd)
-    console.log(renderScanScreen({
+    // Free-to-Pro line (one shared 7-day counter per repo) and the first-Pro receipt: after the result, terminal only.
+    const pitch = screenPitch({
+      plan, signedIn: step.signedIn, accountStatus: step.accountStatus, detected, rulesApplied: generalCountN,
+      scanComplete: complete, blocking: blockingCount > 0, fallbackActive: fb !== null, ci: planEnv.ci, hookOrGate,
+      safeMode: planEnv.safeMode, muted, recentlyShown: false, terminal: planEnv.terminal, quiet: false,
+      screenDue: momentDue(nag, 'screenPitch', rk, planEnv.now),
+    })
+    const receiptOpen = receipt !== null && receipt.extraRules > 0 && acctId !== null && planEnv.terminal && !planEnv.ci && !hookOrGate &&
+      !planEnv.safeMode && momentDue(nag, 'receiptShown', acctId, planEnv.now)
+    const receiptOut = receiptOpen && receipt ? receiptLines(receipt, plan) : []
+    const setupDue = momentDue(nag, 'setupHint', rk, planEnv.now)
+
+    const screen = renderScanScreen({
       result,
       elapsedMs,
       strict: scanOptions.strict,
       exitCode,
+      rerunCommand,
       reportPath: reportPaths?.mdPath ?? null,
       stacks: detectedStackNames,
       manifest: detectManifest(cwd),
@@ -1053,14 +1064,35 @@ async function runScan(ctx: {
       rulesRan: screenRulesRan,
       notScanned: notScannedSummary,
       next: {
-        agent: detectNextAgent(cwd),
+        agent: nextAgent,
         gate: gate.state,
         gateLabel: gate.label,
-        suggestionShownRecently: false, // wired to the nag counter once W1a's module has merged
+        // The setup suggestion is shown once per 7 days; JSON always carries the setup step.
+        suggestionShownRecently: !setupDue,
       },
+      planLines: [...pitch.lines, ...receiptOut],
+      planLabel: plan.server?.label ?? null,
+      ignoredTestValues,
+      secretLabel,
+      fixLoop: sinceLastRun
+        ? { fixed: sinceLastRun.fixed.length, added: sinceLastRun.new.length, repeatLine: repeatLineFor(sinceLastRun, blockingCount) }
+        : undefined,
       columns: isTTY ? (process.stdout.columns ?? 100) : undefined,
       nothingToCheck: Boolean(result.coverage?.changed?.nothingToCheck),
-    }))
+    })
+    console.log(screen)
+
+    if (pitch.mark && pitch.lines.length > 0) markMoment(nctx, 'screenPitch', rk)
+    if (receiptOut.length > 0 && acctId !== null) markMoment(nctx, 'receiptShown', acctId)
+    if (screen.includes('shipguard setup --agent')) markMoment(nctx, 'setupHint', rk)
+
+    // Allowance and update notices: stderr, interactive terminal only, once per day per account.
+    if (acctId !== null) {
+      const nc = { terminal: planEnv.terminal, quiet: false, ci: planEnv.ci, hookOrGate, safeMode: planEnv.safeMode, due: momentDue(nag, 'usageScreen', acctId, planEnv.now) }
+      const notice = [...usageNoticeLines(plan, nc), ...updateNoticeLines(plan, nc)]
+      for (const line of notice) console.error(line)
+      if (notice.length > 0) markMoment(nctx, 'usageScreen', acctId)
+    }
   }
 
   // Anonymous opt-out ping — privacy-preserving. Started here so the request overlaps with the

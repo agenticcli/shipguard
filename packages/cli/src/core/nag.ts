@@ -4,7 +4,7 @@
  * facts. The file lives outside the scanned folder, so a cloned repo cannot reset, fill or read it.
  *
  * Per repo (a hash of the repo id): screenPitchAt (ONE shared screen counter for the gap line, the pointer and
- * the coverage line), jsonPitchAt. Per account hash: usageScreenAt, usageJsonAt (also used by the update notice),
+ * the coverage line), jsonPitchAt, setupHintAt (the `Next:` setup suggestion: once per 7 days, not a plan counter). Per account hash: usageScreenAt, usageJsonAt (also used by the update notice),
  * receiptShownAt, receiptJsonAt, lastAccountStatus, lastAccountAt. Global: muted, offerFetchAt (the one counter of
  * the weekly public fetch and the setup priming).
  *
@@ -24,7 +24,7 @@ export const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_REPOS = 120
 const MAX_ACCOUNTS = 20
 
-export interface NagRepo { screenPitchAt?: number; jsonPitchAt?: number }
+export interface NagRepo { screenPitchAt?: number; jsonPitchAt?: number; setupHintAt?: number }
 export interface NagAccount {
   usageScreenAt?: number; usageJsonAt?: number; receiptShownAt?: number; receiptJsonAt?: number
   lastAccountStatus?: AccountStatus; lastAccountAt?: number
@@ -38,7 +38,7 @@ export interface NagContext {
   safeMode: boolean
 }
 
-export type Moment = 'screenPitch' | 'jsonPitch' | 'usageScreen' | 'usageJson' | 'receiptShown' | 'receiptJson'
+export type Moment = 'screenPitch' | 'jsonPitch' | 'setupHint' | 'usageScreen' | 'usageJson' | 'receiptShown' | 'receiptJson'
 export type Channel = 'screen' | 'json'
 
 const STATUSES: readonly string[] = ['active', 'trialing', 'pending', 'past_due', 'ending', 'lapsed', 'none', 'unsupported']
@@ -69,7 +69,11 @@ export function loadNag(ctx: Pick<NagContext, 'configDir' | 'safeMode'>): NagDat
     if (isRecord(repos)) {
       for (const [k, v] of Object.entries(repos)) {
         if (!isRecord(v) || !/^[0-9a-f]{16}$/.test(k)) continue
-        out.repos[k] = { ...(isNum(v['screenPitchAt']) ? { screenPitchAt: v['screenPitchAt'] } : {}), ...(isNum(v['jsonPitchAt']) ? { jsonPitchAt: v['jsonPitchAt'] } : {}) }
+        out.repos[k] = {
+          ...(isNum(v['screenPitchAt']) ? { screenPitchAt: v['screenPitchAt'] } : {}),
+          ...(isNum(v['jsonPitchAt']) ? { jsonPitchAt: v['jsonPitchAt'] } : {}),
+          ...(isNum(v['setupHintAt']) ? { setupHintAt: v['setupHintAt'] } : {}),
+        }
       }
     }
     const accounts = raw['accounts']
@@ -132,6 +136,7 @@ function field(m: Moment): { scope: 'repos' | 'accounts'; key: string } {
   switch (m) {
     case 'screenPitch': return { scope: 'repos', key: 'screenPitchAt' }
     case 'jsonPitch': return { scope: 'repos', key: 'jsonPitchAt' }
+    case 'setupHint': return { scope: 'repos', key: 'setupHintAt' }
     case 'usageScreen': return { scope: 'accounts', key: 'usageScreenAt' }
     case 'usageJson': return { scope: 'accounts', key: 'usageJsonAt' }
     case 'receiptShown': return { scope: 'accounts', key: 'receiptShownAt' }
@@ -140,7 +145,7 @@ function field(m: Moment): { scope: 'repos' | 'accounts'; key: string } {
 }
 
 const INTERVAL: Record<Moment, number> = {
-  screenPitch: WEEK_MS, jsonPitch: WEEK_MS, usageScreen: DAY_MS, usageJson: DAY_MS,
+  screenPitch: WEEK_MS, jsonPitch: WEEK_MS, setupHint: WEEK_MS, usageScreen: DAY_MS, usageJson: DAY_MS,
   receiptShown: Number.POSITIVE_INFINITY, receiptJson: Number.POSITIVE_INFINITY, // the receipt is shown once per account
 }
 

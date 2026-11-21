@@ -83,6 +83,7 @@ vi.mock('../../src/utils/logger.js', () => ({
     finding: vi.fn(),
     score: vi.fn(),
     divider: vi.fn(),
+    debug: vi.fn(),
   },
 }))
 
@@ -104,7 +105,8 @@ vi.mock('../../src/core/pro-scanner.js', async (importOriginal) => ({
   })),
 }))
 
-vi.mock('../../src/core/telemetry.js', () => ({
+vi.mock('../../src/core/telemetry.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/core/telemetry.js')>()),
   sendTelemetry: vi.fn(),
   telemetryState: () => 'on',
 }))

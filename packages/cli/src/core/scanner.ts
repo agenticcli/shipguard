@@ -20,7 +20,7 @@ import {
 import { buildIgnoreRules, classifyIgnored, isShipguardArtifactPath, selfArtifactIgnorePatterns } from './ignore.js'
 import { logger } from '../utils/logger.js'
 import { assertCwdAlive } from '../utils/cwd-guard.js'
-import { secretsCheck } from '../checks/secrets.js'
+import { secretsCheck, checkSecretsWithStats } from '../checks/secrets.js'
 import { authCheck } from '../checks/auth.js'
 import { databaseCheck } from '../checks/database.js'
 import { payments } from '../checks/payments.js'
@@ -306,10 +306,19 @@ export async function scan(
   // The secrets check masks its own evidence at the source (checks/secrets.ts `redact()`);
   // remember which findings are its so the central redaction below leaves them byte-identical.
   const sourceRedacted = new Set<Finding>()
+  // Test and placeholder values the checks skipped (counted for `coverage.ignoredTestValues`, never findings).
+  let ignoredTestValues = 0
   const legacyFindings = applySuppressions(
     CHECK_MODULES.flatMap((mod) => {
-      const found = mod.run(files, policy)
-      if (mod === secretsCheck) for (const f of found) sourceRedacted.add(f)
+      let found: Finding[]
+      if (mod === secretsCheck) {
+        const withStats = checkSecretsWithStats(files, policy)
+        ignoredTestValues += withStats.ignoredTestValues
+        found = withStats.findings
+        for (const f of found) sourceRedacted.add(f)
+      } else {
+        found = mod.run(files, policy)
+      }
       return found
     }),
     files,
@@ -404,7 +413,7 @@ export async function scan(
   // Tidy-up on the final list: a line for every file finding, LOW confidence for stand-in keys.
   // Before redaction: judging a key needs the matched text.
   fillMissingLines(allFindings, files)
-  dropTestValueFindings(allFindings)
+  ignoredTestValues += dropTestValueFindings(allFindings)
   dropTestPathInjectionNoise(allFindings)
   lowerFakeKeyConfidence(allFindings)
 
@@ -530,7 +539,7 @@ export async function scan(
 
   const isDegraded = degradedReasons.length > 0 || undefined
 
-  const coverage = buildCoverage(state, mode, changedInfo)
+  const coverage = { ...buildCoverage(state, mode, changedInfo), ignoredTestValues }
 
   const result: ScanResultWithMeta = {
     findings: allFindings,

@@ -269,7 +269,7 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
     ].sort())
     // schema 7: every finding carries the SAME keys (nullable, never absent).
     const ALLOWED_FINDING_KEYS = [
-      'aiCodeTarget', 'blocking', 'category', 'column', 'confidence', 'cwe', 'endLine', 'evidence', 'file', 'fix',
+      'aiCodeTarget', 'blocking', 'category', 'column', 'confidence', 'cwe', 'endLine', 'evidence', 'explanation', 'file', 'fix',
       'id', 'line', 'matcherType', 'notAVulnerabilityIf', 'occurrence', 'origin', 'recommendation', 'severity',
       'suppressed', 'suppressionState', 'title', 'why',
     ]

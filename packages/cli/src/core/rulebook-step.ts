@@ -122,25 +122,12 @@ export async function runRulebookStep(i: RulebookStepInput): Promise<RulebookSte
     return base({ signedIn, acct: acctPre, plan, accountStatus: accountStatusOf(plan, nag, acctPre) })
   }
 
-  if (!signedIn) {
-    const decision = decideRulebookUse({ signedIn: false, explicitPro: i.explicitPro, allowDegraded: i.allowDegraded, plan: unavailableBlock('NOT_FETCHED'), cause: null })
-    if (decision.action === 'exit-3') {
-      return base({ plan: unavailableBlock('NOT_FETCHED'), error: { code: 'LOGIN_REQUIRED', message: '--pro uses the full rulebook, and you are not signed in.', proErrorCode: 'AUTH_FAILED' } })
-    }
-    if (decision.action === 'run-general') {
-      // --pro --allow-degraded while signed out: general rules, and the run says the rulebook was not used.
-      const message = fallbackMessage('RULEBOOK_UNREACHABLE', null)
-      return base({
-        plan: unavailableBlock('NOT_FETCHED'),
-        fallback: { code: 'RULEBOOK_UNREACHABLE', reason: null, message, serverText: null },
-        degradedReason: { code: 'PRO_RULES_UNAVAILABLE', detail: '[AUTH_FAILED] The rulebook could not be downloaded: not signed in (--allow-degraded)' },
-      })
-    }
-    // A plain Free run: the cached public offer only (the weekly fetch is the caller's, it needs the stack names).
-    return base({ plan: unavailableBlock('NOT_FETCHED') })
-  }
+  // A plain run while signed out is a plain Free run: nothing is asked of the server (the weekly public offer fetch is the
+  // caller's, it needs the stack names). An explicit --pro still goes through the request below, which fails with
+  // AUTH_FAILED before any network call when there is no sign-in.
+  if (!signedIn && !i.explicitPro) return base({ plan: unavailableBlock('NOT_FETCHED') })
 
-  // Signed in. A valid cached document or hint may let a DEFAULT scan skip the call (never --pro, never in API-key mode).
+  // A valid cached document or hint may let a DEFAULT scan skip the call (never --pro, never in API-key mode).
   if (!i.explicitPro && !env.apiKeyMode && !env.safeMode) {
     const cached = acctPre !== null ? await readAccountCache(env.configDir, { acct: acctPre, now: env.now }) : null
     const hintSkip = i.hookOrGate && hintSkipsCall(
@@ -217,11 +204,19 @@ async function failedRequest(i: RulebookStepInput, raw: unknown, acctPre: string
 
   // The sign-in is no longer good. A default scan runs on; an explicit --pro needs the login.
   if (errCode === 'AUTH_FAILED') {
+    const notSignedIn = /^Not authenticated/.test(message)
     const expired = /expired|no longer valid|refused/i.test(message)
     if (i.explicitPro && !i.allowDegraded) {
-      return base({ signedIn: true, acct, plan, accountStatus: status, error: { code: expired ? 'TOKEN_EXPIRED' : 'LOGIN_REQUIRED', message, proErrorCode: errCode } })
+      return base({
+        signedIn: !notSignedIn, acct, plan, accountStatus: status,
+        error: {
+          code: expired && !notSignedIn ? 'TOKEN_EXPIRED' : 'LOGIN_REQUIRED',
+          message: notSignedIn ? '--pro uses the full rulebook, and you are not signed in.' : message,
+          proErrorCode: errCode,
+        },
+      })
     }
-    const notes = ['Your sign-in is no longer valid. Your plan follows your account, so signing in again picks it up: shipguard login']
+    const notes = notSignedIn ? [] : ['Your sign-in is no longer valid. Your plan follows your account, so signing in again picks it up: shipguard login']
     return finishFallback(i, { code: 'RULEBOOK_UNREACHABLE', serverCode: null, serverText: null }, plan, status, acct, errCode, message, notes)
   }
 
