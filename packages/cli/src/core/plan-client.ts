@@ -30,6 +30,8 @@ import { isMuted, lastAccountStatus, loadNag, markMoment, momentDue, recordAccou
 import { readOffer } from './offer-cache.js'
 import { gateGapLine, type DetectedStack } from './plan-lines.js'
 import { detectFrameworks } from './framework.js'
+import { loadPolicy } from './policy.js'
+import { resolveHistoryPath, resolveRepoIdentity, HistoryStore } from './history/index.js'
 import { stackDisplayName } from './fix-guidance.js'
 import { bundledRulesMeta } from './bundled-rules.js'
 import { existsSync } from 'node:fs'
@@ -337,8 +339,6 @@ export interface LastScan { runId: string; corpus: 'rulebook' | 'general'; appli
 /** The newest run in this folder's history (`Last scan here`), or null. Read-only; never throws. */
 export async function lastScanHere(dir: string): Promise<LastScan | null> {
   try {
-    const { loadPolicy } = await import('./policy.js')
-    const { resolveHistoryPath, resolveRepoIdentity, HistoryStore } = await import('./history/index.js')
     const policy = await loadPolicy(dir)
     const opened = await HistoryStore.open(resolveHistoryPath(dir, policy), CLI_VERSION)
     if (!opened.ok) return null

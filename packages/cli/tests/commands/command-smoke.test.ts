@@ -140,7 +140,7 @@ describe('status smoke', () => {
     const home = mkTemp('shipguard-home-noauth-')
     const { code, stdout, stderr } = runCli(['status'], { home })
     expect(code).toBe(0)
-    expect(`${stdout}${stderr}`.toLowerCase()).toMatch(/not authenticated|login/)
+    expect(`${stdout}${stderr}`.toLowerCase()).toMatch(/not signed in|not authenticated|login/)
   })
 
   it('status with a stored (expired) credential reports its state → exit 0', () => {
