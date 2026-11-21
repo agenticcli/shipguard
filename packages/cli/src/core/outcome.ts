@@ -14,7 +14,6 @@ import chalk from 'chalk'
 import type { DegradeReason, Finding, Recommendation, RiskScore, ScanCoverage } from '@agenticcli/shared'
 
 export const SCHEMA_VERSION = '7'
-export const LEGACY_SCHEMA_VERSION = '6'
 export const CORE_LINE = 'Review code with a rulebook to build secure code'
 
 export type AgentAction = 'proceed' | 'fix_and_rerun' | 'retry' | 'ask_human' | 'stop'
@@ -682,18 +681,6 @@ export function buildErrorEnvelope(input: {
     agentAction: input.agentAction ?? entry.agentAction,
     exit: { code: input.exitCode ?? entry.exit },
   }
-}
-
-/** The 0.12 error JSON (`--schema-version 6`): `{ error: string, code }`, plus Pro-error `degraded` and `action`. */
-export function legacyErrorJson(env: ErrorEnvelope): Record<string, unknown> {
-  const legacy: Record<string, unknown> = { error: env.error.message, code: env.error.code }
-  if (env.error.code === 'LOGIN_REQUIRED' || env.error.code === 'TOKEN_EXPIRED') legacy.code = 'AUTH_FAILED'
-  if (env.exit.code === 3 && /^(LOGIN_|TOKEN_|RULEBOOK_|PLAN_|RATE_)/.test(env.error.code)) {
-    legacy.degraded = false
-    legacy.action = env.error.fix
-  }
-  if (env.error.retryAfterSeconds !== undefined) legacy.retryAfterSeconds = env.error.retryAfterSeconds
-  return legacy
 }
 
 /**

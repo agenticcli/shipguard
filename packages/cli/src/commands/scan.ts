@@ -26,9 +26,10 @@ import { recordScanHistory, resolveScanId } from '../core/history/index.js'
 import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
 import { sendTelemetry, telemetryState } from '../core/telemetry.js'
+import { isSafeMode } from '../core/telemetry-config.js'
 import { emitError, setExitCode } from '../utils/exit.js'
 import {
-  CORE_LINE, SCHEMA_VERSION, LEGACY_SCHEMA_VERSION, buildErrorEnvelope, buildScanEnvelope, buildVerdictJson, buildPlanJson,
+  CORE_LINE, SCHEMA_VERSION, buildErrorEnvelope, buildScanEnvelope, buildVerdictJson, buildPlanJson,
   buildNextSteps, buildCoverageJson, buildDegradedReasons, buildNotScanned, decideAgentAction, blockingOccurrences,
   computeSinceLastRun, readLastRun, writeLastRun, mapProFetchCode, secretEvidenceText, evidenceOf, stackDisplayName,
 } from '../core/outcome.js'
@@ -255,7 +256,6 @@ export function scanCommand(): Command {
     .option('--sarif', 'Output results as SARIF 2.1.0 (for GitHub Code Scanning)')
     .option('-q, --quiet', 'One-line verdict only (suppresses progress, panel, and tips)')
     .option('--pro', 'Require the full rulebook for this scan (needs `shipguard login`; exits 3 when it cannot be had)')
-    .addOption(new Option('--schema-version <n>', 'JSON contract version to print (7 = current; 6 = the 0.12 shape, for the 0.13.x line only)').choices([LEGACY_SCHEMA_VERSION, SCHEMA_VERSION]).default(SCHEMA_VERSION))
     .option('--api-url <url>', 'API server URL', 'https://agenticcli.dev')
     .option('--category <categories>', 'Comma-separated category filter for rulebook rules')
     .option('--beta', 'Include beta-stage rules')
@@ -410,7 +410,6 @@ async function failWith(
 ): Promise<void> {
   emitError(env, {
     machine: Boolean(ctx.opts.json) || Boolean(ctx.opts.sarif),
-    legacySchema: ctx.opts.schemaVersion === LEGACY_SCHEMA_VERSION,
   })
   try {
     await sendTelemetry(
@@ -904,15 +903,6 @@ async function runScan(ctx: {
   // Machine-readable output — exactly one format emitted to stdout
   if (opts.sarif) {
     console.log(JSON.stringify(toSarif(publicResult), null, 2))
-  } else if (scanOptions.json && opts.schemaVersion === LEGACY_SCHEMA_VERSION) {
-    // `--schema-version 6`: the 0.12 shape. Secrets keep a string `evidence`, but only the 0.13 redaction text.
-    console.log(JSON.stringify({
-      ...publicResult,
-      findings: publicResult.findings.map((f) => {
-        const e = evidenceOf(f)
-        return e && e.kind === 'secret' ? { ...f, evidence: secretEvidenceText(e.secretType, e.length) } : f
-      }),
-    }, null, 2))
   } else if (scanOptions.json) {
     const general = new Set(loadBundledRules().map((r) => r.id))
     const rulebookRan = Boolean(proRules?.length) && !degraded
@@ -935,7 +925,7 @@ async function runScan(ctx: {
       install: null,
       reportMarkdown: reportPaths?.mdPath ?? '.shipguard/reports/latest.md',
     })
-    const safeMode = ((await import('../core/telemetry-config.js')) as { isSafeMode?: () => boolean }).isSafeMode?.() ?? false
+    const safeMode = isSafeMode()
     const realStacks = detectedFrameworks.filter((f) => f.name !== 'generic')
     const strictWouldExit = resolveExitCode({
       strict: true,
@@ -997,7 +987,7 @@ async function runScan(ctx: {
         rulebookRan,
         rulebookFallbackCode: rulesFallback?.code ?? null,
         ci: Boolean(process.env.CI),
-        // Safe mode suppresses every Free-to-Pro line (spec 06); same cast as cli.ts until W0 (#39) is merged.
+        // Safe mode suppresses every Free-to-Pro line (spec 06).
         muted: process.env.SHIPGUARD_NO_PROMO === '1' || safeMode,
         jsonPitchAllowed: false,
       }),

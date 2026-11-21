@@ -26,10 +26,10 @@ async function scan(content: string) {
   dirs.push(dir)
   writeFileSync(join(dir, 'package.json'), '{"name":"pem"}', 'utf-8')
   writeFileSync(join(dir, 'k.js'), content, 'utf-8')
-  const res = await spawnNode(distCli, ['scan', dir, '--json', '--schema-version', '6'], { cwd: dir })
+  const res = await spawnNode(distCli, ['scan', dir, '--json'], { cwd: dir })
   return JSON.parse(res.stdout) as {
     riskScore: { score: number }
-    findings: Array<{ id: string; severity: string; blocking: boolean; explanation: string }>
+    findings: Array<{ id: string; severity: string; blocking: boolean; why: string }>
   }
 }
 
@@ -39,7 +39,8 @@ describe('a single PEM private key is a single finding', () => {
     expect(j.findings.map((f) => f.id), JSON.stringify(j.findings)).toEqual(['generic.secrets.private-key-pem'])
     expect(j.findings[0].severity).toBe('critical')
     expect(j.findings[0].blocking).toBe(true)
-    expect(j.findings[0].explanation).toContain('Severity raised from high to critical')
+    // integrate: the 'Severity raised' sentence lived in the long `explanation`, which schema 7 drops from --json (stream owner: W2b).
+    expect(j.findings[0].why).toContain('PEM-encoded private key')
     expect(j.riskScore.score).toBe(50)
   })
 

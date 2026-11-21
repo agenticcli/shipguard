@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest'
 import type { Finding } from '@agenticcli/shared'
 import {
   ERROR_CODES, OUTCOMES, NEXT_STEP_KINDS, REPEAT_LABELS, buildErrorEnvelope, buildNextSteps, buildPlanJson,
-  computeSinceLastRun, decideAgentAction, errorTemplateLines, legacyErrorJson, mapProFetchCode, occurrenceKey,
+  computeSinceLastRun, decideAgentAction, errorTemplateLines, mapProFetchCode, occurrenceKey,
   renderErrorTemplate, secretEvidenceText, blockingOccurrences, evidenceOf, sortFindings,
 } from '../../src/core/outcome.js'
 import type { ErrorCode, NextStep, OutcomeInput, SinceLastRun } from '../../src/core/outcome.js'
@@ -64,13 +64,10 @@ describe('error code table (one table, every code has cause + fix + agent action
     expect(buildErrorEnvelope({ code: 'NOT_A_PROJECT', message: 'x', cliVersion: '0.13.0' }).error.command).toBeNull()
   })
 
-  it('the envelope carries the contract keys and the legacy shape maps back to 0.12', () => {
+  it('the envelope carries the contract keys', () => {
     const env = buildErrorEnvelope({ code: 'PATH_NOT_FOUND', message: 'Scan path does not exist: /x', cliVersion: '0.13.0', extra: { path: '/x' } })
     expect(env).toMatchObject({ schemaVersion: '7', ok: false, runId: null, agentAction: 'fix_and_rerun', exit: { code: 2 } })
     expect(Object.keys(env.error)).toEqual(expect.arrayContaining(['code', 'message', 'cause', 'fix', 'command', 'path']))
-    expect(legacyErrorJson(env)).toEqual({ error: 'Scan path does not exist: /x', code: 'PATH_NOT_FOUND' })
-    const auth = legacyErrorJson(buildErrorEnvelope({ code: 'LOGIN_REQUIRED', message: 'Not authenticated.', cliVersion: '0.13.0' }))
-    expect(auth).toMatchObject({ code: 'AUTH_FAILED', degraded: false })
   })
 
   it('pro-fetch classes map to the public table; unknown classes fail loud (never a quiet fallback)', () => {

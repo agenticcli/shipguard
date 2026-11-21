@@ -190,7 +190,7 @@ beforeAll(() => {
 }, 120_000)
 
 describe('--json ScanResult schema freeze ', () => {
-  it('schemaVersion is exactly "7" (6 → 7: the 0.13 agent contract; `--schema-version 6` prints the 0.12 shape)', async () => {
+  it('schemaVersion is exactly "7" (6 → 7: the 0.13 agent contract; no switch back to the 0.12 shape)', async () => {
     const result = (await scanJson(mkFixtureWithFinding()))
     expect(result.schemaVersion).toBe('7')
   })

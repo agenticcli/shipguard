@@ -2,7 +2,7 @@
  * W2b e2e: the built CLI's `--json` contract (spec 02). Spawns dist/cli.js.
  * Covers: schema snapshot of every outcome, additive check against the real 0.12.0 shape, error codes with the
  * one template, the re-run command round trip, scanId reuse on a gate-style re-run, `next.command`, the
- * exit-code table, loop-stop, `schema --json`, `--schema-version 6`, no plugin/explain/offline strings.
+ * exit-code table, loop-stop, `schema --json`, no plugin/explain/offline strings.
  */
 import { execSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -137,17 +137,7 @@ describe('additive: every 0.12.0 key keeps its name and type (only the three fin
     expect(j.riskScore.recommendation).toBe(j.verdict.value)
   })
 
-  it('--schema-version 6 prints the 0.12 shape: string fix/explanation/evidence, schemaVersion "6", no secret prefix', async () => {
-    const { j } = await json(blockedProject(), ['--schema-version', '6'])
-    expect(j.schemaVersion).toBe('6')
-    expect(j).not.toHaveProperty('verdict')
-    const secret = j.findings.find((f: { id: string }) => f.id === 'generic.secrets.stripe-live-key')
-    expect(typeof secret.explanation).toBe('string')
-    expect(secret.evidence).toMatch(/value hidden/)
-    expect(JSON.stringify(j)).not.toContain('live_abcdefghij') // the planted value (the rule text names the prefix)
-  })
-
-  it('an unknown --schema-version is a usage error (exit 2) with the one template', async () => {
+  it('the removed --schema-version switch is a usage error (exit 2) with the one template', async () => {
     const r = await runCli(['scan', blockedProject(), '--json', '--schema-version', '5'], { env })
     expect(r.code).toBe(2)
     expect(r.stderr).toContain('UNKNOWN_OPTION')

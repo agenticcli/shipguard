@@ -10,7 +10,7 @@ import { relative, resolve } from 'node:path'
  * - `<target>` = the resolved scan path relative to the folder the command was run from, shell-quoted
  *   when needed, left out when it is that folder.
  * - Carried over: `--all`, `--policy <file>`, an explicit `--pro` or `--general`, `--allow-degraded`.
- * - Never carried: output flags (`--json`, `--quiet`, `--sarif`, `--schema-version`) and `--strict` itself
+ * - Never carried: output flags (`--json`, `--quiet`, `--sarif`) and `--strict` itself
  *   (it is always added once, in its fixed place).
  */
 export interface RerunInput {

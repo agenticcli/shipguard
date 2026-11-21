@@ -12,7 +12,8 @@ import { schemaCommand } from './commands/schema.js'
 import { feedbackCommand, rateCommand } from './commands/feedback.js'
 import { telemetryCommand } from './commands/telemetry.js'
 import { quickstartHelp } from './core/render.js'
-import { CLI_VERSION, sendLifecycleEvent } from './core/telemetry.js'
+import { CLI_VERSION, sendLifecycleEvent, setGateKind } from './core/telemetry.js'
+import { announceSafeMode } from './core/telemetry-config.js'
 import { installStreamErrorHandlers, exitWhenDrained, emitError } from './utils/exit.js'
 import { buildErrorEnvelope, CORE_LINE } from './core/outcome.js'
 import { NEW_COMMAND_NAMES } from './core/command-names.js'
@@ -94,19 +95,14 @@ Learn more:
 // Safe mode (spec 06): the global flag is registered here so commander accepts it; the decision itself lives in
 // core/telemetry-config.ts (isSafeMode, W0 PR #39). announceSafeMode prints SAFE_MODE_LINE as the FIRST stderr line.
 program.option('--safe-mode', 'No usage pings and no writes outside the project except the sign-in token')
-program.hook('preAction', async () => {
-  // Loaded by name through a cast until W0 (#39) is merged into cli-0130; after the merge this becomes a plain import.
-  const cfg = (await import('./core/telemetry-config.js')) as { announceSafeMode?: () => boolean }
-  if (cfg.announceSafeMode !== undefined) cfg.announceSafeMode()
-  else if (process.argv.includes('--safe-mode') || process.env.SHIPGUARD_SAFE_MODE === '1') {
-    process.stderr.write('shipguard: safe mode is not available in this build.\n')
-  }
+program.hook('preAction', () => {
+  announceSafeMode()
 })
-program.hook('preAction', async () => {
+program.hook('preAction', () => {
   // Which gate runs this process (W0 ping field). Only the three known values count; the setter ignores
-  // anything else, so the kind stays "none". Cast until W0 (#39) is merged into cli-0130.
+  // anything else, so the kind stays "none".
   const kind = process.env.SHIPGUARD_GATE_KIND
-  if (kind) ((await import('./core/telemetry.js')) as { setGateKind?: (k: string) => void }).setGateKind?.(kind)
+  if (kind) setGateKind(kind)
 })
 program.hook('preAction', async (_thisCommand, actionCommand) => {
   // `gate` (also `gate --supports`) makes zero network calls: no first-run ping.

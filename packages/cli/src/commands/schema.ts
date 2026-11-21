@@ -38,7 +38,7 @@ const CLI_VERSION =
     ? __SHIPGUARD_VERSION__
     : (process.env.npm_package_version ?? '0.0.0-dev')
 
-/** The schemaVersion the `scan --json` payload currently reports (`--schema-version 6` prints the 0.12 shape). */
+/** The schemaVersion the `scan --json` payload currently reports. */
 export const CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 export interface LimitEntry {
@@ -197,7 +197,7 @@ export function buildSchemaContract(limits: {
     },
     configError: {
       shape: '{ "schemaVersion": "7", "ok": false, "error": { "code", "message", "cause", "fix", "command" }, "agentAction": string, "exit": { "code": number } }',
-      when: 'every error of every command with --json or --sarif (exit 2, 3 or 130): stdout is exactly this one JSON object; the same error is on stderr as the one error template. `--schema-version 6` prints the 0.12 shape { "error": string, "code": string }.',
+      when: 'every error of every command with --json or --sarif (exit 2, 3 or 130): stdout is exactly this one JSON object; the same error is on stderr as the one error template.',
       codes: Object.entries(ERROR_CODES as Record<string, (typeof ERROR_CODES)[keyof typeof ERROR_CODES]>)
         .filter(([, e]) => e.exit === 2)
         .map(([code, e]) => ({ code, meaning: e.cause })),

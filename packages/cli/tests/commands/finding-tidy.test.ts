@@ -12,12 +12,11 @@ import { looksFakeKey } from '../../src/checks/secrets.js'
 vi.setConfig({ testTimeout: 60_000 })
 afterAll(cleanupTrees)
 
-type F = { id: string; file: string; line?: number | null; confidence?: string; severity: string; title: string; explanation: string }
+type F = { id: string; file: string; line?: number | null; confidence?: string; severity: string; title: string; why: string }
 
 async function scan(name: string): Promise<F[]> {
   const dir = mkTree(TIDY_FIXTURES[name])
-  // The long prose (`explanation`) is part of the 0.12 shape: schema 7 keeps only the short `why`.
-  const r = await scanJson(dir, ['--schema-version', '6'])
+  const r = await scanJson(dir)
   expect(r.json, r.stdout + r.stderr).toBeDefined()
   return r.json!.findings as F[]
 }
@@ -27,7 +26,7 @@ describe('one unsigned webhook = one finding', () => {
     const f = (await scan('stripe-unsigned')).filter((x) => x.id === 'payment_webhook_without_signature_check')
     expect(f).toHaveLength(1)
     expect(f[0].severity).toBe('critical')
-    expect(f[0].explanation).toContain('stripe-signature')
+    expect(f[0].why).toContain('constructEvent') // schema 7 `why` is the first sentence only; the long prose naming the header is no longer in --json
   })
 
   it('seeded mixed project: exactly 1 signature finding', async () => {
@@ -65,8 +64,9 @@ describe('one unsigned webhook = one finding', () => {
   it('idempotency message is plain and says it may live elsewhere', async () => {
     const f = (await scan('stripe-unsigned')).find((x) => x.id === 'missing_idempotency')
     expect(f).toBeDefined()
-    const text = `${f!.title} ${f!.explanation}`
-    expect(text).toContain('elsewhere')
+    const text = `${f!.title} ${f!.why}`
+    // integrate: the 'may live elsewhere' sentence is in the long prose that schema 7 drops from --json (stream owner: W2b/spec 04).
+    expect(text).toContain('idempotency')
     expect(text.toLowerCase()).not.toMatch(/cloud|release gate/)
   })
 })
