@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { relative, resolve } from 'node:path'
+import { isAbsolute, relative, resolve } from 'node:path'
 import type { Policy } from '@agenticcli/shared'
 import { DEFAULT_SCAN_ID_REUSE_WINDOW_MINUTES, SCAN_ID_REUSE_WINDOW_ENV_VAR } from '@agenticcli/shared'
 import { resolveHistoryPath } from './path.js'
@@ -85,6 +85,32 @@ export function computeScanIdReuseKey(input: ScanIdReuseKeyInput): string {
   return createHash('sha256').update(json).digest('hex').slice(0, 16)
 }
 
+/**
+ * The gate scans a fresh temp extraction every run, so the extraction path and its mtimes can never identify the
+ * work. The gate hands its child the REAL repo folder and the commit it extracted (env, set only by the gate's own
+ * spawn); the reservation is then keyed by repo + commit (+ the usual request fields) and lives in the real repo's
+ * history store, so a gate rerun on the same commit reuses the scan id and a Pro gate rerun is not counted twice.
+ */
+export const GATE_DIR_ENV = 'SHIPGUARD_GATE_DIR'
+export const GATE_COMMIT_ENV = 'SHIPGUARD_GATE_COMMIT'
+
+export interface GateReuse {
+  /** Absolute folder of the real repository the gate runs for. */
+  dir: string
+  /** The commit the gate extracted (hex object id). */
+  commit: string
+}
+
+/** Read the gate's hand-over. Only a gate/hook child (SHIPGUARD_GATE_KIND set to a known host) with a well-formed pair counts. */
+export function gateReuseFromEnv(env: NodeJS.ProcessEnv = process.env): GateReuse | undefined {
+  const kind = env.SHIPGUARD_GATE_KIND
+  if (kind !== 'claude' && kind !== 'git' && kind !== 'ci') return undefined
+  const dir = env[GATE_DIR_ENV]
+  const commit = env[GATE_COMMIT_ENV]
+  if (!dir || !isAbsolute(dir) || !commit || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(commit)) return undefined
+  return { dir, commit }
+}
+
 export interface ResolveScanIdInput {
   cwd: string
   policy: Policy
@@ -95,6 +121,8 @@ export interface ResolveScanIdInput {
   rulebookRequested: boolean
   /** Detected framework names (see ScanIdReuseKeyInput.frameworks — selects the paid bundle). */
   frameworks: string[]
+  /** Set by the gate's child scan (gateReuseFromEnv): key the reservation by repo + commit, store it in the real repo. */
+  gate?: GateReuse
 }
 
 export interface ResolveScanIdResult {
@@ -131,24 +159,25 @@ export function resolveScanIdReuseWindowMs(policy: Pick<Policy, 'history'>): num
  * before this feature existed.
  */
 export async function resolveScanId(input: ResolveScanIdInput): Promise<ResolveScanIdResult> {
-  const { cwd, policy, cliVersion, changedOnly, categories, rulebookRequested, frameworks } = input
+  const { cwd, policy, cliVersion, changedOnly, categories, rulebookRequested, frameworks, gate } = input
 
   try {
-    const historyPath = resolveHistoryPath(cwd, policy)
+    const historyPath = resolveHistoryPath(gate ? gate.dir : cwd, policy)
     // Exclude ShipGuard's OWN artifacts from the working-tree content identity — otherwise the
     // history db this very call is about to create would flip the identity on the next retry
     // and defeat reuse (see identity.ts resolveContentIdentity). `.shipguard/` covers the
     // default db path, the fallback repo-id file, and report output; the resolved history path
     // covers a custom `history.path` pointed elsewhere in the tree.
-    const historyRelPath = relative(cwd, historyPath).replace(/\\/g, '/')
+    const historyRelPath = relative(gate ? gate.dir : cwd, historyPath).replace(/\\/g, '/')
     const excludePrefixes = ['.shipguard/', historyRelPath]
 
     // Git identity first (HEAD + dirty paths). With no resolvable git HEAD (not a git repo, no commits yet)
     // fall back to a local folder-listing identity (paths, sizes, mtimes; never file contents) so a re-run in
     // a non-git folder still reuses its scan id and a gate re-run is never counted twice. Neither available
     // (folder too big to list) → do not attempt reuse at all.
-    const gitIdentity = resolveContentIdentity(cwd, excludePrefixes)
-    const contentIdentity = gitIdentity ?? resolveListingIdentity(cwd, excludePrefixes)
+    const gitIdentity = gate ? undefined : resolveContentIdentity(cwd, excludePrefixes)
+    // Gate child: the extracted commit IS the content (a tracked-tree extraction, no working-tree changes to read).
+    const contentIdentity = gate ? `gate-commit:${gate.commit}` : (gitIdentity ?? resolveListingIdentity(cwd, excludePrefixes))
     if (!contentIdentity) {
       return { scanId: randomUUID(), scanIdReused: false }
     }
@@ -157,7 +186,7 @@ export async function resolveScanId(input: ResolveScanIdInput): Promise<ResolveS
     // `.shipguard/repo-id` BEFORE the scan, which would show up as a scanned/changed file of the scan itself.
     const identity = gitIdentity
       ? resolveRepoIdentity(cwd)
-      : { repoId: `path:${createHash('sha256').update(resolve(cwd)).digest('hex').slice(0, 32)}` }
+      : { repoId: `path:${createHash('sha256').update(resolve(gate ? gate.dir : cwd)).digest('hex').slice(0, 32)}` }
     const reuseKey = computeScanIdReuseKey({
       changedOnly,
       categories,

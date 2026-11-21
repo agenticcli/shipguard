@@ -33,6 +33,7 @@ import { parseMaskedSecret } from '../core/redact.js'
 import { EXIT_CODES, DEFAULT_REPORT_FILE } from '@agenticcli/shared'
 import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation, Finding } from '@agenticcli/shared'
 import { recordScanHistory, resolveScanId } from '../core/history/index.js'
+import { gateReuseFromEnv } from '../core/history/scan-id.js'
 import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
 import { sendTelemetry, telemetryState } from '../core/telemetry.js'
@@ -560,6 +561,7 @@ async function runScan(ctx: {
     // dedup. An explicit --pro asks for it, and so does the signed-in default scan (unless --general).
     rulebookRequested: !opts.general && (Boolean(opts.pro) || signedInForScanId),
     frameworks: frameworkNames,
+    gate: gateReuseFromEnv(),
   })
 
   const inGitRepo = isGitRepo(cwd)

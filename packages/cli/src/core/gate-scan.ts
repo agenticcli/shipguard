@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { logger } from '../utils/logger.js'
 import { occurrenceKey } from './gate-state.js'
+import { GATE_COMMIT_ENV, GATE_DIR_ENV } from './history/scan-id.js'
 import { firstSentence, type GateFinding, type NotScanned, type ScanSummary } from './gate-text.js'
 
 /** Variables git itself exports to a hook: they would point every command below at the hook's own repository. */
@@ -158,11 +159,17 @@ export interface ScanRun {
 const MAX_STDOUT_BYTES = 32 * 1024 * 1024
 
 /** Run the scan on `dir` as a child process of this same program, killed at `budgetMs`. */
-export function runScanChild(opts: { cliEntry: string; dir: string; budgetMs: number; host: string }): Promise<ScanRun> {
+export function runScanChild(opts: { cliEntry: string; dir: string; budgetMs: number; host: string; top?: string; sha?: string }): Promise<ScanRun> {
   return new Promise((resolveRun) => {
     const child = spawn(process.execPath, [opts.cliEntry, 'scan', '--all', '--json', '--strict', '--report'], {
       cwd: opts.dir,
-      env: { ...inheritedEnv(), SHIPGUARD_GATE_KIND: opts.host },
+      // The extraction is a fresh temp folder every run, so the child gets the real repo folder + commit: the scan id
+      // is reserved against those (history/scan-id.ts gateReuseFromEnv), and a rerun on the same commit reuses it.
+      env: {
+        ...inheritedEnv(),
+        SHIPGUARD_GATE_KIND: opts.host,
+        ...(opts.top && opts.sha ? { [GATE_DIR_ENV]: opts.top, [GATE_COMMIT_ENV]: opts.sha } : {}),
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const chunks: Buffer[] = []
