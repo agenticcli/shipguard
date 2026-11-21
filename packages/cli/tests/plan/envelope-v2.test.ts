@@ -103,11 +103,20 @@ describe('envelope v2', () => {
     expect(r.ok).toBe(true)
     if (r.ok) { expect(r.partial).toBe(true); expect(r.selectedRules.map((x) => x.id)).toEqual(['rule-free']) }
   })
-  it('a verified live descriptor is the reference when there is one: narrower than ITS tiers is partial, equal is not', async () => {
+  it('partial = narrower than the verified tiers OR narrower than the manifest (the union): equal to the descriptor but narrower than the manifest is still partial', async () => {
     const narrower = await run({ manifestTiers: ['free', 'pro', 'team'], selection: { tiers: ['free', 'pro'], categories: null }, verifiedRulebookTiers: ['free', 'pro', 'team'] })
     expect(narrower.ok && narrower.partial).toBe(true)
-    const equal = await run({ manifestTiers: ['free', 'pro', 'team'], selection: { tiers: ['free', 'pro'], categories: null }, verifiedRulebookTiers: ['free', 'pro'] })
-    expect(equal.ok && equal.partial).toBe(false)
+    const equalToDescriptor = await run({ manifestTiers: ['free', 'pro', 'team'], selection: { tiers: ['free', 'pro'], categories: null }, verifiedRulebookTiers: ['free', 'pro'] })
+    expect(equalToDescriptor.ok && equalToDescriptor.partial).toBe(true)
+    const full = await run({ manifestTiers: ['free', 'pro', 'team'], verifiedRulebookTiers: ['free', 'pro'] })
+    expect(full.ok && full.partial).toBe(false)
+  })
+  it('fail-before/pass-after: a live descriptor that says only [free] must not hide a free-only bundle for a --pro request', async () => {
+    // Before the fix the descriptor replaced the manifest as the reference, so a server that sent a free-only descriptor
+    // and a free-only bundle passed as a complete rulebook. Now the manifest still counts: partial, so --pro exits 3.
+    const r = await run({ manifestTiers: ['free', 'pro'], selection: { tiers: ['free'], categories: null }, verifiedRulebookTiers: ['free'] })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.partial).toBe(true)
   })
   it('a plain Free request (not a rulebook request) is never flagged partial', async () => {
     const r = await run({ requestIsPro: false, selection: { tiers: ['free'], categories: null } })

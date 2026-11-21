@@ -1,3 +1,7 @@
+/**
+ * Purpose: the hint file (skips a signed-in Free rulebook call for at most an hour, account-bound) and the nag counters
+ * (once-per-week and once-per-day limits, mute, last account status, safe mode writes nothing).
+ */
 import { describe, expect, it } from 'vitest'
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

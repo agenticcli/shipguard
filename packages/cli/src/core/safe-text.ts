@@ -30,8 +30,20 @@ const ESCAPE_SEQUENCES = new RegExp(
   'g',
 )
 
-// Anything that looks like scheme://... : the server never sends a link (links come from the closed slot list).
-const URLS = /\b[a-z][a-z0-9+.-]{1,15}:\/\/\S*/gi
+// The server never sends a link (links come from the closed slot list). Removed: scheme://..., the opaque schemes
+// (mailto:, javascript:, data:, ...), e-mail addresses, www.host names, and bare domains (evil.com, evil.com/x). A bare
+// domain needs a well-known top-level name, so "Next.js" and version numbers are not touched.
+const TLDS = 'com|net|org|io|dev|app|co|xyz|info|biz|ru|cn|tk|top|ly|me|sh|ai|gg|us|uk|de|fr|cc|link|click|site|online|store|shop|page|pw|ws|to|ink|club|live|tech|work|zip|mov'
+const URLS = new RegExp(
+  [
+    '\\b[a-z][a-z0-9+.-]{1,15}:\\/\\/\\S*',
+    '\\b(?:mailto|javascript|vbscript|data|file|tel|sms|blob|about):\\S*',
+    '[^\\s@]+@[^\\s@]+\\.[a-z]{2,}\\S*',
+    '\\bwww\\.\\S+',
+    `\\b(?:[a-z0-9-]+\\.)+(?:${TLDS})\\b(?:[/:?#]\\S*)?`,
+  ].join('|'),
+  'gi',
+)
 
 // C0, DEL, C1, bidi controls, zero-width and tag characters.
 const UNSAFE_CHARS = new RegExp(

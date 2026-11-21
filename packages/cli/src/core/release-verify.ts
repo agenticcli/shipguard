@@ -434,8 +434,7 @@ export async function verifyBundleResponse(
     categories?: string[] | null
     /**
      * Envelope v2: tiers a verified LIVE plan document says this account is served (`capabilities.rulebookTiers`).
-     * A narrower served selection is RULEBOOK_PARTIAL. Null/undefined = no verified live document: the attested manifest
-     * for this request is the reference instead.
+     * A served selection narrower than these tiers OR narrower than the attested manifest for the request is RULEBOOK_PARTIAL.
      */
     verifiedRulebookTiers?: string[] | null
   },
@@ -1137,8 +1136,10 @@ export async function verifyBundleResponse(
       expectedSet = full.filter((e) => served.has(tierOf.get(`${e.id}\u0000${e.executableHash}`) ?? ''))
       // Narrower than the rulebook this request should get = RULEBOOK_PARTIAL (only meaningful for a rulebook request).
       if (request.isPro) {
-        const reference = request.verifiedRulebookTiers ?? [...new Set(full.map((e) => tierOf.get(`${e.id}\u0000${e.executableHash}`) ?? ''))]
-        partial = reference.some((t) => !served.has(t))
+        // Partial = narrower than the verified rulebook tiers OR narrower than the attested manifest for this request.
+        const manifestReference = [...new Set(full.map((e) => tierOf.get(`${e.id}\u0000${e.executableHash}`) ?? ''))]
+        const reference = new Set([...manifestReference, ...(request.verifiedRulebookTiers ?? [])])
+        partial = [...reference].some((t) => !served.has(t))
       }
     }
   } catch (err: unknown) {

@@ -279,21 +279,27 @@ export function mapAccountPayload(p: Record<string, unknown>): PlanServerBlock {
 }
 
 /**
- * Map a VERIFIED public offer payload for the stacks this scan detected. Per-stack counts are added (the
- * server sends one entry per stack name); a stack with no entry makes `rules` null ("more rules", no number)
- * so a number is never printed for a stack the server did not count. The generic offer (no counts) gives
- * rules null and areas [].
+ * Map a VERIFIED public offer payload for the stacks this scan detected. Per-stack counts share rules, so they are
+ * NEVER added together: one stack gives its own count; several give the server's `combined["a+b"]` (sorted names
+ * joined with "+") when present, else no number ("more rules"). The generic offer (no counts) gives null.
  */
 export function mapOfferPayload(p: Record<string, unknown>, stacks: string[]): PlanServerBlock {
   const counts = isRecord(p['counts']) ? p['counts'] : {}
-  let rules: number | null = stacks.length > 0 ? 0 : null
+  const combined = isRecord(p['combined']) ? p['combined'] : {}
+  const has = (o: Record<string, unknown>, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k)
+  const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0
+  let rules: number | null = null
   const areas: string[] = []
   for (const stack of stacks) {
-    const entry = Object.prototype.hasOwnProperty.call(counts, stack) ? counts[stack] : undefined
-    const n = isRecord(entry) ? entry['rules'] : undefined
-    if (typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 && rules !== null) rules += n
-    else rules = null
+    const entry = has(counts, stack) ? counts[stack] : undefined
     if (isRecord(entry)) for (const a of safeServerList(entry['areas'])) if (!areas.includes(a)) areas.push(a)
+  }
+  if (stacks.length === 1) {
+    const entry = has(counts, stacks[0]) ? counts[stacks[0]] : undefined
+    if (isRecord(entry) && isCount(entry['rules'])) rules = entry['rules']
+  } else if (stacks.length > 1) {
+    const key = [...stacks].sort().join('+')
+    if (has(combined, key) && isCount(combined[key])) rules = combined[key] as number
   }
   return {
     fetchedAt: iso(p['iat'] as number),

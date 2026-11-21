@@ -1,3 +1,7 @@
+/**
+ * Purpose: the public signed offer: fetch (stack names only, size and time bounds, trusted host), verify-before-cache, per-stack-set
+ * files, the generic primed file, and the weekly counter and gates for the scan fetch and `setup` priming (fake clock).
+ */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { existsSync, readdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -33,11 +37,11 @@ describe('stack sets', () => {
 })
 
 describe('fetchPublicOffer', () => {
-  it('sends stack names ONLY (no sign-in, no body), verifies, caches, and sums per-stack counts', async () => {
+  it('sends stack names ONLY (no sign-in, no body), verifies, caches, and uses the combined count for several stacks', async () => {
     const { dir, cleanup } = tempConfigDir()
     try {
       const calls: string[] = []
-      const tok = signer.sign(offerPayload({ offer: { text: 'Offer words', slot: 'checkout' }, counts }), { typ: OFFER })
+      const tok = signer.sign(offerPayload({ offer: { text: 'Offer words', slot: 'checkout' }, counts, combined: { 'nextjs+supabase': 37 } }), { typ: OFFER })
       const f = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
         calls.push(String(url))
         expect(init?.headers).toEqual({ Accept: 'application/json' })
@@ -47,7 +51,7 @@ describe('fetchPublicOffer', () => {
       }) as unknown as typeof fetch
       const r = await fetchPublicOffer({ configDir: dir, now: NOW_MS, stacks: ['supabase', 'nextjs'], safeMode: false, fetchImpl: f })
       expect(calls).toEqual(['https://agenticcli.dev/api/cli/v1/offer?stacks=nextjs%2Csupabase'])
-      expect(r.ok && r.block.server?.proAdds).toEqual({ planName: null, rules: 41, stacks: ['nextjs', 'supabase'], areas: ['Server actions', 'Row-level security', 'Webhooks'] })
+      expect(r.ok && r.block.server?.proAdds).toEqual({ planName: null, rules: 37, stacks: ['nextjs', 'supabase'], areas: ['Server actions', 'Row-level security', 'Webhooks'] })
       expect(r.ok && r.block.link).toBe('https://agenticcli.dev/go/checkout')
       expect(existsSync(join(dir, stackSetFile(['nextjs', 'supabase'])))).toBe(true)
       const read = await readOffer({ configDir: dir, now: NOW_MS, safeMode: false }, ['nextjs', 'supabase'])
@@ -55,11 +59,19 @@ describe('fetchPublicOffer', () => {
       expect(read.block.status).toBe('cached')
     } finally { cleanup() }
   })
-  it('a stack the server did not count gives no number (never a made-up total)', async () => {
+  it('per-stack counts are NEVER added: several stacks without a combined count give no number; one stack gives its own count', async () => {
     const { dir, cleanup } = tempConfigDir()
     try {
-      const tok = signer.sign(offerPayload({ counts: { nextjs: counts.nextjs } }), { typ: OFFER })
-      const r = await fetchPublicOffer({ configDir: dir, now: NOW_MS, stacks: ['nextjs', 'django'], safeMode: false, fetchImpl: fakeFetch(tok, []) })
+      const tok = signer.sign(offerPayload({ counts }), { typ: OFFER })
+      const two = await fetchPublicOffer({ configDir: dir, now: NOW_MS, stacks: ['nextjs', 'supabase'], safeMode: false, fetchImpl: fakeFetch(tok, []) })
+      expect(two.ok && two.block.server?.proAdds?.rules).toBeNull()
+      expect(two.ok && two.block.server?.proAdds?.areas).toEqual(['Server actions', 'Row-level security', 'Webhooks'])
+      const one = await fetchPublicOffer({ configDir: dir, now: NOW_MS, stacks: ['nextjs'], safeMode: false, fetchImpl: fakeFetch(tok, []) })
+      expect(one.ok && one.block.server?.proAdds?.rules).toBe(30)
+      const unknown = await fetchPublicOffer({ configDir: dir, now: NOW_MS, stacks: ['django'], safeMode: false, fetchImpl: fakeFetch(tok, []) })
+      expect(unknown.ok && unknown.block.server?.proAdds?.rules).toBeNull()
+      const bad = signer.sign(offerPayload({ counts, combined: { 'nextjs+supabase': -4 } }), { typ: OFFER })
+      const r = await fetchPublicOffer({ configDir: dir, now: NOW_MS, stacks: ['supabase', 'nextjs'], safeMode: false, fetchImpl: fakeFetch(bad, []) })
       expect(r.ok && r.block.server?.proAdds?.rules).toBeNull()
     } finally { cleanup() }
   })
