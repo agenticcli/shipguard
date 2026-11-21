@@ -4,13 +4,14 @@
  * history path, so every gate run minted a new id. The reuse key is now repo folder + commit (+ the usual request
  * fields), not the temp path.
  */
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnNode } from '../helpers/spawn-cli.js'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Policy } from '@agenticcli/shared'
 import { extractCommit, removeExtraction, runScanChild } from '../../src/core/gate-scan.js'
-import { GATE_COMMIT_ENV, GATE_DIR_ENV, gateReuseFromEnv, resolveScanId } from '../../src/core/history/scan-id.js'
+import { gateReuseFor, resolveScanId, writeGateHandover } from '../../src/core/history/scan-id.js'
 import { buildVariant } from '../helpers/recorded-cli.js'
 import { cleanup, commitFile, git, mkRepo } from './gate-fixtures.js'
 
@@ -53,19 +54,53 @@ function policy(): Policy {
 
 const SHA = 'a'.repeat(40)
 
-describe('gateReuseFromEnv: only the gate child, only a well-formed pair', () => {
-  const ok = { SHIPGUARD_GATE_KIND: 'git', [GATE_DIR_ENV]: '/work/repo', [GATE_COMMIT_ENV]: SHA }
-  it('reads dir + commit for a gate host', () => {
-    expect(gateReuseFromEnv(ok)).toEqual({ dir: '/work/repo', commit: SHA })
+describe('gateReuseFor: only the gate\'s own extraction with its private hand-over file', () => {
+  const GATE = { SHIPGUARD_GATE_KIND: 'git' } as NodeJS.ProcessEnv
+  const realSha = (main: string): string => git(main, 'rev-parse', 'HEAD')
+
+  it('reads dir + commit for the gate\'s extraction', () => {
+    const main = mkRepo()
+    const dest = extractCommit(main, realSha(main))
+    try {
+      writeGateHandover(dest, { dir: main, commit: realSha(main) })
+      expect(gateReuseFor(dest, GATE)).toEqual({ dir: main, commit: realSha(main) })
+    } finally { removeExtraction(dest) }
   })
-  it.each([
-    ['no gate kind', { ...ok, SHIPGUARD_GATE_KIND: undefined }],
-    ['unknown kind', { ...ok, SHIPGUARD_GATE_KIND: 'x' }],
-    ['relative dir', { ...ok, [GATE_DIR_ENV]: 'repo' }],
-    ['non-hex commit', { ...ok, [GATE_COMMIT_ENV]: 'main; rm -rf /' }],
-    ['missing commit', { ...ok, [GATE_COMMIT_ENV]: undefined }],
-  ])('refuses: %s', (_n, env) => {
-    expect(gateReuseFromEnv(env as NodeJS.ProcessEnv)).toBeUndefined()
+
+  it('refuses: not a gate child, no hand-over file, wrong folder, loose file mode, folder that is not a git top, unknown commit', () => {
+    const main = mkRepo()
+    const sha = realSha(main)
+    const dest = extractCommit(main, sha)
+    try {
+      expect(gateReuseFor(dest, GATE)).toBeUndefined() // no hand-over file yet
+      writeGateHandover(dest, { dir: main, commit: sha })
+      expect(gateReuseFor(dest, {})).toBeUndefined() // not a gate child
+      expect(gateReuseFor(dest, { SHIPGUARD_GATE_KIND: 'x' })).toBeUndefined()
+      expect(gateReuseFor(main, GATE)).toBeUndefined() // a plain folder, not the extraction
+      expect(gateReuseFor(dest, GATE, join(tmpdir(), 'elsewhere'))).toBeUndefined() // not under the OS tmpdir the gate used
+      const file = join(dest, '..', 'gate-handover.json')
+      chmodSync(file, 0o644)
+      expect(gateReuseFor(dest, GATE)).toBeUndefined() // loose mode
+      chmodSync(file, 0o600)
+      writeFileSync(file, JSON.stringify({ dir: join(main, 'src'), commit: sha }))
+      expect(gateReuseFor(dest, GATE)).toBeUndefined() // not a git top level
+      writeFileSync(file, JSON.stringify({ dir: main, commit: SHA }))
+      expect(gateReuseFor(dest, GATE)).toBeUndefined() // a commit the repo does not hold
+      writeFileSync(file, JSON.stringify({ dir: 'repo', commit: sha }))
+      expect(gateReuseFor(dest, GATE)).toBeUndefined() // relative dir
+    } finally { removeExtraction(dest) }
+  })
+
+  it('a symlinked hand-over file is refused', () => {
+    const main = mkRepo()
+    const sha = realSha(main)
+    const dest = extractCommit(main, sha)
+    try {
+      const real = join(dest, '..', 'real.json')
+      writeFileSync(real, JSON.stringify({ dir: main, commit: sha }), { mode: 0o600 })
+      symlinkSync(real, join(dest, '..', 'gate-handover.json'))
+      expect(gateReuseFor(dest, GATE)).toBeUndefined()
+    } finally { removeExtraction(dest) }
   })
 })
 
@@ -146,5 +181,40 @@ describe('the real gate child (built CLI): a rerun on the same commit reuses the
     expect(first.scanIdReused).toBe(false)
     expect(second.scanIdReused).toBe(true)
     expect(second.scanId).toBe(first.scanId)
+  })
+})
+
+describe('abuse: user-set variables on a plain scan do nothing', () => {
+  it('SHIPGUARD_GATE_KIND + GATE_DIR + GATE_COMMIT in the environment: no reuse for changed content, no history written elsewhere', async () => {
+    const proj = mkRepo()
+    const elsewhere = mkdtempSync(join(tmpdir(), 'sg-elsewhere-'))
+    homes.push(elsewhere)
+    const home = mkdtempSync(join(tmpdir(), 'sg-abuse-home-'))
+    homes.push(home)
+    const env = {
+      PATH: process.env.PATH, HOME: home, SHIPGUARD_TELEMETRY: '0', DO_NOT_TRACK: '1',
+      SHIPGUARD_GATE_KIND: 'claude', SHIPGUARD_GATE_DIR: elsewhere, SHIPGUARD_GATE_COMMIT: 'c'.repeat(40),
+    }
+    const id = async (): Promise<{ scanId: string; scanIdReused: boolean }> => {
+      const r = await spawnNode(distCli, ['scan', '--json'], { cwd: proj, env })
+      const j = JSON.parse(r.stdout) as { scanId?: string; runId: string; scanIdReused: boolean }
+      return { scanId: j.scanId ?? j.runId, scanIdReused: j.scanIdReused }
+    }
+    const first = await id()
+    commitFile(proj, 'src/b.ts', 'export const b = 2\n') // different content
+    const second = await id()
+    expect(second.scanIdReused).toBe(false)
+    expect(second.scanId).not.toBe(first.scanId)
+    expect(existsSync(join(elsewhere, '.shipguard'))).toBe(false)
+  })
+
+  it('a forged hand-over file next to a folder that is not the gate\'s extraction is ignored too', () => {
+    const main = mkRepo()
+    const sha = git(main, 'rev-parse', 'HEAD')
+    const fake = mkdtempSync(join(tmpdir(), 'not-the-gate-'))
+    homes.push(fake)
+    mkdirSync(join(fake, 'tree'))
+    writeFileSync(join(fake, 'gate-handover.json'), JSON.stringify({ dir: main, commit: sha }), { mode: 0o600 })
+    expect(gateReuseFor(join(fake, 'tree'), { SHIPGUARD_GATE_KIND: 'claude' })).toBeUndefined()
   })
 })

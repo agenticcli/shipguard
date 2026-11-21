@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { Policy } from '@agenticcli/shared'
 import { DEFAULT_SCAN_ID_REUSE_WINDOW_MINUTES, SCAN_ID_REUSE_WINDOW_ENV_VAR } from '@agenticcli/shared'
 import { resolveHistoryPath } from './path.js'
@@ -87,12 +90,16 @@ export function computeScanIdReuseKey(input: ScanIdReuseKeyInput): string {
 
 /**
  * The gate scans a fresh temp extraction every run, so the extraction path and its mtimes can never identify the
- * work. The gate hands its child the REAL repo folder and the commit it extracted (env, set only by the gate's own
- * spawn); the reservation is then keyed by repo + commit (+ the usual request fields) and lives in the real repo's
- * history store, so a gate rerun on the same commit reuses the scan id and a Pro gate rerun is not counted twice.
+ * work. The gate hands its child the REAL repo folder and the commit it extracted through a private file it creates
+ * next to the extraction (`<tmp>/shipguard-gate-XXXX/gate-handover.json`, mode 0600, in a 0700 folder it owns), never
+ * through the environment: a user-set variable must not be able to claim "this is the gate" on a plain scan (that
+ * would fake scan-id reuse and write history into any folder). The reservation is then keyed by repo + commit (+ the
+ * usual request fields) and lives in the real repo's history store, so a gate rerun on the same commit reuses the
+ * scan id and a Pro gate rerun is not counted twice.
  */
-export const GATE_DIR_ENV = 'SHIPGUARD_GATE_DIR'
-export const GATE_COMMIT_ENV = 'SHIPGUARD_GATE_COMMIT'
+export const GATE_HANDOVER_FILE = 'gate-handover.json'
+const EXTRACTION_PREFIX = 'shipguard-gate-'
+const EXTRACTION_SUBDIR = 'tree'
 
 export interface GateReuse {
   /** Absolute folder of the real repository the gate runs for. */
@@ -101,14 +108,52 @@ export interface GateReuse {
   commit: string
 }
 
-/** Read the gate's hand-over. Only a gate/hook child (SHIPGUARD_GATE_KIND set to a known host) with a well-formed pair counts. */
-export function gateReuseFromEnv(env: NodeJS.ProcessEnv = process.env): GateReuse | undefined {
+const COMMIT_RE = /^[0-9a-f]{40}([0-9a-f]{24})?$/
+
+/** Gate side: write the hand-over next to the extraction (`extraction` = `<root>/tree`). Throws when it cannot be written. */
+export function writeGateHandover(extraction: string, reuse: GateReuse): void {
+  writeFileSync(join(dirname(extraction), GATE_HANDOVER_FILE), JSON.stringify(reuse), { encoding: 'utf-8', mode: 0o600, flag: 'wx' })
+}
+
+function gitOut(dir: string, args: string[]): string | null {
+  try {
+    return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Child side: the gate's hand-over, or undefined. Honoured only when ALL hold: the scan runs as a gate/hook child
+ * (SHIPGUARD_GATE_KIND names a known host); the folder scanned is `<os tmpdir>/shipguard-gate-*\/tree`, a 0700 folder
+ * of this user; the hand-over file next to it is a regular file of this user with mode 0600; its folder is a git
+ * top level that holds the commit. Anything else is a plain scan: no reuse, no history outside the scanned folder.
+ */
+export function gateReuseFor(cwd: string, env: NodeJS.ProcessEnv = process.env, tmp: string = tmpdir()): GateReuse | undefined {
   const kind = env.SHIPGUARD_GATE_KIND
   if (kind !== 'claude' && kind !== 'git' && kind !== 'ci') return undefined
-  const dir = env[GATE_DIR_ENV]
-  const commit = env[GATE_COMMIT_ENV]
-  if (!dir || !isAbsolute(dir) || !commit || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(commit)) return undefined
-  return { dir, commit }
+  try {
+    const tree = realpathSync(cwd)
+    const root = dirname(tree)
+    if (basename(tree) !== EXTRACTION_SUBDIR || !basename(root).startsWith(EXTRACTION_PREFIX)) return undefined
+    if (dirname(root) !== realpathSync(tmp)) return undefined
+    const uid = typeof process.getuid === 'function' ? process.getuid() : null
+    const rootStat = lstatSync(root)
+    const file = join(root, GATE_HANDOVER_FILE)
+    const st = lstatSync(file)
+    if (!rootStat.isDirectory() || !st.isFile()) return undefined
+    if (uid !== null && (rootStat.uid !== uid || st.uid !== uid)) return undefined
+    if (process.platform !== 'win32' && ((rootStat.mode & 0o077) !== 0 || (st.mode & 0o077) !== 0)) return undefined
+    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as Partial<GateReuse>
+    if (typeof parsed.dir !== 'string' || !isAbsolute(parsed.dir) || typeof parsed.commit !== 'string' || !COMMIT_RE.test(parsed.commit)) return undefined
+    const top = gitOut(parsed.dir, ['rev-parse', '--show-toplevel'])
+    if (top === null || realpathSync(top) !== realpathSync(parsed.dir)) return undefined
+    if (gitOut(parsed.dir, ['cat-file', '-e', `${parsed.commit}^{commit}`]) === null) return undefined
+    return { dir: parsed.dir, commit: parsed.commit }
+  } catch (err) {
+    logger.debug(`scan-id: no gate hand-over here (${err instanceof Error ? err.message : String(err)}); treated as a plain scan`)
+    return undefined
+  }
 }
 
 export interface ResolveScanIdInput {
@@ -121,7 +166,7 @@ export interface ResolveScanIdInput {
   rulebookRequested: boolean
   /** Detected framework names (see ScanIdReuseKeyInput.frameworks — selects the paid bundle). */
   frameworks: string[]
-  /** Set by the gate's child scan (gateReuseFromEnv): key the reservation by repo + commit, store it in the real repo. */
+  /** Set by the gate's child scan (gateReuseFor): key the reservation by repo + commit, store it in the real repo. */
   gate?: GateReuse
 }
 

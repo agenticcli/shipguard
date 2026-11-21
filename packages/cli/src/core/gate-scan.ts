@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { logger } from '../utils/logger.js'
 import { occurrenceKey } from './gate-state.js'
-import { GATE_COMMIT_ENV, GATE_DIR_ENV } from './history/scan-id.js'
+import { writeGateHandover } from './history/scan-id.js'
 import { firstSentence, type GateFinding, type NotScanned, type ScanSummary } from './gate-text.js'
 import { fixGuidance } from './fix-guidance.js'
 import { secretScreenLabel } from './redact.js'
@@ -163,16 +163,20 @@ const MAX_STDOUT_BYTES = 32 * 1024 * 1024
 
 /** Run the scan on `dir` as a child process of this same program, killed at `budgetMs`. */
 export function runScanChild(opts: { cliEntry: string; dir: string; budgetMs: number; host: string; top?: string; sha?: string }): Promise<ScanRun> {
+  // The extraction is a fresh temp folder every run, so the child gets the real repo folder + commit through a private
+  // file next to it (history/scan-id.ts gateReuseFor), not through the environment: a rerun on the same commit reuses
+  // the scan id. Without it the child still scans; it just mints a fresh id (logged).
+  if (opts.top && opts.sha) {
+    try {
+      writeGateHandover(opts.dir, { dir: opts.top, commit: opts.sha })
+    } catch (err) {
+      logger.warn(`Could not hand the repo identity to the scan child (a rerun on this commit gets a new scan id): ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
   return new Promise((resolveRun) => {
     const child = spawn(process.execPath, [opts.cliEntry, 'scan', '--all', '--json', '--strict', '--report'], {
       cwd: opts.dir,
-      // The extraction is a fresh temp folder every run, so the child gets the real repo folder + commit: the scan id
-      // is reserved against those (history/scan-id.ts gateReuseFromEnv), and a rerun on the same commit reuses it.
-      env: {
-        ...inheritedEnv(),
-        SHIPGUARD_GATE_KIND: opts.host,
-        ...(opts.top && opts.sha ? { [GATE_DIR_ENV]: opts.top, [GATE_COMMIT_ENV]: opts.sha } : {}),
-      },
+      env: { ...inheritedEnv(), SHIPGUARD_GATE_KIND: opts.host },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const chunks: Buffer[] = []
