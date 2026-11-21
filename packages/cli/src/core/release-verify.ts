@@ -72,6 +72,13 @@ export interface BundleResponseRaw {
 export interface VerifyOk {
   ok: true
   selectedRules: ExecutableRule[]
+  /** Envelope v2 only: the signed selection the server served (tiers are open tokens, never a closed list). */
+  selection?: { tiers: string[]; categories: string[] | null }
+  /**
+   * Envelope v2 only: true when the served tiers are narrower than the rulebook this request should get (RULEBOOK_PARTIAL).
+   * The rules in selectedRules are still fully verified; the CLI runs them and says the rulebook was only partly provided.
+   */
+  partial?: boolean
 }
 
 /** Longest accepted freshness-token lifetime: 72 hours + 1 hour slack = 262800 seconds. */
@@ -118,7 +125,8 @@ export interface ExecutableRule {
   requiresFile?: string
   requiresPattern?: string
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
-  tier: 'free' | 'pro'
+  /** Open token (lower-case words); the CLI keeps no closed list of tiers. */
+  tier: string
   title: string
 }
 
@@ -367,6 +375,38 @@ function atomicAcceptFloor(floorPath: string, incoming: CliFloorTuple): FloorAcc
 // Public: verifyBundleResponse
 // ---------------------------------------------------------------------------
 
+/** Open tier / category tokens: lower-case words, no list of known tiers is built into the CLI. */
+const TIER_TOKEN = /^[a-z0-9-]{1,32}$/
+const CATEGORY_TOKEN = /^[A-Za-z0-9_.-]{1,64}$/
+
+/** Parse the signed envelope-v2 `selection`. Returns the selection, or the reason it is malformed. */
+function parseSelection(raw: unknown): { tiers: string[]; categories: string[] | null } | string {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return 'bundleEnvelope.selection must be an object'
+  const sel = raw as Record<string, unknown>
+  for (const k of Object.keys(sel)) {
+    if (k !== 'tiers' && k !== 'categories') return `bundleEnvelope.selection has an unknown field "${k}"`
+  }
+  const tiers = sel['tiers']
+  if (!Array.isArray(tiers) || tiers.length === 0 || tiers.length > 16 || !tiers.every((t) => typeof t === 'string' && TIER_TOKEN.test(t))) {
+    return 'bundleEnvelope.selection.tiers must be 1 to 16 lower-case tier tokens'
+  }
+  if (new Set(tiers as string[]).size !== tiers.length) return 'bundleEnvelope.selection.tiers has duplicates'
+  const categories = sel['categories']
+  if (categories === null || categories === undefined) return { tiers: [...(tiers as string[])], categories: null }
+  if (!Array.isArray(categories) || categories.length > 64 || !categories.every((c) => typeof c === 'string' && CATEGORY_TOKEN.test(c))) {
+    return 'bundleEnvelope.selection.categories must be null or a list of category tokens'
+  }
+  return { tiers: [...(tiers as string[])], categories: [...(categories as string[])] }
+}
+
+/** null, undefined and [] all mean "no category filter"; otherwise the same set. */
+function sameCategories(a: string[] | null, b: string[] | null): boolean {
+  const norm = (v: string[] | null): string[] => (v === null ? [] : [...new Set(v)].sort())
+  const x = norm(a)
+  const y = norm(b)
+  return x.length === y.length && x.every((v, i) => v === y[i])
+}
+
 /**
  * Verify a complete BundleResponse from the server.
  *
@@ -387,6 +427,16 @@ export async function verifyBundleResponse(
     frameworks: string[]
     options: Record<string, unknown>
     isPro?: boolean
+    /**
+     * Envelope v2: the categories THIS CLI asked for (null or [] = no filter). The signed `selection.categories` must
+     * equal it; the CLI never takes the server's list on trust.
+     */
+    categories?: string[] | null
+    /**
+     * Envelope v2: tiers a verified LIVE plan document says this account is served (`capabilities.rulebookTiers`).
+     * A served selection narrower than these tiers OR narrower than the attested manifest for the request is RULEBOOK_PARTIAL.
+     */
+    verifiedRulebookTiers?: string[] | null
   },
   floorPath: string,
 ): Promise<VerifyResult> {
@@ -544,19 +594,27 @@ export async function verifyBundleResponse(
     }
   }
 
-  // 0b-4: Bundle envelope schema
+  // 0b-4: Bundle envelope schema (protocol 1, or protocol 2 = the same plus the signed `selection`)
+  let selection: { tiers: string[]; categories: string[] | null } | undefined
   {
-    const ENV_REQUIRED = [
+    const ENV_REQUIRED_V1 = [
       'exp', 'expectedRuleSet', 'frameworks', 'iat', 'kid', 'manifestDigest',
       'options', 'protocolVersion', 'releaseId', 'requestDigest', 'scanId',
       'sequence', 'signature',
     ]
+    const isV2 = envelope['protocolVersion'] === '2'
+    const ENV_REQUIRED = isV2 ? [...ENV_REQUIRED_V1, 'selection'] : ENV_REQUIRED_V1
     const f = requireFields(envelope, ENV_REQUIRED, 'bundleEnvelope')
     if (f) return f
     const x = rejectExtraFields(envelope, ENV_REQUIRED, 'bundleEnvelope')
     if (x) return x
-    if (envelope['protocolVersion'] !== '1') {
-      return { ok: false, reason: `bundleEnvelope.protocolVersion must be "1", got "${envelope['protocolVersion']}"`, nonSafe: true }
+    if (envelope['protocolVersion'] !== '1' && !isV2) {
+      return { ok: false, reason: `bundleEnvelope.protocolVersion must be "1" or "2", got "${envelope['protocolVersion']}"`, nonSafe: true }
+    }
+    if (isV2) {
+      const parsed = parseSelection(envelope['selection'])
+      if (typeof parsed === 'string') return { ok: false, reason: parsed, nonSafe: true }
+      selection = parsed
     }
     if (!isSafeInteger(envelope['exp'])) {
       return { ok: false, reason: 'bundleEnvelope.exp must be a safe integer', nonSafe: true }
@@ -763,8 +821,9 @@ export async function verifyBundleResponse(
       if (typeof rObj['severity'] !== 'string' || !VALID_SEVERITY_5.has(rObj['severity'] as string)) {
         return { ok: false, reason: `selectedRules[${i}].severity must be critical|high|medium|low|info, got "${rObj['severity']}"`, nonSafe: true }
       }
-      if (typeof rObj['tier'] !== 'string' || (rObj['tier'] !== 'free' && rObj['tier'] !== 'pro')) {
-        return { ok: false, reason: `selectedRules[${i}].tier must be "free"|"pro"`, nonSafe: true }
+      // Tier names are open tokens (a new tier needs no CLI release); the CLI keeps no closed list of them.
+      if (typeof rObj['tier'] !== 'string' || !TIER_TOKEN.test(rObj['tier'])) {
+        return { ok: false, reason: `selectedRules[${i}].tier must be a lower-case tier token`, nonSafe: true }
       }
       if (typeof rObj['title'] !== 'string') {
         return { ok: false, reason: `selectedRules[${i}].title must be a string`, nonSafe: true }
@@ -1049,11 +1108,40 @@ export async function verifyBundleResponse(
   // mismatch. Direct cast fails due to insufficient overlap; unknown intermediate is correct.
   const manifestForSelector = manifest as unknown as import('@agenticcli/matcher-contract').FullManifest
   let expectedSet: import('@agenticcli/matcher-contract').ExpectedSet
+  let partial = false
   try {
-    expectedSet = selectExpected(manifestForSelector, {
-      frameworks: request.frameworks,
-      isPro: request.isPro ?? false,
-    })
+    if (selection === undefined) {
+      expectedSet = selectExpected(manifestForSelector, {
+        frameworks: request.frameworks,
+        isPro: request.isPro ?? false,
+      })
+    } else {
+      // Envelope v2: the signed selection (open tier tokens) decides which tiers were served. The request's own
+      // categories must equal the signed ones: the CLI never trusts the server's category list.
+      if (!sameCategories(selection.categories, request.categories ?? null)) {
+        return { ok: false, reason: 'selection.categories does not equal the categories this CLI requested', nonSafe: true }
+      }
+      const full = selectExpected(manifestForSelector, { frameworks: request.frameworks, isPro: true })
+      const tierOf = new Map<string, string>()
+      for (const r of manifestForSelector.rules) tierOf.set(`${r.id}\u0000${r.executableHash}`, r.tier)
+      const manifestTiers = new Set<string>()
+      for (const r of manifestForSelector.rules) manifestTiers.add(r.tier)
+      const served = new Set(selection.tiers)
+      // Tiers must be a subset of what the attested manifest has (a made-up tier is a forgery, not a partial rulebook),
+      // and the free tier is always part of a selection.
+      if (!served.has('free')) return { ok: false, reason: 'selection.tiers does not include the free tier', nonSafe: true }
+      for (const t of served) {
+        if (!manifestTiers.has(t)) return { ok: false, reason: `selection.tiers names a tier the attested manifest does not have ("${t}")`, nonSafe: true }
+      }
+      expectedSet = full.filter((e) => served.has(tierOf.get(`${e.id}\u0000${e.executableHash}`) ?? ''))
+      // Narrower than the rulebook this request should get = RULEBOOK_PARTIAL (only meaningful for a rulebook request).
+      if (request.isPro) {
+        // Partial = narrower than the verified rulebook tiers OR narrower than the attested manifest for this request.
+        const manifestReference = [...new Set(full.map((e) => tierOf.get(`${e.id}\u0000${e.executableHash}`) ?? ''))]
+        const reference = new Set([...manifestReference, ...(request.verifiedRulebookTiers ?? [])])
+        partial = [...reference].some((t) => !served.has(t))
+      }
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return { ok: false, reason: `select-expected-failed: ${msg}`, nonSafe: true }
@@ -1169,5 +1257,6 @@ export async function verifyBundleResponse(
   // verification is by attestation + envelope + completeness checks above.
   const selectedRules = deliveredWithHashes.map(d => d.rule)
 
+  if (selection !== undefined) return { ok: true, selectedRules, selection, partial }
   return { ok: true, selectedRules }
 }

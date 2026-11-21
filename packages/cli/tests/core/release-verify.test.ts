@@ -1465,7 +1465,7 @@ describe('Finding 9 — strict schema validation of all 5 signed components', ()
 
     const badEnvelope = {
       ...f.bundleEnvelope,
-      protocolVersion: '2',  // wrong version
+      protocolVersion: '3',  // wrong version (1 and 2 are the two supported envelope protocols)
     }
 
     const result = await verifyBundleResponse(

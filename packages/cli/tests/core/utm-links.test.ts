@@ -43,8 +43,8 @@ function missingTags(url: string, required: Record<string, string>): string[] {
 }
 
 describe('goLink', () => {
-  it('has the six slots the site redirects', () => {
-    expect([...GO_SLOTS].sort()).toEqual(['billing', 'dashboard', 'docs', 'pricing', 'site', 'telemetry'])
+  it('has the slots the site redirects', () => {
+    expect([...GO_SLOTS].sort()).toEqual(['billing', 'checkout', 'dashboard', 'docs', 'pricing', 'pricing-md', 'site', 'telemetry'])
   })
   it('builds https://agenticcli.dev/go/<slot>, short enough for the 78-column boxes', () => {
     for (const s of GO_SLOTS) {
