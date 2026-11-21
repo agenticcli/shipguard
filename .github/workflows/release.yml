@@ -232,7 +232,7 @@ jobs:
   # W12: after the publish, prove the registry shows what the build job packed and emit release-facts.json
   # (version, dates, CHANGELOG entry, tarball size, provenance) as an artifact + job summary. Verify and emit
   # only: contents: read, no secret, no cross-repo write, no dist-tag change, no dependency code (no install).
-  # The release session then opens the facts PR in agenticcli locally (BUILD-PLAN-0.13 W12); see REBUILD.md.
+  # The release session then opens the facts PR in agenticcli locally (never from here).
   release-facts:
     name: Verify registry, emit release facts
     needs: [build, publish]
