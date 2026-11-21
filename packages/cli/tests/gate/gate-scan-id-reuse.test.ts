@@ -4,25 +4,22 @@
  * history path, so every gate run minted a new id. The reuse key is now repo folder + commit (+ the usual request
  * fields), not the temp path.
  */
-import { execSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Policy } from '@agenticcli/shared'
 import { extractCommit, removeExtraction, runScanChild } from '../../src/core/gate-scan.js'
 import { GATE_COMMIT_ENV, GATE_DIR_ENV, gateReuseFromEnv, resolveScanId } from '../../src/core/history/scan-id.js'
+import { buildVariant } from '../helpers/recorded-cli.js'
 import { cleanup, commitFile, git, mkRepo } from './gate-fixtures.js'
 
 vi.setConfig({ testTimeout: 60_000 })
 
-const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../')
-const distCli = resolve(pkgRoot, 'dist/cli.js')
-
+// A private build of the current src (never a stale dist/, and never rewrites dist/ under the other test files).
+let distCli = ''
 beforeAll(() => {
-  // Always rebuild: this test is about the code in src, not a stale dist.
-  execSync('npx tsup', { cwd: pkgRoot, stdio: 'ignore' })
+  distCli = buildVariant('dev', 'gate-scan-id')
 }, 240_000)
 
 const homes: string[] = []

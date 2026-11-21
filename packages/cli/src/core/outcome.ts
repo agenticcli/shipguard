@@ -490,7 +490,8 @@ export function buildNextSteps(i: OutcomeInput): NextStep[] {
     if (i.value === 'SAFE_TO_SHIP' && !incomplete) {
       // A clean scan's first step comes from the agent and install state (spec 02 field notes).
       if (i.install?.hookStale) {
-        steps.unshift({ kind: 'update_hook', label: 'Update the installed hook', command: 'shipguard setup --agent claude', safe: false, blocking: false })
+        // A HOOK_STALE warning already added this step (above); never twice.
+        if (!steps.some((s) => s.kind === 'update_hook')) steps.unshift({ kind: 'update_hook', label: 'Update the installed hook', command: 'shipguard setup --agent claude', safe: false, blocking: false })
       } else if (i.install && !i.install.gateInstalled && i.install.agent) {
         steps.unshift({ kind: 'setup', label: `Install the ${i.install.agent} gate`, command: `shipguard setup --agent ${i.install.agent}`, safe: false, blocking: false })
       } else {

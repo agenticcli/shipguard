@@ -2,6 +2,7 @@ import { Command } from 'commander'
 import { CLI_VERSION } from '../core/telemetry.js'
 import { decideRecommendation, planJson, receiptNote, statusLines, usageNote } from '../core/plan-lines.js'
 import { DEFAULT_API_URL, generalRuleCount, getPlanEnv, lastScanHere, planEnvelope, readPlanFresh } from '../core/plan-client.js'
+import { gateHealthLines, gateHealthWarnings, healthWarningLine } from '../core/gate-state.js'
 import { logger } from '../utils/logger.js'
 
 /**
@@ -32,6 +33,7 @@ export function statusCommand(): Command {
         })
         console.log(JSON.stringify(planEnvelope(CLI_VERSION, plan, {
           signedIn: fresh.signIn === 'signed-in',
+          warnings: gateHealthWarnings(process.cwd()).map((w) => ({ code: w.code, message: w.message, command: w.command })),
           lastScan: lastScan ? { runId: lastScan.runId, corpus: lastScan.corpus, applied: lastScan.applied, at: lastScan.at } : null,
         }), null, 2))
         return
@@ -46,6 +48,9 @@ export function statusCommand(): Command {
         ...(lastScan ? { scanCommand: lastScan.scanCommand } : {}),
       })
       for (const line of lines) console.log(line)
+      // Gate health (spec 07): what is installed here, when the gate last ran, how strong it is; the warnings go to stderr.
+      for (const line of gateHealthLines(process.cwd())) console.log(line)
+      for (const w of gateHealthWarnings(process.cwd())) process.stderr.write(`${healthWarningLine(w)}\n`)
       if (fresh.retryAfterSeconds !== undefined && fresh.failure !== null) {
         logger.info(`The service asked for a wait before the next try (${fresh.retryAfterSeconds} s).`)
       }

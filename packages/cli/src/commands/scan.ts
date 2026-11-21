@@ -34,6 +34,7 @@ import { EXIT_CODES, DEFAULT_REPORT_FILE } from '@agenticcli/shared'
 import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation, Finding } from '@agenticcli/shared'
 import { recordScanHistory, resolveScanId } from '../core/history/index.js'
 import { gateReuseFromEnv } from '../core/history/scan-id.js'
+import { gateHealthWarnings, healthWarningLine } from '../core/gate-state.js'
 import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
 import { sendTelemetry, telemetryState } from '../core/telemetry.js'
@@ -883,7 +884,9 @@ async function runScan(ctx: {
   const degradedJson = buildDegradedReasons(reasons, result.coverage)
   const notScanned = buildNotScanned(result.coverage, reasons)
   const blockingFindings = result.findings.filter((f) => f.blocking && !f.suppressed)
-  const warnings: Array<{ code: string; message: string; command: string | null }> = []
+  // Gate health (spec 03): a stale hook and a gate the host killed are reported on every run, outside the gate too.
+  const healthWarnings = gateHealthWarnings(cwd)
+  const warnings: Array<{ code: string; message: string; command: string | null }> = healthWarnings.map((w) => ({ code: w.code, message: w.message, command: w.command }))
   const gate = probeGate(cwd)
   const nextAgent = detectNextAgent(cwd)
   const steps = buildNextSteps({
@@ -895,7 +898,7 @@ async function runScan(ctx: {
     sinceLastRun,
     warnings,
     rerunCommand,
-    install: { agent: nextAgent, gateInstalled: gate.state !== 'none', hookStale: gate.state === 'stale' },
+    install: { agent: nextAgent, gateInstalled: gate.state !== 'none', hookStale: gate.state === 'stale' || healthWarnings.some((w) => w.code === 'HOOK_STALE') },
     reportMarkdown: scanOptions.reportPath,
   })
   const agentAction = decideAgentAction({ value: verdictValue, blockingCount, degraded: result.degraded === true, steps, sinceLastRun })
@@ -1005,6 +1008,12 @@ async function runScan(ctx: {
       // code, but it is never swallowed either.
       logger.error(`Report generation failed: ${error instanceof Error ? error.message : error}`)
     }
+  }
+
+  // Warnings that carry a command go to stderr, one line each (spec 01, 03): stdout line 1 stays the verdict. The JSON
+  // and SARIF outputs keep stderr quiet: the same facts are in warnings[]. The gate's own child run is a JSON run.
+  if (!opts.sarif && !scanOptions.json && !isHookOrGate()) {
+    for (const w of healthWarnings) process.stderr.write(`${healthWarningLine(w)}\n`)
   }
 
   // Machine-readable output — exactly one format emitted to stdout
