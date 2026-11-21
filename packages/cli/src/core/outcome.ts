@@ -569,7 +569,7 @@ export function buildVerdictJson(i: {
 // ---- plan block: the verified server block (W1a modules) rendered once for JSON ----
 
 const STACK_DISPLAY: Record<string, string> = {
-  nextjs: 'Next.js', express: 'Express', fastify: 'Fastify', prisma: 'Prisma', drizzle: 'Drizzle', supabase: 'Supabase',
+  nextjs: 'Next.js', express: 'Express', fastify: 'Fastify', prisma: 'Prisma', drizzle: 'Drizzle', supabase: 'Supabase', react: 'React', firebase: 'Firebase',
 }
 export function stackDisplayName(name: string): string {
   return STACK_DISPLAY[name] ?? name

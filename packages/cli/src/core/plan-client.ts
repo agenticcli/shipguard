@@ -26,7 +26,12 @@ import {
 } from './plan.js'
 import type { AccountStatus, PlanBlock } from './plan-types.js'
 import { clearHint, writeHint } from './hint.js'
-import { lastAccountStatus, loadNag, recordAccountStatus, type NagContext, type NagData } from './nag.js'
+import { isMuted, lastAccountStatus, loadNag, markMoment, momentDue, recordAccountStatus, repoKey, type NagContext, type NagData } from './nag.js'
+import { readOffer } from './offer-cache.js'
+import { gateGapLine, type DetectedStack } from './plan-lines.js'
+import { detectFrameworks } from './framework.js'
+import { stackDisplayName } from './fix-guidance.js'
+import { bundledRulesMeta } from './bundled-rules.js'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { assertTrustedApiUrl } from '../utils/trust.js'
@@ -266,5 +271,45 @@ async function withCache(env: PlanEnv, nag: NagData, acct: string | null, failur
     accountStatus: accountStatusOf(block, nag, acct),
     failure,
     ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The gate's weekly gap line (spec 05 moment 1, hook column): first line only, read from the verified cache
+// ---------------------------------------------------------------------------
+
+/**
+ * The only plan line a gate may print, on a clean pass: the first line of the weekly "Not run here" line, read from
+ * the VERIFIED cache (account document when signed in, else the cached public offer). It never fetches, never prints
+ * offer text or a price, shares the scan screen's 7-day counter, and is silent in CI, safe mode, API-key mode and when
+ * muted. Any failure is "no line". Never throws.
+ */
+export async function gateGapFromCache(dir: string): Promise<string | null> {
+  try {
+    const env = getPlanEnv({ projectDir: dir })
+    if (env.ci || env.safeMode || env.apiKeyMode || env.trackingOff) return null
+    const nag = loadNagFor(env)
+    if (isMuted(nag)) return null
+    const frameworks = detectFrameworks(dir).frameworks.filter((f) => f.name !== 'generic')
+    if (frameworks.length === 0) return null
+    const detected: DetectedStack[] = frameworks.map((f) => ({ key: f.name, display: stackDisplayName(f.name), version: f.version ?? null }))
+    const creds = loadCredentials()
+    const acct = creds ? acctFromAccessToken(creds.accessToken) : null
+    const plan = creds
+      ? acct !== null ? (await readAccountCache(env.configDir, { acct, now: env.now })).block : unavailableBlock('NOT_FETCHED')
+      : (await readOffer({ configDir: env.configDir, now: env.now, safeMode: env.safeMode }, detected.map((d) => d.key))).block
+    const rk = repoKey(repoIdOf(dir))
+    const pitch = gateGapLine({
+      plan, signedIn: creds !== null, accountStatus: accountStatusOf(plan, nag, acct), detected,
+      rulesApplied: bundledRulesMeta().ruleCount, scanComplete: true, blocking: false, fallbackActive: false, ci: false,
+      hookOrGate: false, safeMode: false, muted: false, recentlyShown: false, terminal: false, quiet: false,
+      screenDue: momentDue(nag, 'screenPitch', rk, env.now),
+    })
+    if (pitch.lines.length === 0) return null
+    markMoment(nagCtx(env), 'screenPitch', rk)
+    return pitch.lines[0]
+  } catch (err) {
+    logger.debug(`plan-client: the gate gap line is not available: ${err instanceof Error ? err.message : String(err)}`)
+    return null
   }
 }
