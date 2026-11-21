@@ -126,6 +126,8 @@ Scans run 100% on your machine. The CLI downloads rules from the rulebook; your 
 
 ---
 
+Rebuild the published package from its tag, and see every network call with file names: [REBUILD.md](REBUILD.md).
+
 ## Exit codes
 
 ShipGuard is triggered by an agent, a script, or a human — the exit code is

@@ -113,7 +113,8 @@ if ! node "$CLI_DIR/scripts/check-bundle-imports.mjs" "$DIST"; then
 fi
 echo "PASS [G3] no @agenticcli/* runtime imports in bundle"
 
-# Gate 4: Tarball size sanity (< 500 kB packed)
+# Gate 4: Tarball size sanity (< 700 kB packed; 0.12.1 ships source maps with embedded sources,
+# measured 528 kB packed / 2.0 MB unpacked, so the old 500 kB / 1 MB ceilings were raised)
 # Loud on every failure: a pack error or unparseable output must FAIL the gate, never default to 0.
 PACK_ERR="$(mktemp)"
 PACK_JSON="$(cd "$CLI_DIR" && npm pack --dry-run --json --ignore-scripts 2>"$PACK_ERR")" || {
@@ -134,14 +135,14 @@ TARBALL_SIZE="$(printf '%s' "$PACK_JSON" | node -e "
   echo "FAIL [G4] could not read the packed tarball size" >&2
   gate_fail
 }
-if [[ "$TARBALL_SIZE" -gt 512000 ]]; then
-  echo "FAIL [G4] packed tarball is ${TARBALL_SIZE} bytes — exceeds the 500 kB sanity ceiling" >&2
+if [[ "$TARBALL_SIZE" -gt 716800 ]]; then
+  echo "FAIL [G4] packed tarball is ${TARBALL_SIZE} bytes — exceeds the 700 kB sanity ceiling" >&2
   gate_fail
 fi
 # Fallback: just check dist size
 DIST_SIZE=$(du -k "$CLI_DIR/dist" | tail -1 | cut -f1)
-if [[ "$DIST_SIZE" -gt 1000 ]]; then
-  echo "FAIL [G4] dist/ is ${DIST_SIZE}KB — exceeds 1MB sanity ceiling" >&2
+if [[ "$DIST_SIZE" -gt 2600 ]]; then
+  echo "FAIL [G4] dist/ is ${DIST_SIZE}KB — exceeds 2.6MB sanity ceiling" >&2
   gate_fail
 fi
 echo "PASS [G4] dist size ${DIST_SIZE}KB, packed tarball ${TARBALL_SIZE} bytes within limits"
@@ -152,6 +153,16 @@ if [[ ! -f "$CLI_DIR/dist/checksum-manifest.json" ]]; then
   gate_fail
 fi
 echo "PASS [G5] checksum-manifest.json present"
+
+# Gate 5b: every dist/*.js has its .map, and the map's sources point into src/ (never node_modules,
+# never an absolute path). The maps are shipped on purpose (readable source); a missing or wrong one
+# would quietly break the rebuild recipe in REBUILD.md.
+if ! node "$CLI_DIR/scripts/check-sourcemaps.mjs" "$CLI_DIR/dist" >&2; then
+  echo "FAIL [G5b] source maps missing or pointing outside src/ — see scripts/check-sourcemaps.mjs" >&2
+  gate_fail
+else
+  echo "PASS [G5b] source maps present and resolve to src/"
+fi
 
 # Gate 6: re2js must appear in dependencies (not devDependencies) — it's a runtime dep
 RE2JS_IN_DEPS=$(node -e "const p=require('$PKG'); process.stdout.write(p.dependencies?.re2js?'yes':'no')" 2>/dev/null || echo "no")

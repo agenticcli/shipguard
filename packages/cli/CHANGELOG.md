@@ -1,5 +1,11 @@
 # @agenticcli/shipguard
 
+## 0.12.1 - unreleased
+
+- Faster scans: a rule is now skipped for a file when a text it must contain is absent, before the slow pattern engine runs. Scans use 4 to 7 times less CPU on large projects. Findings are identical: checked over all 259 free rules against the previous scanner (golden equality tests).
+- Added: the package now ships source maps (`dist/*.js.map`, real `src/` files embedded), so you can read the code behind the bundle, and error traces point at real source lines. The package is about 360 kB larger packed (528 kB; was 167 kB).
+- Added: REBUILD.md in the public repo: how to rebuild the published package from its tag and compare file hashes (`scripts/rebuild-verify.sh 0.12.1`), and a list of every network call in the CLI with file names. CI now checks that two publish builds are byte-identical and that every source map resolves.
+
 ## 0.12.0 - unreleased
 
 - Better detection: the free rules now catch more real holes in Next.js, Supabase and Stripe projects, for example pages and API routes that look protected but never actually stop a signed-out visitor, and sign-in checks that test the wrong value.
