@@ -24,7 +24,7 @@ With `--json` or `--sarif`, an exit `2` prints exactly one JSON object on stdout
 
 ## Degraded scans
 
-If ShipGuard could not read everything (an oversized file, an unreadable file, a skipped symlink, lost Pro rules, or a scan that read no files), the scan is `degraded` and the verdict is `DO_NOT_SHIP`. The reasons are in `degradedReasons`.
+If ShipGuard could not read everything (an oversized file, an unreadable file, a skipped symlink, a rulebook that could not be downloaded, or a scan that read no files), the scan is `degraded` and the verdict is `DO_NOT_SHIP`. The reasons are in `degradedReasons`.
 
 ## JSON output
 

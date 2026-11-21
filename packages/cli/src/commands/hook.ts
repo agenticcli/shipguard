@@ -180,10 +180,10 @@ const TARGETS: readonly HookTarget[] = ['git', 'claude', 'ci']
 
 export function hookCommand(): Command {
   return new Command('hook')
-    .description('Install the ShipGuard release gate at the merge boundary (git hook, Claude Code hook, or CI job)')
+    .description('Install ShipGuard at the merge boundary (git hook, Claude Code hook, or CI job)')
     .option(
       '--target <target>',
-      `Where to install the gate: ${TARGETS.join(' | ')}`,
+      `Where to install the hook: ${TARGETS.join(' | ')}`,
       'git',
     )
     .addHelpText('after', `
@@ -245,10 +245,10 @@ Exit codes:
         const shown = isAbsolute(outcome.path) ? (relative(cwd, outcome.path) || outcome.path) : outcome.path
         switch (outcome.status) {
           case 'created':
-            logger.success(`Installed the release gate: ${shown}`)
+            logger.success(`Installed the ShipGuard hook: ${shown}`)
             break
           case 'updated':
-            logger.success(`Updated the release gate: ${shown}`)
+            logger.success(`Updated the ShipGuard hook: ${shown}`)
             break
           case 'unchanged':
             logger.info(`Already up to date: ${shown}`)

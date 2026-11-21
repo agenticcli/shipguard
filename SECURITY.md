@@ -11,4 +11,4 @@ We aim to acknowledge reports within 3 business days and will keep you updated u
 ## Scope
 
 - The `@agenticcli/shipguard` CLI and the packages in this repository.
-- ShipGuard scans run locally and never send your source code off your machine.
+- ShipGuard checks your code on your machine and never uploads your source code. Rules come down; code never goes up.

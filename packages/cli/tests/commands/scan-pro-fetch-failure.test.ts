@@ -324,7 +324,7 @@ describe('platform-unavailable-20261018 — PLATFORM_UNAVAILABLE human + JSON ou
     const exitCode = await runHumanProScan()
 
     expect(exitCode).toBe(3)
-    expect(errorLines()).toMatch(/Pro rules request failed \[SERVER_ERROR\]/)
+    expect(errorLines()).toMatch(/Rulebook request failed \[SERVER_ERROR\]/)
     expect(errorLines()).not.toMatch(/on our side/)
   })
 })

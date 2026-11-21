@@ -66,7 +66,7 @@ if (rawArgs[0] === '?') {
 
 program
   .name('shipguard')
-  .description('CLI-first release gate for AI-built apps')
+  .description('The security scanner your coding agent runs before every commit.')
   .version(
     typeof __SHIPGUARD_VERSION__ !== 'undefined'
       ? __SHIPGUARD_VERSION__

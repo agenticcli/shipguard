@@ -7,7 +7,7 @@ Use the full scan with `--strict` in CI: `npx --yes @agenticcli/shipguard scan -
 ## GitHub Actions
 
 ```yaml
-name: ShipGuard release gate
+name: ShipGuard security scan
 on:
   pull_request:
   push:
@@ -54,13 +54,13 @@ shipguard hook --target claude
 
 Adds a Claude Code hook in `.claude/settings.json` that runs the check before the agent runs `git push` or `git merge`. The hook runs outside the model, so the agent cannot talk its way past it. Guide: [ShipGuard with Claude Code](https://agenticcli.dev/guides/claude-code).
 
-## Codex CLI and Cursor
+## Codex and Cursor
 
-These tools read an `AGENTS.md` file. Add this block so the agent runs the gate itself:
+These tools read an `AGENTS.md` file. Add this block so the agent runs ShipGuard itself:
 
 ```markdown
 ## ShipGuard
-- ShipGuard is the release gate for this repo. It runs locally; code never leaves this machine.
+- ShipGuard is the security scanner for this repo. It runs on this machine; code never leaves it.
 - Before every push or merge, run: shipguard scan --json --strict
 - Exit 0 means the scan completed: read "recommendation" in the JSON. Exit 1 means blocked: fix each finding with blocking:true, then scan again.
 - Do not skip the hooks with --no-verify.

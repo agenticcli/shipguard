@@ -1,6 +1,6 @@
 # What ShipGuard checks
 
-ShipGuard is the deterministic check that runs inside your agent loop (and works as a release gate in CI), not a code reviewer and not a general security scanner. It looks for a small set of failures that AI coding tools introduce often. Checks are plain pattern rules (no AI model), so the same project gives the same result every time.
+ShipGuard by AgenticCLI is the security scanner your coding agent runs before every commit. It is not a code reviewer and not a full SAST tool. It looks for a small set of failures that AI coding tools introduce often. Checks are plain pattern rules (no AI model), so the same project gives the same result every time.
 
 Five check groups are bundled in the CLI and run locally, with no account:
 
@@ -18,9 +18,9 @@ Findings are printed with a severity (info, low, medium, high, critical), the fi
 
 Rules are matched with RE2JS, a linear-time engine, so a bad pattern cannot hang a scan.
 
-## Full-rulebook scans
+## Rulebook scans
 
-After `shipguard login`, `shipguard scan --pro` downloads the full current rule set from the rulebook. The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs in [privacy](privacy.md)). See the [FAQ](faq.md) for plan limits.
+After `shipguard login`, `shipguard scan --pro` downloads the full current rulebook, then checks your code on your machine. Rules come down; your code never goes up. Every signed-in plan gets the same rulebook. See the [FAQ](faq.md) for plan limits.
 
 ## Full list
 

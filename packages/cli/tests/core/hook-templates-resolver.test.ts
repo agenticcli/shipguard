@@ -73,7 +73,7 @@ describe('hook templates: scoped package + resolver', () => {
     const sb = sandbox({ shipguard: 'echo FINDINGS; exit 1' })
     const r = run(sb, gitHookScript('pre-push'))
     expect(r.status).toBe(1)
-    expect(r.stderr).toMatch(/blocked this: the release gate did not pass/)
+    expect(r.stderr).toMatch(/blocked this: the security scan did not pass/)
     expect(r.stderr).toContain('FINDINGS')
   })
 
