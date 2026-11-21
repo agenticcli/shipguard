@@ -7,7 +7,7 @@ import { CLI_VERSION, sendLifecycleEvent } from '../core/telemetry.js'
 import { buildErrorEnvelope } from '../core/outcome.js'
 import type { ErrorCode } from '../core/outcome.js'
 import { emitError } from '../utils/exit.js'
-import { forgetAccountState, getPlanEnv, planEnvelope, readPlanFresh } from '../core/plan-client.js'
+import { forgetAccountState, getPlanEnv, lastScanHere, planEnvelope, readPlanFresh } from '../core/plan-client.js'
 import type { FreshPlan } from '../core/plan-client.js'
 import { decideRecommendation, planJson, receiptNote, usageNote } from '../core/plan-lines.js'
 import { hasPaidPlan } from '../core/plan.js'
@@ -68,7 +68,7 @@ function fail(code: ErrorCode, message: string, opts: { json: boolean; cause?: s
 }
 
 /** What the account service said about the plan after sign-in: the success lines (spec 06 "Login"). */
-function successLines(fresh: FreshPlan): string[] {
+function successLines(fresh: FreshPlan, scanCommand: string): string[] {
   const p = fresh.plan
   const head = '✓ Signed in.'
   if (p.reason === 'PLAN_UNVERIFIED') return [`${head} Plan details could not be verified, so none are shown. ${CREDENTIALS_NOTE}`, 'Next: shipguard scan']
@@ -81,7 +81,7 @@ function successLines(fresh: FreshPlan): string[] {
   if (status === 'none' || status === 'lapsed') {
     const text = p.server.account?.text
     const start = p.link
-      ? `Next: start checkout ${p.link} (on the page, sign in with the same account${text ? `; ${text}` : ''})   then: shipguard scan`
+      ? `Next: start checkout ${p.link} (on the page, sign in with the same account${text ? `; ${text}` : ''})   then: ${scanCommand}`
       : 'Next: shipguard scan'
     return [`${head} ${status === 'lapsed' ? 'Your plan is no longer active.' : 'No active plan on this account yet.'} ${CREDENTIALS_NOTE}`, start]
   }
@@ -135,9 +135,16 @@ export function loginCommand(): Command {
       // The timeout is decided only when the deadline has passed AND one final poll saw no approval (a poll that
       // lands just before the deadline must never be reported as a timeout). A poll error is LOGIN_CONFIRM_FAILED.
       let lastNote = Date.now()
+      // Ctrl-C while waiting is LOGIN_CANCELLED (exit 130), not a crash and not a timeout. Removed again on every way out.
+      let onSigint: () => void = () => {}
+      const cancelled = new Promise<true>((resolve) => { onSigint = () => resolve(true); process.once('SIGINT', onSigint) })
+      const cancel = (): void => fail('LOGIN_CANCELLED', 'sign-in stopped.', { json, fix: 'sign in again when you are ready.' })
+      try {
       for (;;) {
-        await sleep(Math.min(pollMs, Math.max(deadline - Date.now(), 0)))
-        const r = await pollOnce(apiUrl, device_code)
+        if (await Promise.race([sleep(Math.min(pollMs, Math.max(deadline - Date.now(), 0))).then(() => false), cancelled])) return cancel()
+        const polled = await Promise.race([pollOnce(apiUrl, device_code), cancelled])
+        if (polled === true) return cancel()
+        const r = polled
         if (r.kind === 'approved') {
           const env = getPlanEnv()
           forgetAccountState(env) // nothing cached about a previous account may linger
@@ -166,7 +173,7 @@ export function loginCommand(): Command {
             })
             console.log(JSON.stringify(planEnvelope(CLI_VERSION, plan, { signedIn: true }), null, 2))
           } else {
-            const lines = successLines(fresh)
+            const lines = successLines(fresh, (await lastScanHere(process.cwd()))?.scanCommand ?? 'shipguard scan')
             logger.success(lines[0].replace(/^✓ /, ''))
             for (const line of lines.slice(1)) console.error(line)
           }
@@ -191,6 +198,9 @@ export function loginCommand(): Command {
           lastNote = Date.now()
           logger.info(`Still waiting (${Math.max(0, Math.round((deadline - Date.now()) / 60000))} min left). Wrong browser? Open the link above yourself.`)
         }
+      }
+      } finally {
+        process.removeListener('SIGINT', onSigint)
       }
     })
 }

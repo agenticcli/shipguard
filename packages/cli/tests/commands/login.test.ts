@@ -5,9 +5,11 @@ vi.mock('../../src/core/auth.js', () => ({
   clearCredentials: vi.fn(),
 }))
 const planRead = vi.hoisted(() => vi.fn())
+const lastScan = vi.hoisted(() => vi.fn())
 vi.mock('../../src/core/plan-client.js', async (orig) => ({
   ...(await orig<typeof import('../../src/core/plan-client.js')>()),
   readPlanFresh: planRead,
+  lastScanHere: lastScan,
   forgetAccountState: vi.fn(),
 }))
 const lifecycle = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
@@ -34,6 +36,7 @@ beforeEach(() => {
   vi.spyOn(logger, 'success').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
   planRead.mockResolvedValue(unavailable)
+  lastScan.mockResolvedValue(null)
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -49,6 +52,29 @@ async function run(fetchMock: ReturnType<typeof vi.fn>): Promise<void> {
 }
 
 describe('loginCommand', () => {
+  it('Ctrl-C while waiting is LOGIN_CANCELLED, exit 130, nothing saved, and the handler is removed', async () => {
+    const { saveCredentials } = await import('../../src/core/auth.js')
+    const before = process.listenerCount('SIGINT')
+    global.fetch = vi.fn().mockResolvedValueOnce(START).mockImplementation(() => new Promise(() => {})) as unknown as typeof fetch
+    const p = loginCommand().parseAsync(['node', 'login'])
+    await vi.advanceTimersByTimeAsync(2000)
+    process.emit('SIGINT')
+    await p
+    expect(process.exitCode).toBe(130)
+    expect(errors.join('\n')).toContain('LOGIN_CANCELLED')
+    expect(saveCredentials).not.toHaveBeenCalled()
+    expect(process.listenerCount('SIGINT')).toBe(before)
+  })
+
+  it('the checkout "then:" step is the last scan\'s re-run command from history, not a bare scan', async () => {
+    lastScan.mockResolvedValue({ scanCommand: "shipguard scan ./app --strict" })
+    planRead.mockResolvedValue({ signIn: 'signed-in', plan: { status: 'live', reason: null, command: null, link: 'https://agenticcli.dev/go/checkout', server: { label: null, account: { status: 'none', text: null } } }, acct: null, accountStatus: 'none', failure: null })
+    const lines: string[] = []
+    vi.spyOn(console, 'error').mockImplementation((m?: unknown) => void lines.push(String(m)))
+    await run(vi.fn().mockResolvedValueOnce(START).mockResolvedValueOnce(APPROVED))
+    expect(lines.join('\n')).toContain('then: shipguard scan ./app --strict')
+  })
+
   it('saves credentials after approval and checks the account service before saying signed in', async () => {
     const { saveCredentials } = await import('../../src/core/auth.js')
     await run(vi.fn().mockResolvedValueOnce(START).mockResolvedValueOnce(APPROVED))
