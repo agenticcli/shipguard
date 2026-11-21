@@ -67,11 +67,17 @@ describe('probeGate / detectNextAgent / detectManifest (read-only)', () => {
     expect(detectManifest(d)).toBeNull()
   })
 
-  it('a hook entry naming shipguard counts as an installed gate; garbage never counts as one', () => {
+  it('only a valid install record counts as an installed gate; a bare settings entry, garbage or {} never does', () => {
     const d = tmp()
     mkdirSync(join(d, '.claude'))
     writeFileSync(join(d, '.claude', 'settings.json'), '{"hooks":{"PreToolUse":[{"hooks":[{"command":"npx shipguard gate"}]}]}}')
-    expect(probeGate(d).state).toBe('current')
+    expect(probeGate(d).state).toBe('none')
+    const rec = { version: 1, shipguardVersion: '0.13.0', hookVersion: 2, agents: ['claude'], entries: [] }
+    mkdirSync(join(d, '.shipguard'))
+    writeFileSync(join(d, '.shipguard', 'installed.json'), JSON.stringify(rec))
+    expect(probeGate(d)).toEqual({ state: 'current', label: 'Claude project hook v2' })
+    writeFileSync(join(d, '.shipguard', 'installed.json'), JSON.stringify({ ...rec, hookVersion: 1 }))
+    expect(probeGate(d).state).toBe('stale')
     const e = tmp()
     mkdirSync(join(e, '.shipguard'))
     writeFileSync(join(e, '.shipguard', 'installed.json'), 'not json')
