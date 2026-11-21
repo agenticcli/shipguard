@@ -17,6 +17,9 @@ import {
   redactEvidence,
   redactFindingsEvidence,
   redactSecretValue,
+  maskSecret,
+  secretEvidenceObject,
+  parseMaskedSecret,
   scrubSecretShapes,
   computeFindingKey,
   getFindingKey,
@@ -46,31 +49,57 @@ function finding(overrides: Partial<Finding>): Finding {
   }
 }
 
-describe('redactSecretValue — the legacy format', () => {
-  it('keeps 8 characters then ***; short values become ***', () => {
-    expect(redactSecretValue(STRIPE)).toBe('sk_live_***')
+describe('redactSecretValue — inline mask keeps no character of the value', () => {
+  it('always returns ***', () => {
+    expect(redactSecretValue(STRIPE)).toBe('***')
     expect(redactSecretValue('12345678')).toBe('***')
     expect(redactSecretValue('')).toBe('***')
   })
 })
 
+describe('maskSecret / secretEvidenceObject / parseMaskedSecret — OUTPUT-SPEC 06 one representation', () => {
+  it('shows type and length only', () => {
+    expect(maskSecret('Stripe Live Key', STRIPE)).toBe(`stripe_live_key, ${STRIPE.length} characters, value hidden`)
+    expect(maskSecret('generic.secrets.aws-access-key', AWS)).toBe(`aws_access_key, ${AWS.length} characters, value hidden`)
+  })
+  it('the JSON object form carries the same facts', () => {
+    expect(secretEvidenceObject('generic.secrets.github-token', GITHUB)).toEqual({
+      kind: 'secret', secretType: 'github_token', length: GITHUB.length, valueHidden: true,
+    })
+  })
+  it('parseMaskedSecret round-trips and rejects other text', () => {
+    expect(parseMaskedSecret(maskSecret('x_key', STRIPE))).toEqual({ kind: 'secret', secretType: 'x_key', length: STRIPE.length, valueHidden: true })
+    expect(parseMaskedSecret('...sk_live_***...')).toBeUndefined()
+  })
+  it('no 4-character substring of any planted secret value appears in the masked text', () => {
+    for (const [name, raw] of [['stripe', STRIPE], ['aws', AWS], ['github', GITHUB], ['openai', OPENAI], ['anthropic', ANTHROPIC]] as const) {
+      const masked = maskSecret(`generic.secrets.${name}-key`, raw)
+      for (let i = 0; i + 4 <= raw.length; i++) {
+        const chunk = raw.slice(i, i + 4)
+        // the type name is chosen by us, not taken from the value
+        if (masked.includes(chunk)) throw new Error(`${name}: masked text shows value chunk at ${i}`)
+      }
+    }
+  })
+})
+
 describe('redactEvidence — secrets category', () => {
   it.each([
-    ['stripe', STRIPE, '...sk_live_***...'],
-    ['aws', AWS, '...AKIAQ7WX***...'],
-    ['github', GITHUB, '...ghp_R4tY***...'],
-    ['openai', OPENAI, '...sk-proj-***...'],
-    ['anthropic', ANTHROPIC, '...sk-ant-a***...'],
-  ])('%s: the whole evidence is masked in the legacy `...xxxxxxxx***...` shape', (_n, raw, expected) => {
-    const out = redactEvidence(raw, 'secrets')
-    expect(out).toBe(expected)
-    expect(out).not.toContain(raw.slice(9))
+    ['stripe', STRIPE],
+    ['aws', AWS],
+    ['github', GITHUB],
+    ['openai', OPENAI],
+    ['anthropic', ANTHROPIC],
+  ])('%s: the whole evidence is masked as type, length, value hidden', (_n, raw) => {
+    const out = redactEvidence(raw, 'secrets', `generic.secrets.${_n}-key`)
+    expect(out).toBe(`${_n}_key, ${raw.length} characters, value hidden`)
+    expect(out).not.toContain(raw.slice(0, 4))
   })
 
   it('masks a database connection string (password never visible)', () => {
     const out = redactEvidence(DB_URL, 'secrets')
     expect(out).not.toContain(DB_PASSWORD)
-    expect(out).toBe('...postgres***...')
+    expect(out).toBe(`secret, ${DB_URL.length} characters, value hidden`)
   })
 
   it('masks a PEM block that includes body text, but leaves a header-only match readable', () => {
@@ -111,7 +140,8 @@ describe('redactEvidence / scrubSecretShapes — non-secrets categories (documen
     const out = redactEvidence(`"start": "NODE_ENV=development API_TOKEN=${tok} node server.js"`, 'deployment')
     expect(out).not.toContain(tok)
     expect(out).toContain('NODE_ENV=development')
-    expect(out).toContain('API_TOKEN=Tq9Zx3Lm***')
+    expect(out).toContain('API_TOKEN=***')
+    expect(out).not.toContain('Tq9Z')
     expect(scrubSecretShapes(`const k = "${GITHUB}"`)).not.toContain(GITHUB.slice(9))
   })
 
@@ -180,14 +210,14 @@ describe('redactFindingsEvidence + finding identity key', () => {
     const b = finding({ evidence: undefined })
     const legacy = finding({ evidence: 'export NEXT_PUBLIC_STRIPE_SECRET_KEY=sk_live_***' })
     redactFindingsEvidence([a, b, legacy], new Set([legacy]))
-    expect(a.evidence).toBe('...sk_live_***...')
+    expect(a.evidence).toBe(`secret, ${STRIPE.length} characters, value hidden`)
     expect(b.evidence).toBeUndefined()
     // keeps its variable name — not re-masked into `...export N***...`
     expect(legacy.evidence).toBe('export NEXT_PUBLIC_STRIPE_SECRET_KEY=sk_live_***')
     // without the source-redacted mark the same text IS masked (no shape-based trust)
     const other = finding({ evidence: 'export NEXT_PUBLIC_STRIPE_SECRET_KEY=sk_live_***' })
     redactFindingsEvidence([other])
-    expect(other.evidence).toBe('...export N***...')
+    expect(other.evidence).toBe('secret, 48 characters, value hidden')
   })
 
   it('stamps the identity key from the RAW evidence BEFORE masking; keys sharing a prefix stay distinct', () => {
@@ -264,7 +294,7 @@ describe('scan() — every rule source is redacted at the one central point', ()
       expect(ids).toContain('hardcoded_secret') // legacy-only check (Google key has no corpus twin)
       expect(ids).toContain('pro.secrets.custom-internal-token') // Pro rule
       const pro = result.findings.find((f) => f.id === 'pro.secrets.custom-internal-token')!
-      expect(pro.evidence).toBe('...corp_tok***...')
+      expect(pro.evidence).toBe(`custom_internal_token, ${PRO_SECRET.length} characters, value hidden`)
     } finally {
       process.chdir(cwd)
     }

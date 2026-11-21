@@ -210,8 +210,8 @@ describe('secretsCheck — same-pattern matches: all same-pattern matches report
     const file = makeFile(
       'config/aws.ts',
       [
-        `const key1 = 'AKIAIOSFODNN7EXAMPLE01'`,
-        `const key2 = 'AKIAIOSFODNN7EXAMPLE02'`,
+        `const key1 = 'AKIA${"Q7WXR2MN4PLK6ZTB"}'`,
+        `const key2 = 'AKIA${"M3NXP8QL5RWK2YVD"}'`,
       ].join('\n')
     )
     const findings = secretsCheck.run([file], DEFAULT_POLICY)
@@ -328,7 +328,8 @@ describe('secretsCheck — Supabase service-role key (free-tier secret gaps)', (
     expect(f!.line).toBe(3)
     expect(f!.blocking).toBe(true)
     // Evidence must be redacted, never the full key
-    expect(f!.evidence).not.toContain('service_role')
+    expect(f!.evidence).toMatch(/^supabase_service_role_key, \d+ characters, value hidden$/)
+    expect(f!.evidence).not.toContain(SERVICE_ROLE_JWT.slice(0, 12))
   })
 
   it('precision guard: the anon-role JWT (public by design) is NEVER flagged as service-role', () => {

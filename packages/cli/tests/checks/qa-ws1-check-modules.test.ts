@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { secretsCheck } from '../../src/checks/secrets.js'
+import { secretsCheck, checkSecretsWithStats } from '../../src/checks/secrets.js'
 import { authCheck } from '../../src/checks/auth.js'
 import { databaseCheck } from '../../src/checks/database.js'
 import { deploymentCheck } from '../../src/checks/deployment.js'
@@ -453,10 +453,11 @@ describe('DEPLOY-002: 0.0.0.0 network binding (GAP — NOT IMPLEMENTED)', () => 
 // ---------------------------------------------------------------------------
 
 describe('PAY-001: Stripe test key in production code', () => {
-  it('secrets module catches sk_test_ key as hardcoded_secret', () => {
+  it('secrets module skips a sk_test_ key as a documented test value (counted, never a finding)', () => {
     const f = file('lib/payments.ts', `const stripe = new Stripe('sk_test_abcdefghijklmnopqrstuvwx')`)
     const findings = secretsCheck.run([f], DEFAULT_POLICY)
-    expect(findings.some(x => x.id === 'hardcoded_secret')).toBe(true)
+    expect(findings.some(x => x.id === 'hardcoded_secret')).toBe(false)
+    expect(checkSecretsWithStats([f], DEFAULT_POLICY).ignoredTestValues).toBe(1)
   })
 
   it('payments module does NOT have a dedicated sk_test_ check (secrets module handles it)', () => {
