@@ -14,6 +14,7 @@ import { configFilePath, getConfigDir, noticeShown, readInstallId, resetInstallI
 const DOCS = goLink('telemetry')
 
 const SOURCE_TEXT: Record<TelemetryDecision['source'], string> = {
+  'safe-mode': 'safe mode is on (--safe-mode or SHIPGUARD_SAFE_MODE=1)',
   'env:SHIPGUARD_TELEMETRY': 'SHIPGUARD_TELEMETRY=0 is set in the environment',
   'env:DO_NOT_TRACK': 'DO_NOT_TRACK=1 is set in the environment',
   'user-config': 'turned off with `shipguard telemetry disable`',
@@ -68,7 +69,7 @@ export function telemetryCommand(): Command {
           (installId ? '' : ' (a random id is made on the first ping outside CI)') +
           (detectCi() ? ' (CI detected: no install id is created or sent)' : ''),
       )
-      console.log(`Sends:       CLI version, verdict, duration bucket, CI flag, build type, install id (null in CI). Never code, paths, repo names or your account.`)
+      console.log(`Sends:       CLI version, build type, CI flag, install id (null in CI); for a scan also verdict, duration bucket, which agent runs it, terminal or not, output kind, which gate ran it (claude, git, ci or none). Never code, paths, repo names or your account.`)
       console.log(`Turn off:    SHIPGUARD_TELEMETRY=0 | DO_NOT_TRACK=1 | shipguard telemetry disable`)
       console.log(`Inspect:     SHIPGUARD_TELEMETRY_DEBUG=1 shipguard scan   (prints the exact payload, sends nothing)`)
       console.log(`Details:     ${DOCS}`)

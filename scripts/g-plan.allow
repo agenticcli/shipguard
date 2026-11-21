@@ -1,0 +1,7 @@
+# G-PLAN exact-phrase allowlist: `path-suffix|exact phrase`. A hit is dropped only when the file ends with the
+# path AND the line contains the phrase. Keep each entry to one legit use; never allow a whole word or a price.
+# "Google Cloud" is the provider's own name in the Google API key rule text (checks/secrets.ts); shown to the user as-is.
+packages/cli/src/checks/secrets.ts|access Google Cloud services or Google Maps
+packages/cli/src/checks/secrets.ts|Restrict key usage in the Google Cloud Console
+# Comment in core/verdict.ts about the headline; the file belongs to W2a, which can reword it and delete this line.
+packages/cli/src/core/verdict.ts|release gate can produce
