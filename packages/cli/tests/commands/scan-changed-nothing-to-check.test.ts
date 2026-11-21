@@ -56,8 +56,8 @@ describe('--changed with nothing to check', () => {
       expect(r.json!.degraded).toBe(true)
     }
     const q = await runCli(['scan', dir, '--changed', '--quiet'])
-    expect(q.stdout).not.toMatch(/SAFE TO SHIP/)
-    expect(q.stdout).toMatch(/DO NOT SHIP.*nothing-scanned=yes/)
+    expect(q.stdout).not.toMatch(/SAFE_TO_SHIP/)
+    expect(q.stdout).toMatch(/verdict=DO_NOT_SHIP .*incomplete=yes/)
   })
 
   it('second run (ShipGuard\'s own .shipguard files now show up as changed): same honest result', async () => {
@@ -74,7 +74,7 @@ describe('--changed with nothing to check', () => {
     const dir = cleanRepo()
     const human = await runCli(['scan', dir, '--changed'])
     const all = human.stdout + human.stderr
-    expect(all).toMatch(/Nothing was scanned: no files changed\. This is NOT a safe-to-ship result/)
+    expect(all).toMatch(/Nothing was scanned: git reports no changed files\. This is not a safe-to-ship result\./)
     expect(all).not.toMatch(/No findings detected — clean scan/)
     expect(all).not.toMatch(/SAFE TO SHIP/)
   })
@@ -83,11 +83,11 @@ describe('--changed with nothing to check', () => {
     const dir = mkTree({ 'node_modules/p/i.js': 'x' })
     const human = await runCli(['scan', dir])
     const all = human.stdout + human.stderr
-    expect(all).toMatch(/Nothing to scan: no readable files were found\. This is NOT a clean result/)
+    expect(all).toMatch(/cannot clear this repo: nothing was scanned \(no readable files were found\)/)
     expect(all).not.toMatch(/clean scan/)
     expect(all).toMatch(/DO NOT SHIP/)
     const quiet = await runCli(['scan', dir, '--quiet'])
-    expect(quiet.stdout).toMatch(/DO NOT SHIP.*nothing-scanned=yes/)
+    expect(quiet.stdout).toMatch(/verdict=DO_NOT_SHIP .*incomplete=yes/)
     const json = await scanJson(dir)
     expect(json.json!.recommendation).toBe('DO_NOT_SHIP')
     expect(degradeCodes(json.json)).toEqual(['NO_FILES_SCANNED'])

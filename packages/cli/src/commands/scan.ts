@@ -9,19 +9,17 @@ import { isGitRepo } from '../core/git.js'
 import { logger } from '../utils/logger.js'
 import { goLink } from '../core/links.js'
 import {
-  verdictPanel,
-  renderFindingsSummary,
-  renderNothingToCheck,
-  renderNothingScanned,
-  findingsByCategoryTable,
-  coverageLine,
-  coverageSummaryLine,
+  renderScanScreen,
+  renderQuietLine,
+  generalRuleCountOrNull,
   welcomeBanner,
   shouldShowProgress,
   renderProgressBar,
-  quietVerdict,
-  actionFooter,
 } from '../core/render.js'
+import type { RulesRan } from '../core/render.js'
+import { collectNotScanned } from '../core/not-scanned.js'
+import { probeGate, detectNextAgent, detectManifest } from '../core/screen-context.js'
+
 import { EXIT_CODES, DEFAULT_REPORT_FILE } from '@agenticcli/shared'
 import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation } from '@agenticcli/shared'
 import { recordScanHistory, resolveScanId } from '../core/history/index.js'
@@ -704,18 +702,6 @@ async function runScan(ctx: {
     process.stderr.write('\r\x1b[K')  // Clear the progress bar line
   }
 
-  // Extract internal metadata (human output only) before building the public result
-  const coverage = result.coverage
-  const skippedTooLarge = coverage?.skipped.tooLarge ?? 0
-  const skippedTooLargeFiles = coverage?.files.tooLarge ?? []
-  const skippedBinary = coverage?.skipped.binary ?? 0
-  const skippedBinaryFiles = coverage?.files.binary ?? []
-  const skippedSymlinks = coverage?.skipped.symlink ?? 0
-  const skippedSymlinkFiles = coverage?.files.symlink ?? []
-  const skippedUnknownBinary = coverage?.skipped.unknownBinary ?? 0
-  const skippedUnknownBinaryFiles = coverage?.files.unknownBinary ?? []
-  const truncatedBy = coverage?.truncated || undefined
-
   // Populate new ScanResult fields
   // Bumped 4 → 5 (recommendations #1/#2/#8): the verdict is now fail-closed and the
   // duplicate `riskScore.recommendation` is a deprecated mirror; receipt fields
@@ -803,12 +789,26 @@ async function runScan(ctx: {
   // path, so the path has to exist by the time the panel is built. The write is
   // unconditional-on-request and independent of output mode, exactly as before.
   // -----------------------------------------------------------------------
+  // Facts shared by the report and the screen (one source, so they never disagree).
+  const generalRuleCount = generalRuleCountOrNull()
+  const screenRulesRan: RulesRan = opts.pro && proRules && !degraded
+    ? { kind: 'rulebook', count: proRules.length }
+    : degraded && proFetchDegradeReason
+      ? { kind: 'fallback', code: 'RULEBOOK_UNREACHABLE' }
+      : { kind: 'general' }
+  const notScannedSummary = collectNotScanned(result, { cwd, maxFileSizeBytes: policy.limits?.maxFileSizeBytes })
+  const detectedStackNames = detectedFrameworks.map((f) => f.name)
   const shouldReport = scanOptions.generateReport || policy.scan.generate_report
   let reportPaths: Awaited<ReturnType<typeof generateReport>> | undefined
   if (shouldReport) {
     const reportElapsedMs = Date.now() - startTime
     try {
-      reportPaths = await generateReport(result, scanOptions.reportPath, reportElapsedMs)
+      reportPaths = await generateReport(result, scanOptions.reportPath, reportElapsedMs, {
+        stacks: detectedStackNames,
+        generalRuleCount,
+        rulesRan: screenRulesRan,
+        notScanned: notScannedSummary,
+      })
     } catch (error) {
       // Loud. A failed report write never changes the verdict or the exit
       // code, but it is never swallowed either.
@@ -837,7 +837,6 @@ async function runScan(ctx: {
     Boolean(opts.checkRegressions) && exitCode === EXIT_CODES.SAFE && (result.regressions?.length ?? 0) > 0
   if (regressionBlocks) exitCode = EXIT_CODES.BLOCKED
   const notSafe = result.riskScore.blockingCount > 0 || effectiveRecommendation(result) === 'DO_NOT_SHIP'
-  const showExitNotice = exitCode === EXIT_CODES.SAFE && !scanOptions.strict && notSafe
   publicResult.exitMeaning = exitMeaning({ exitCode, strict: scanOptions.strict, notSafe, regressionBlocks })
 
   // Machine-readable output — exactly one format emitted to stdout
@@ -846,101 +845,24 @@ async function runScan(ctx: {
   } else if (scanOptions.json) {
     console.log(JSON.stringify(publicResult, null, 2))
   } else if (quiet) {
-    // --quiet mode: one-line verdict only
-    console.log(quietVerdict(result, scanOptions.strict))
+    // --quiet mode: one `key=value` line (spec 01); nothing else on stdout.
+    console.log(renderQuietLine({
+      result,
+      notScanned: notScannedSummary.fileCount,
+      fallbackCode: degraded && proFetchDegradeReason ? 'RULEBOOK_UNREACHABLE' : null,
+      reportPath: reportPaths?.mdPath ?? null,
+    }))
   } else {
     // -----------------------------------------------------------------------
-    // Verbose human output (default) — rich, gamified, full scan experience
+    // Human screen (spec 01): verdict first, at most 25 lines, same bytes piped or on a terminal.
     // -----------------------------------------------------------------------
     const elapsedMs = Date.now() - startTime
 
-    // First-run welcome banner (TTY only, not in --json/--sarif/--quiet)
+    // First-run welcome text (TTY only, not in --json/--sarif/--quiet)
     const isTTY = Boolean(process.stdout.isTTY)
     if (isTTY) {
       const banner = welcomeBanner()
       if (banner) console.log(banner)
-    }
-
-    // Findings summary — categorized by severity + confidence/FP labels
-    if (result.coverage?.changed?.nothingToCheck) {
-      console.log(renderNothingToCheck())
-    } else if (coverage && coverage.scanned === 0) {
-      console.log(renderNothingScanned())
-    } else {
-      console.log(renderFindingsSummary(result.findings))
-    }
-
-    // Category breakdown table
-    if (result.findings.length > 0) {
-      console.log(findingsByCategoryTable(result.findings))
-      console.log('')
-    }
-
-    // Oversized-file skip is a DEGRADED condition — LOUD warning that NAMES the
-    // file(s) so the user knows exactly what was NOT scanned (oversized-file skip). A 180 MB generated/minified bundle hiding a secret
-    // must never be silently dropped into a SAFE verdict.
-    if (skippedTooLarge > 0) {
-      const named = skippedTooLargeFiles.slice(0, 10).join(', ')
-      const more = skippedTooLarge > skippedTooLargeFiles.length || skippedTooLargeFiles.length > 10
-        ? ` (and others)`
-        : ''
-      logger.warn(
-        `Scan INCOMPLETE: ${skippedTooLarge} file(s) skipped for exceeding the size limit — NOT scanned: ${named}${more}`
-      )
-      logger.warn(
-        `These files were not checked. Split/minify-exclude them, or raise \`limits.maxFileSizeBytes\` in shipguard.policy.yml. Verdict is degraded — see \`degraded\`/\`degradedReasons\` in --json output (does not change the exit code).`
-      )
-    }
-
-    // Symlink skip is a DEGRADED condition — LOUD warning that NAMES the symlink(s)
-    // so the user knows exactly what subtree was NOT scanned (symlink reporting). A
-    // symlinked `src/` (or any symlinked file/dir) can hide an entire project's real
-    // source from the scan with no other signal; followSymbolicLinks:false itself is
-    // correct and unchanged  — what changed is that
-    // this is no longer silent.
-    if (skippedSymlinks > 0) {
-      const named = skippedSymlinkFiles.slice(0, 10).join(', ')
-      const more = skippedSymlinks > skippedSymlinkFiles.length || skippedSymlinkFiles.length > 10
-        ? ` (and others)`
-        : ''
-      logger.warn(
-        `Scan INCOMPLETE: ${skippedSymlinks} symlink(s) not followed — NOT scanned: ${named}${more}`
-      )
-      logger.warn(
-        `ShipGuard never follows symlinks (privacy moat — a symlink could point outside your project). If this path holds real source, replace the symlink with the real directory/file to have it scanned. Verdict is degraded — see \`degraded\`/\`degradedReasons\` in --json output (does not change the exit code).`
-      )
-    }
-
-    // Files with NUL/control data that nothing explains and that show no sign of a known binary
-    // format: DEGRADED, named, with the fix.
-    if (skippedUnknownBinary > 0) {
-      const named = skippedUnknownBinaryFiles.slice(0, 10).join(', ')
-      const more = skippedUnknownBinary > Math.min(10, skippedUnknownBinaryFiles.length) ? ' (and others)' : ''
-      logger.warn(
-        `Scan INCOMPLETE: ${skippedUnknownBinary} file(s) with unexplained binary data (unknown binary) were NOT scanned: ${named}${more}`
-      )
-      logger.warn(
-        `If these files are safe, add their paths to \`ignore.paths\` in shipguard.policy.yml. Verdict is degraded — see \`degradedReasons\` in --json output.`
-      )
-    }
-
-    if (coverage?.changed?.nothingToCheck) {
-      logger.warn('Nothing to check: git reports no changed files, so nothing was scanned (verdict: not safe, scan incomplete). Run `shipguard scan` to check the whole tree.')
-    } else if (coverage && coverage.scanned === 0) {
-      logger.warn(
-        `Nothing was scanned (0 of ${coverage.discovered} candidate file(s) could be read). A scan that read nothing is DO_NOT_SHIP, never safe.`
-      )
-    }
-
-    // Binary skips are NORMAL (no source to scan) — informational only, but named
-    // (symlink reporting: this file's own docs already admitted binary skips happen,
-    // never named which files, unlike every other skip category).
-    if (skippedBinary > 0) {
-      const named = skippedBinaryFiles.slice(0, 10).join(', ')
-      const more = skippedBinary > skippedBinaryFiles.length || skippedBinaryFiles.length > 10
-        ? ` (and others)`
-        : ''
-      logger.info(`Files skipped (binary, normal): ${skippedBinary} — ${named}${more}`)
     }
 
     if (creditsRemaining !== undefined) {
@@ -951,50 +873,27 @@ async function runScan(ctx: {
       logger.info('Retry detected — reused the prior scanId (no double charge for this retry)')
     }
 
-    if (degraded) {
-      logger.warn('Scan ran in degraded mode — the full rulebook was unavailable')
-    }
-
-    // Truncation warning — loud, actionable
-    if (truncatedBy) {
-      logger.warn(
-        `Scan was truncated at ${truncatedBy.by}: ${truncatedBy.notReached} file(s) were never reached. ` +
-        `Results are INCOMPLETE — raise the limit or narrow the scan with \`ignore.paths\` in \`shipguard.policy.yml\`.`
-      )
-      logger.warn(`Docs: ${goLink('docs')}`)
-    }
-
-    // What was actually scanned, skipped and ignored — printed on EVERY run, clean or not.
-    if (coverage) console.log(coverageSummaryLine(coverage))
-
-    // Coverage line — honest statement of what was checked
-    console.log(coverageLine())
-    console.log('')
-
-    // End-of-scan action footer — copy-paste commands, zero learning curve.
-    // Rec #4: tips print BEFORE the panel. They used to sit after it, so the last
-    // thing on screen was a list of suggestions and the verdict was ~70 lines up.
-    const topRuleId = result.findings.length > 0 ? result.findings[0].id : undefined
-    // isLoggedIn: heuristic — if pro rules loaded successfully we are authenticated
-    const isLoggedIn = Boolean(opts.pro && !degraded)
-    console.log(actionFooter({
-      hasFindings: result.findings.length > 0,
-      topRuleId,
-      isLoggedIn,
-    }))
-
-    // Gamified verdict panel — LAST (rec #4). Carries the verdict, and now the report
-    // path too, so nothing prints after it that could contradict its glyph.
-    console.log(verdictPanel(
+    const gate = probeGate(cwd)
+    console.log(renderScanScreen({
       result,
       elapsedMs,
-      skippedTooLarge + skippedBinary + skippedSymlinks + skippedUnknownBinary,
-      result.findings,
-      scanOptions.strict,
-      reportPaths,
-    ))
-    // The exit code is deliberately verdict-neutral: say so on the last line, so a 0 is never read as "safe".
-    if (showExitNotice) console.log(EXIT_NOTICE)
+      strict: scanOptions.strict,
+      exitCode,
+      reportPath: reportPaths?.mdPath ?? null,
+      stacks: detectedStackNames,
+      manifest: detectManifest(cwd),
+      generalRuleCount,
+      rulesRan: screenRulesRan,
+      notScanned: notScannedSummary,
+      next: {
+        agent: detectNextAgent(cwd),
+        gate: gate.state,
+        gateLabel: gate.label,
+        suggestionShownRecently: false, // wired to the nag counter once W1a's module has merged
+      },
+      columns: isTTY ? (process.stdout.columns ?? 100) : undefined,
+      nothingToCheck: Boolean(result.coverage?.changed?.nothingToCheck),
+    }))
   }
 
   // Anonymous opt-out ping — privacy-preserving. Started here so the request overlaps with the

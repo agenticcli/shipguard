@@ -115,7 +115,7 @@ describe('schema v3 migration under concurrent opens', () => {
     const versions = (db.prepare('SELECT schema_version FROM schema_meta ORDER BY schema_version').all() as Array<{ schema_version: number }>).map((r) => r.schema_version)
     db.close()
 
-    expect(versions).toEqual([1, 2, 3]) // migration 3 recorded once, not once per process
+    expect(versions).toEqual([1, 2, 3, 4]) // each migration recorded once, not once per process
     const expected = olds.map((o) => keyFindingIdentity(salt.salt, o))
     const wrong = keys.filter((k, i) => k !== expected[i]).length
     expect(wrong, `${wrong} of ${keys.length} rows were keyed more than once`).toBe(0)

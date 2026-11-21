@@ -49,9 +49,9 @@ describe('coverage in --json', () => {
     expect(JSON.parse(run.stdout).version).toBeDefined()
   })
 
-  it('human output prints the Coverage line on a CLEAN scan and names each skip category', async () => {
+  it('human output states the file count on a CLEAN scan and names each unscanned file with its reason', async () => {
     const clean = await runCli(['scan', mkTree({ 'a.js': 'x\n' })])
-    expect(clean.stdout + clean.stderr).toMatch(/Coverage: scanned 1 of 1 files/)
+    expect(clean.stdout.split('\n')[0]).toMatch(/^SAFE TO SHIP · 0 findings · 1 file, \d+ general rules, /)
     const b = noise(200, 5)
     b[0] = 0x41
     b[1] = 0
@@ -59,8 +59,8 @@ describe('coverage in --json', () => {
     b[3] = 0
     const mixed = await runCli(['scan', mkTree({ 'a.js': 'x\n', 'k.dat': b })])
     const text = mixed.stdout + mixed.stderr
-    expect(text).toMatch(/Coverage: scanned 1 of 2 files/)
-    expect(text).toMatch(/unknown/i)
+    expect(mixed.stdout.split('\n')[0]).toMatch(/^DO NOT SHIP · cannot clear this repo: 1 of 2 files were not scanned/)
+    expect(text).toMatch(/unknown format/i)
     expect(text).toContain('k.dat')
   })
 })

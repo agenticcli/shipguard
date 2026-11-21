@@ -1,11 +1,13 @@
 /**
- * render.ts — Pure rendering functions for the verbose-by-default gamified scan output.
+ * render.ts: pure rendering functions for the scan screen (spec 01) and the first-run text.
  *
- * All functions return strings (never print directly) so they are:
- *  - Unit-testable without mocking process/console
- *  - Composable in scan.ts behind TTY/quiet/machine-output gates
+ * All functions return strings (never print directly), so they are unit-testable without mocking
+ * process/console. ANSI colour via chalk only (chalk turns itself off when piped or with NO_COLOR, so
+ * the bytes are the same piped or on a terminal, except colour). No new dependencies.
  *
- * ANSI color via chalk only. No new dependencies.
+ * The screen (spec 01): line 1 of stdout is the verdict; at most 25 lines; no box art, no emoji, no
+ * bar charts, no tips. Plan facts never appear here: the Free-to-Pro lines come from screen-plan-lines.ts
+ * and are built from the one verified server block.
  */
 
 import chalk from 'chalk'
@@ -14,9 +16,16 @@ import { ensureSecureDir, writeSecureFileSync } from '../utils/secure-fs.js'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { goLink } from './links.js'
-import type { Finding, ScanResult, Confidence, ScanCoverage } from '@agenticcli/shared'
-import { effectiveRecommendation } from './verdict.js'
-import { bundledRulesMeta } from './bundled-rules.js'
+import type { Finding, ScanResult, Recommendation } from '@agenticcli/shared'
+import { effectiveRecommendation, VERDICT_WORDS } from './verdict.js'
+import { fixGuidance, firstSentence, orderFindings, realStacks, stackDisplayName } from './fix-guidance.js'
+import type { NotScannedSummary, NotScannedEntry } from './not-scanned.js'
+import type { GateState, NextAgent } from './screen-context.js'
+import { generalRulesText, rulesRanLines } from './rules-ran.js'
+import type { RulesRan } from './rules-ran.js'
+export { rulesRanLines } from './rules-ran.js'
+export type { RulesRan } from './rules-ran.js'
+export { generalRuleCountOrNull } from './general-rule-count.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -27,31 +36,19 @@ export const SITE_URL = goLink('site')
 export const PRICING_URL = goLink('pricing')
 const ISSUES_URL = 'https://github.com/agenticcli/shipguard/issues'
 
-const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const
+/** Hard budget for the human screen (spec 01 rule 5). */
+export const SCREEN_MAX_LINES = 25
 
-const BOX_WIDTH = 78  // fits 80-col terminal with 1-char margin
-
-// Box-drawing chars
-const H = '─'
-const V = '│'
-const TL = '╭'
-const TR = '╮'
-const BL = '╰'
-const BR = '╯'
-const SECTION = '├' + H.repeat(BOX_WIDTH - 2) + '┤'
+/**
+ * The ONE shared data-flow line (spec 06). Every setup, status and first-run screen uses it by
+ * reference; no screen keeps its own wording.
+ */
+export const DATA_FLOW_LINE =
+  'Code never leaves your machine. Rules download from the rulebook; a signed-out scan may fetch public rule counts for your stack names once a week; usage-ping and request details: shipguard telemetry status.'
 
 // Progress bar chars
 const BAR_FULL = '█'
 const BAR_EMPTY = '░'
-
-// Severity icons — used throughout output
-export const SEVERITY_ICONS: Record<string, string> = {
-  critical: '🛑',
-  high:     '⛔',
-  medium:   '⚠️',
-  low:      '🐛',
-  info:     'ℹ️',
-}
 
 // ---------------------------------------------------------------------------
 // Spinner frames (for module-level progress when file count unknown)
@@ -70,20 +67,19 @@ export function spinnerFrame(tick: number): string {
 /**
  * Render the branded quickstart screen.
  * TTY gets chalk color; non-TTY gets plain text (clean pipes/CI).
+ * The `status` line is the server-neutral one from spec 05 (no credit wording).
  */
 export function quickstartHelp(isTTY: boolean): string {
   const lines: string[] = []
 
   if (isTTY) {
     lines.push('')
-    lines.push(chalk.bold.cyan('  ╭─────────────────────────────────────────────────────────────────────────╮'))
-    lines.push(chalk.bold.cyan('  │') + chalk.bold('  🛡  ShipGuard by AgenticCLI                                          ') + chalk.bold.cyan('  │'))
-    lines.push(chalk.bold.cyan('  │') + '     The security scanner your coding agent runs before every commit.  ' + chalk.bold.cyan('  │'))
-    lines.push(chalk.bold.cyan('  ╰─────────────────────────────────────────────────────────────────────────╯'))
+    lines.push(chalk.bold('  ShipGuard by AgenticCLI'))
+    lines.push('  The security scanner your coding agent runs before every commit.')
     lines.push('')
     lines.push(chalk.bold('  Get started in 2 commands:'))
     lines.push('')
-    lines.push(`    ${chalk.green('npx @agenticcli/shipguard scan')}    ${chalk.dim('# zero install — scan right now')}`)
+    lines.push(`    ${chalk.green('npx @agenticcli/shipguard scan')}    ${chalk.dim('# zero install: scan right now')}`)
     lines.push(`    ${chalk.green('shipguard scan --strict')}           ${chalk.dim('# CI mode: exit 1 on blocking issues')}`)
     lines.push('')
     lines.push(chalk.bold('  Commands:'))
@@ -92,7 +88,12 @@ export function quickstartHelp(isTTY: boolean): string {
     lines.push(`    ${chalk.cyan('init')}               Generate a .shipguard.yml policy file`)
     lines.push(`    ${chalk.cyan('login')}              Sign in to run rulebook scans`)
     lines.push(`    ${chalk.cyan('logout')}             Remove saved credentials`)
-    lines.push(`    ${chalk.cyan('status')}             Show auth status and credits`)
+    lines.push(`    ${chalk.cyan('status')}             Sign-in, plan and usage, as the server reports them`)
+    lines.push(`    ${chalk.cyan('upgrade')}            What the full rulebook would add for this repo`)
+    lines.push(`    ${chalk.cyan('setup')}              Set up the gate for your coding agent`)
+    lines.push(`    ${chalk.cyan('uninstall')}          Remove what setup wrote`)
+    lines.push(`    ${chalk.cyan('gate')}               Run the gate (used by hooks)`)
+    lines.push(`    ${chalk.cyan('ignore')}             Ignore a finding or file, with a reason`)
     lines.push(`    ${chalk.cyan('hook')}      ${chalk.dim('--target')} Install the hook at the merge boundary`)
     lines.push(`    ${chalk.cyan('schema')}    ${chalk.dim('--json')}   Print the machine-readable scan contract`)
     lines.push(`    ${chalk.cyan('feedback')}           Where to send feedback (GitHub issues)`)
@@ -100,11 +101,11 @@ export function quickstartHelp(isTTY: boolean): string {
     lines.push(`    ${chalk.cyan('telemetry')} ${chalk.dim('status')}   Show or change the pseudonymous usage ping`)
     lines.push(`    ${chalk.cyan('help')}  ${chalk.dim('/ ?')}        Show this screen`)
     lines.push('')
-    lines.push(chalk.bold('  Exit codes (verdict-neutral — read the JSON for the verdict):'))
-    lines.push(`    ${chalk.green('0')}  Scan completed — verdict is in the JSON \`recommendation\` field`)
-    lines.push(`    ${chalk.yellow('1')}  Blocked — ONLY with --strict, on blocking findings or an unfinished scan`)
+    lines.push(chalk.bold('  Exit codes (verdict-neutral: read the JSON for the verdict):'))
+    lines.push(`    ${chalk.green('0')}  Scan completed: the verdict is in the JSON \`recommendation\` field`)
+    lines.push(`    ${chalk.yellow('1')}  Blocked: ONLY with --strict, on blocking findings or an unfinished scan`)
     lines.push(`    ${chalk.red('2')}  Config error`)
-    lines.push(`    ${chalk.red('3')}  Runtime error — scan could not meaningfully run`)
+    lines.push(`    ${chalk.red('3')}  Runtime error: scan could not meaningfully run`)
     lines.push('')
     lines.push(`  ${chalk.dim('Docs')}    ${chalk.underline(DOCS_URL)}`)
     lines.push(`  ${chalk.dim('Site')}    ${chalk.underline(SITE_URL)}`)
@@ -127,7 +128,12 @@ export function quickstartHelp(isTTY: boolean): string {
     lines.push('    init                  Generate policy file')
     lines.push('    login                 Authenticate')
     lines.push('    logout                Remove credentials')
-    lines.push('    status                Auth status + credits')
+    lines.push('    status                Sign-in, plan and usage, as the server reports them')
+    lines.push('    upgrade               What the full rulebook would add for this repo')
+    lines.push('    setup                 Set up the gate for your coding agent')
+    lines.push('    uninstall             Remove what setup wrote')
+    lines.push('    gate                  Run the gate (used by hooks)')
+    lines.push('    ignore                Ignore a finding or file, with a reason')
     lines.push('    hook      --target     Install the hook at the merge boundary')
     lines.push('    schema    --json       Machine-readable scan contract')
     lines.push('    feedback               Where to send feedback (GitHub issues)')
@@ -145,23 +151,6 @@ export function quickstartHelp(isTTY: boolean): string {
   }
 
   return lines.join('\n')
-}
-
-// ---------------------------------------------------------------------------
-// False-positive / confidence label
-// ---------------------------------------------------------------------------
-
-/**
- * Map a finding's confidence level to a human-readable false-positive likelihood label.
- * Undefined/null/unrecognized → "unrated"
- */
-export function findingFpLabel(confidence: Confidence | undefined | null): string {
-  switch (confidence) {
-    case 'HIGH':   return 'low false-positive chance'
-    case 'MEDIUM': return 'moderate — review'
-    case 'LOW':    return 'higher false-positive — verify manually'
-    default:       return 'unrated'
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -213,462 +202,376 @@ export function shouldShowProgress(gates: ProgressGates): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Findings summary (grouped by severity, with confidence/FP labels)
+// The scan screen (spec 01)
 // ---------------------------------------------------------------------------
 
-const SEVERITY_COLORS: Record<string, (s: string) => string> = {
-  critical: chalk.bgRed.white,
-  high:     chalk.red,
-  medium:   chalk.yellow,
-  low:      chalk.blue,
-  info:     chalk.gray,
+export interface NextContext {
+  /** The agent running the scan, else repo signals; null = none. */
+  agent: NextAgent | null
+  gate: GateState
+  /** e.g. `Claude project hook v2` (only printed for a verified, current gate). */
+  gateLabel?: string | null
+  /** The setup suggestion was already shown in the last 7 days (screen rule only). */
+  suggestionShownRecently: boolean
 }
 
-// Local alias — SEVERITY_ICONS is already exported at top of file
-
-/** `--changed` found nothing changed (see coverage.changed.nothingToCheck): say so, never "clean scan" and never safe. */
-export function renderNothingToCheck(): string {
-  return chalk.yellow('  ⚠  Nothing was scanned: no files changed. This is NOT a safe-to-ship result.')
+export interface ScanScreenInput {
+  result: ScanResult
+  elapsedMs: number
+  strict: boolean
+  /** Process exit code of this run; 1 adds the last-line contract under --strict. */
+  exitCode?: number
+  /** The one re-run command (spec 01 rule 7); defaults to the bare form. */
+  rerunCommand?: string
+  /** Display path of the report; null/undefined = no report line. */
+  reportPath?: string | null
+  /** Detected framework names (lowercase; 'generic' = none recognised). */
+  stacks?: readonly string[]
+  /** Manifest that made the folder a project; used by the `Stack:` honesty line. */
+  manifest?: string | null
+  /** Number of bundled general rules, counted at run time (never typed). */
+  generalRuleCount: number | null
+  rulesRan?: RulesRan
+  notScanned?: NotScannedSummary
+  next?: NextContext
+  /** Free-to-Pro lines already decided by screen-plan-lines.ts; printed after `Rules ran:`. */
+  planLines?: readonly string[]
+  /** Name of the plan for the `[<plan> rule]` tag; null = `[rulebook rule]`. */
+  planLabel?: string | null
+  /** Test values ignored in this scan (W5 counts them). */
+  ignoredTestValues?: number
+  /** Fix loop (spec 04): the "since the last run" header and the repeat line above `Next:`. */
+  fixLoop?: { fixed: number; added: number; repeatLine?: string | null }
+  /** Terminal width when stdout is a terminal; undefined = piped (no wrapping at all). */
+  columns?: number | null
+  /** W5 masking seam: `32 chars, value hidden` for a secret finding; null = just `value hidden`. */
+  secretLabel?: (f: Finding) => string | null
+  /** `--changed` found nothing changed. */
+  nothingToCheck?: boolean
 }
 
-/** A scan that read zero files (empty folder, everything ignored): say so, never "clean scan". */
-export function renderNothingScanned(): string {
-  return chalk.yellow('  ⚠  Nothing to scan: no readable files were found. This is NOT a clean result.')
+const DEFAULT_RERUN = 'shipguard scan --strict'
+
+
+function formatElapsed(ms: number): string {
+  return `${(Math.max(0, ms) / 1000).toFixed(1)}s`
+}
+
+function plural(n: number, one: string, many: string): string {
+  return n === 1 ? `${n} ${one}` : `${n} ${many}`
+}
+
+/** Tokens glue everything inside parentheses, so a call like `f(a, b)` is never split. */
+function tokens(text: string): string[] {
+  const out: string[] = []
+  let cur = ''
+  let depth = 0
+  for (const ch of text) {
+    if (ch === '(') depth++
+    if (ch === ')' && depth > 0) depth--
+    if (ch === ' ' && depth === 0) {
+      if (cur) out.push(cur)
+      cur = ''
+    } else cur += ch
+  }
+  if (cur) out.push(cur)
+  return out
 }
 
 /**
- * Render grouped findings list with severity headers and FP labels.
- * Returns empty-state message if no findings.
+ * Terminal width rule (spec 01 rule 8): wrap prose at word boundaries with a 4-space hanging indent;
+ * a path, `file:line` or command word is never split. Piped (`columns` undefined): never wrap.
  */
-export function renderFindingsSummary(findings: Finding[]): string {
-  if (findings.length === 0) {
-    return chalk.green('  ✓  No findings detected — clean scan.')
+export function wrapLine(line: string, columns: number | null | undefined): string[] {
+  if (columns == null) return [line]
+  const width = Math.min(100, Math.max(60, columns))
+  // eslint-disable-next-line no-control-regex
+  const visible = (t: string): number => t.replace(/\x1b\[[0-9;]*m/g, '').length
+  if (visible(line) <= width) return [line]
+  const lead = /^ */.exec(line)![0]
+  const hang = lead + '    '
+  const words = tokens(line.slice(lead.length))
+  const out: string[] = []
+  let cur = lead
+  for (const w of words) {
+    const candidate = cur.trim().length === 0 ? cur + w : `${cur} ${w}`
+    if (visible(candidate) > width && cur.trim().length > 0) {
+      out.push(cur)
+      cur = hang + w
+    } else cur = candidate
+  }
+  out.push(cur)
+  return out
+}
+
+function sevColor(sev: string, text: string): string {
+  if (sev === 'critical') return chalk.bold.red(text)
+  if (sev === 'high') return chalk.red(text)
+  if (sev === 'medium') return chalk.yellow(text)
+  return chalk.blue(text)
+}
+
+function verdictColor(rec: Recommendation, text: string): string {
+  if (rec === 'SAFE_TO_SHIP') return chalk.bold.green(text)
+  if (rec === 'REVIEW_BEFORE_SHIP') return chalk.bold.yellow(text)
+  return chalk.bold.red(text)
+}
+
+type FindingWithOrigin = Finding & { origin?: string }
+
+function locOf(f: Finding): string {
+  return f.line != null ? `${f.file}:${f.line}` : f.file
+}
+
+function dropPeriod(s: string): string {
+  return s.replace(/[.]+$/, '')
+}
+
+function rulesCountText(r: RulesRan | undefined, generalRuleCount: number | null): string {
+  if (r && r.kind === 'rulebook') return `${r.count} rules`
+  if (r && r.kind === 'partial') return `${r.count} rules`
+  return generalRulesText(generalRuleCount)
+}
+
+function otherReasonPhrase(ns: NotScannedSummary | undefined, input: ScanScreenInput): string {
+  const cov = input.result.coverage
+  if (input.nothingToCheck) return 'nothing was scanned (git reports no changed files)'
+  if (cov && cov.scanned === 0) {
+    return cov.discovered === 0 ? 'nothing was scanned (no readable files were found)' : `nothing was scanned (0 of ${cov.discovered} files could be read)`
+  }
+  if (ns && ns.fileCount > 0 && cov) return `${ns.fileCount} of ${cov.discovered} files were not scanned`
+  if (ns && ns.entries.some((e) => e.code === 'OUTPUT_TRUNCATED')) return 'the scan stopped at a limit'
+  if (ns && ns.otherReasons.length > 0) return dropPeriod(ns.otherReasons[0].text)
+  return 'parts of this scan did not run'
+}
+
+function nextText(input: ScanScreenInput, rerun: string, blocking: number, nonBlocking: number, rec: Recommendation, incomplete: boolean): string {
+  const ns = input.notScanned
+  const files = ns?.fileCount ?? 0
+  if (input.nothingToCheck) return 'Next: check the whole tree: shipguard scan'
+  if (incomplete && blocking === 0) {
+    if (input.result.coverage && input.result.coverage.scanned === 0) return `Next: find out why no files were read, then: ${rerun}`
+    if (files > 0) return `Next: fix or exclude the ${plural(files, 'file', 'files')}, then: ${rerun}`
+    return `Next: fix what did not run (see above), then: ${rerun}`
+  }
+  if (blocking > 0) {
+    const extra = files > 0 ? ` and the ${plural(files, 'file', 'files')} not scanned` : ''
+    return `Next: fix the ${blocking} above${extra}, then: ${rerun}`
+  }
+  if (rec === 'REVIEW_BEFORE_SHIP' || nonBlocking > 0) {
+    const where = input.reportPath ?? 'the findings above'
+    return `Next: review the ${plural(nonBlocking, 'finding', 'findings')} in ${where} (nothing blocks a push), then: ${rerun}`
+  }
+  const c = input.next
+  const AGENT_NAME: Record<NextAgent, string> = { claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor', git: 'a git repository' }
+  if (c && c.gate === 'current') {
+    return `Next: nothing to fix. The gate is on (${c.gateLabel ?? 'project hook'}). Re-check after changes: ${rerun}`
+  }
+  if (c && c.gate === 'stale') {
+    return `Next: shipguard setup --agent ${c.agent ?? 'claude'}   (updates your older hook)`
+  }
+  if (c && c.suggestionShownRecently) return `Next: no gate is installed. Re-check after changes: ${rerun}`
+  if (c && c.agent) {
+    return `Next: shipguard setup --agent ${c.agent}   (${AGENT_NAME[c.agent]} detected, no gate installed yet; the gate blocks git push when ShipGuard finds a blocker)`
+  }
+  return 'Next: shipguard setup   (detects your agent and previews the changes)'
+}
+
+interface ScreenLimits {
+  fix: number
+  also: number
+  files: number
+}
+
+function buildScreen(input: ScanScreenInput, lim: ScreenLimits): string[] {
+  const { result } = input
+  const rec = effectiveRecommendation(result)
+  const word = VERDICT_WORDS[rec]
+  const rerun = input.rerunCommand ?? DEFAULT_RERUN
+  const stacks = input.stacks ?? []
+  const ns = input.notScanned
+  const incomplete = result.degraded === true
+  const blocking = result.riskScore.blockingCount
+  const total = result.riskScore.totalFindings
+  const cov = result.coverage
+  const files = cov ? cov.scanned : result.filesScanned
+  const terminal = input.columns != null
+  const out: string[] = []
+  const push = (line: string): void => {
+    for (const l of wrapLine(line, input.columns)) out.push(l)
   }
 
-  const lines: string[] = []
-
-  // Legend (once at the top)
-  lines.push(
-    chalk.dim(
-      '  Confidence legend: HIGH → low false-positive chance  ' +
-      'MEDIUM → moderate — review  LOW → higher false-positive'
-    )
-  )
-  lines.push('')
-
-  for (const sev of SEVERITY_ORDER) {
-    const group = findings.filter(f => f.severity === sev)
-    if (group.length === 0) continue
-
-    const colorFn = SEVERITY_COLORS[sev] || chalk.white
-    const icon = SEVERITY_ICONS[sev] ?? ''
-    lines.push(`  ${colorFn(` ${sev.toUpperCase().padEnd(8)} `)} ${icon} ${group.length} finding${group.length !== 1 ? 's' : ''}`)
-
-    for (const f of group) {
-      const location = f.line != null ? `${f.file}:${f.line}` : f.file
-      const fpLabel = chalk.dim(`[${findingFpLabel(f.confidence)}]`)
-      lines.push(`    ${chalk.bold(f.title)} — ${chalk.cyan(location)} ${fpLabel}`)
-      if (f.evidence) {
-        lines.push(`      Evidence: ${chalk.yellow(truncate(f.evidence, 100))}`)
-      }
-    }
-    lines.push('')
-  }
-
-  return lines.join('\n')
-}
-
-// ---------------------------------------------------------------------------
-// Category breakdown table
-// ---------------------------------------------------------------------------
-
-/**
- * Render a per-category (CheckCategory) breakdown table showing finding counts.
- */
-export function findingsByCategoryTable(findings: Finding[]): string {
-  if (findings.length === 0) {
-    return chalk.dim('  No findings across any category.')
-  }
-
-  // Count by category
-  const catCounts: Record<string, number> = {}
-  for (const f of findings) {
-    catCounts[f.category] = (catCounts[f.category] ?? 0) + 1
-  }
-
-  const lines: string[] = []
-  lines.push(chalk.bold('  Category breakdown:'))
-
-  for (const [cat, count] of Object.entries(catCounts).sort()) {
-    const bar = chalk.cyan('■'.repeat(Math.min(count, 10)))
-    lines.push(`    ${cat.padEnd(14)} ${String(count).padStart(3)}  ${bar}`)
-  }
-
-  return lines.join('\n')
-}
-
-// ---------------------------------------------------------------------------
-// Coverage line (honest false-negative / coverage statement)
-// ---------------------------------------------------------------------------
-
-/**
- * Render an honest coverage statement: what this offline scan actually applied, and
- * what signing in actually changes.
- *
- * WHAT THIS LINE USED TO SAY, AND WHY IT WAS REPLACED (2026-08-04)
- * ===============================================================
- * The previous text was:
- *
- *   "Deeper agentic rules available via Pro — some issue classes may be missed on free."
- *
- * It was false, and we had already published the fact that it was false. No agentic rule
- * exists at any tier: `grep -ri agentic` across all 255 corpus rule files returns zero
- * matches, and the Pro corpus's `injection` module is classical code injection — SQLi,
- * SSRF, eval, deserialization — not agent-specific detection. There was no "deeper
- * agentic rule" to unlock, on Free or on Pro. Advertising an unbuilt capability as the
- * reason to pay is the one thing outward copy must never do.
- *
- * The replacement states only what is true today:
- *  - the offline scan applies N bundled corpus rules — a real, countable number read
- *    from the bundle itself, so it cannot go stale — plus the local check modules;
- *  - signing in scans against the full current corpus rather than the offline subset.
- *    That is the shipped differentiator (the maintained corpus), and it matches the
- *    ratified positioning: "the maintained rule corpus + observability, scans stay free."
- *    The observability layer is deliberately NOT mentioned — it is roadmap, not built.
- *
- * No guarantee, no absolute, no unbuilt capability. If the honest answer ever becomes
- * "nothing beyond X", this line says that or goes away.
- */
-export function coverageLine(): string {
-  const bundled = bundledRulesMeta()
-  return (
-    chalk.dim(
-      `  Coverage: ${bundled.ruleCount} bundled rules, plus local checks\n` +
-      '  for secrets, auth, payments, database and deployment. Runs offline, no account needed.\n' +
-      '  `shipguard login` runs rulebook scans with the full current rulebook, not just the built-in rules.\n' +
-      `  Plans: ${chalk.underline(PRICING_URL)}`
-    )
-  )
-}
-
-/**
- * One honest line on what was actually scanned, printed on EVERY human run (clean or not):
- * `Coverage: scanned 40 of 52 files; skipped: binary 9, unknown 1, too large 2; decoded: UTF-16 1`.
- * Zero counts are left out so a clean run stays one short line.
- */
-export function coverageSummaryLine(c: ScanCoverage): string {
-  const skipped: string[] = []
-  const add = (list: string[], n: number, label: string): void => {
-    if (n > 0) list.push(`${label} ${n}`)
-  }
-  add(skipped, c.skipped.binary, 'binary')
-  add(skipped, c.skipped.tooLarge, 'too large')
-  add(skipped, c.skipped.symlink, 'symlink')
-  add(skipped, c.skipped.unknownBinary, 'unknown')
-  add(skipped, c.skipped.invalidUtf8, 'invalid UTF-8')
-  add(skipped, c.skipped.unreadable, 'unreadable')
-  add(skipped, c.skipped.special, 'special')
-  const decoded: string[] = []
-  add(decoded, c.decoded.utf16, 'UTF-16')
-  add(decoded, c.decoded.nulSubstituted, 'NUL-substituted')
-  add(decoded, c.decoded.asciiStrings, 'strings-only')
-  add(decoded, c.decoded.binaryStringsScanned, 'binary strings')
-  const ignored = c.ignoredByUser + c.ignoredByDefault.reduce((n, e) => n + (e.files ?? 0), 0)
-  const parts = [`scanned ${c.scanned} of ${c.discovered} files`]
-  if (skipped.length > 0) parts.push(`skipped: ${skipped.join(', ')}`)
-  if (decoded.length > 0) parts.push(`decoded: ${decoded.join(', ')}`)
-  if (ignored > 0) parts.push(`ignored: ${ignored}`)
-  return chalk.dim(`  Coverage: ${parts.join('; ')}`)
-}
-
-// ---------------------------------------------------------------------------
-// Verdict panel (the gamified reward)
-// ---------------------------------------------------------------------------
-
-const VERDICT_CONFIG = {
-  SAFE_TO_SHIP: {
-    icon: '✅',
-    color: chalk.greenBright,
-    label: 'SAFE TO SHIP',
-    // Deterministic verdict message — no RNG so tests are stable
-    attitudeLine: () => chalk.green('  SHIP IT — nothing blocking. Go make something people want.'),
-    helpLine: (blockingCount: number) =>
-      blockingCount > 0
-        ? chalk.green(`  No blocking issues — ${blockingCount} informational finding(s) noted.`)
-        : chalk.green('  Clean — safe to ship. No issues found.'),
-  },
-  REVIEW_BEFORE_SHIP: {
-    icon: '⚠️',
-    color: chalk.yellowBright,
-    label: 'REVIEW BEFORE SHIP',
-    attitudeLine: (blockingCount: number) =>
-      chalk.yellow(`  HOLD UP — ${blockingCount} finding${blockingCount !== 1 ? 's' : ''} want eyes before this ships.`),
-    helpLine: (blockingCount: number) =>
-      chalk.yellow(`  ${blockingCount} finding(s) need attention before shipping.`),
-  },
-  DO_NOT_SHIP: {
-    icon: '🛑',
-    color: chalk.redBright,
-    label: 'DO NOT SHIP',
-    attitudeLine: () => chalk.red('  BLOCKED — shipping this would hurt. Fix the criticals first.'),
-    helpLine: (blockingCount: number) =>
-      chalk.red(`  Blocked: ${blockingCount} critical/blocking issue(s) must be fixed first.`),
-  },
-} as const
-
-function boxLine(content: string): string {
-  // content is the inner text (no padding); we add 1 space padding each side
-  const inner = ` ${content}`
-  // Measure visible display width (handles emoji double-width, ANSI strips)
-  const visibleLen = displayWidth(inner)
-  const pad = Math.max(0, BOX_WIDTH - 2 - visibleLen)
-  return `${V}${inner}${' '.repeat(pad)}${V}`
-}
-
-function boxEmpty(): string {
-  return `${V}${' '.repeat(BOX_WIDTH - 2)}${V}`
-}
-
-function boxTop(): string {
-  return chalk.dim(TL + H.repeat(BOX_WIDTH - 2) + TR)
-}
-
-function boxBottom(): string {
-  return chalk.dim(BL + H.repeat(BOX_WIDTH - 2) + BR)
-}
-
-function boxSection(): string {
-  return chalk.dim(SECTION)
-}
-
-// ---------------------------------------------------------------------------
-// Severity breakdown bar (visual block representation)
-// ---------------------------------------------------------------------------
-
-/**
- * Render a compact severity breakdown bar using block chars.
- * Each severity slot is proportional to its count vs total findings.
- * Returns empty string if no findings.
- */
-export function severityBar(riskScore: ScanResult['riskScore'], barWidth: number = 30): string {
-  const total = riskScore.totalFindings
-  if (total === 0) return chalk.green('  ' + BAR_FULL.repeat(barWidth) + '  all clear')
-
-  const counts: Array<{ sev: string; count: number; color: (s: string) => string }> = [
-    { sev: 'critical', count: riskScore.criticalCount, color: chalk.bgRed.white },
-    { sev: 'high',     count: riskScore.highCount,     color: chalk.red },
-    { sev: 'medium',   count: riskScore.mediumCount,   color: chalk.yellow },
-    { sev: 'low',      count: riskScore.lowCount,      color: chalk.blue },
-    { sev: 'info',     count: riskScore.infoCount,     color: chalk.gray },
-  ].filter(c => c.count > 0)
-
-  // Distribute bar width proportionally
-  let assigned = 0
-  const segments: Array<{ color: (s: string) => string; width: number; sev: string }> = []
-  for (let i = 0; i < counts.length; i++) {
-    const c = counts[i]
-    const w = i === counts.length - 1
-      ? barWidth - assigned
-      : Math.max(1, Math.round((c.count / total) * barWidth))
-    segments.push({ color: c.color, width: Math.min(w, barWidth - assigned), sev: c.sev })
-    assigned += segments[segments.length - 1].width
-    if (assigned >= barWidth) break
-  }
-
-  const bar = segments.map(s => s.color(BAR_FULL.repeat(s.width))).join('')
-  const legend = counts.map(c => {
-    const icon = SEVERITY_ICONS[c.sev] ?? ''
-    return `${icon}${c.count}`
-  }).join('  ')
-  return `  ${bar}  ${legend}`
-}
-
-/**
- * Render the full gamified verdict panel.
- *
- * @param result      - completed scan result
- * @param elapsedMs   - time taken in milliseconds
- * @param skippedCount - total files/symlinks skipped (too large + binary + symlink,
- *                      symlink reporting) — optional, omitted if 0
- * @param topFindings - top findings to surface in "What now?" block (from scan)
- * @param strict      - whether --strict was passed. When a verdict has blocking
- *                      findings and --strict was NOT passed, the exit code is
- *                      still 0 (A1 contract) — the label must say so, so a human
- *                      reading "DO NOT SHIP" doesn't assume the process failed.
- * @param reportPaths - where the written report landed. The
- *                      path INSIDE the panel: it used to be printed after the box by
- *                      `logger.success`, whose green ✓ became the last glyph on screen
- *                      even for a DO_NOT_SHIP run.
- *
- * LAYOUT: the verdict is the LAST
- * thing in the panel, not the first. It used to sit ~70 lines up a 93-line screen, so a
- * scrolled or truncated terminal dropped exactly the one line the whole tool exists to
- * print. With the exit code deliberately silent by default, the printed
- * verdict carries the entire default-mode signal — burying it is a first-order defect.
- */
-export function verdictPanel(
-  result: ScanResult,
-  elapsedMs: number,
-  skippedCount?: number,
-  topFindings?: ScanResult['findings'],
-  strict?: boolean,
-  reportPaths?: { mdPath: string; jsonPath: string; runJsonPath: string },
-): string {
-  const { riskScore, filesScanned } = result
-  // Read the AUTHORITATIVE verdict, not the deprecated riskScore mirror (rec #2).
-  const recommendation = effectiveRecommendation(result)
-  const degraded = result.degraded === true
-  const cfg = VERDICT_CONFIG[recommendation]
-  const elapsedStr = elapsedMs < 1000 ? `${elapsedMs}ms` : `${(elapsedMs / 1000).toFixed(1)}s`
-
-  const lines: string[] = ['']
-
-  // Top border
-  lines.push(boxTop())
-
-  // Title
-  lines.push(boxLine(chalk.bold('  ShipGuard — Security Scan Report')))
-
-  // Severity bar
-  lines.push(boxSection())
-  lines.push(boxLine(chalk.bold('  Severity breakdown')))
-  lines.push(boxLine(severityBar(riskScore)))
-
-  // Stats
-  lines.push(boxSection())
-  lines.push(boxLine(chalk.bold('  Run summary')))
-  const skippedSuffix = skippedCount && skippedCount > 0 ? chalk.dim(`  (${skippedCount} skipped)`) : ''
-  lines.push(boxLine(`  Files scanned:  ${chalk.cyan(filesScanned)}${skippedSuffix}`))
-  lines.push(boxLine(`  Elapsed time:   ${chalk.cyan(elapsedStr)}`))
-  lines.push(boxLine(`  Total findings: ${chalk.cyan(riskScore.totalFindings)}`))
-
-  // Severity counts (only non-zero) — inline breakdown
-  const sevLines: string[] = []
-  if (riskScore.criticalCount > 0) sevLines.push(chalk.red(`🛑 ${riskScore.criticalCount} critical`))
-  if (riskScore.highCount > 0)     sevLines.push(chalk.red(`⛔ ${riskScore.highCount} high`))
-  if (riskScore.mediumCount > 0)   sevLines.push(chalk.yellow(`⚠️ ${riskScore.mediumCount} medium`))
-  if (riskScore.lowCount > 0)      sevLines.push(chalk.blue(`🐛 ${riskScore.lowCount} low`))
-  if (riskScore.infoCount > 0)     sevLines.push(chalk.gray(`ℹ️ ${riskScore.infoCount} info`))
-
-  if (sevLines.length > 0) {
-    lines.push(boxLine(`  ${sevLines.join('  ')}`))
-  }
-
-  // "How ShipGuard helped"
-  lines.push(boxSection())
-  lines.push(boxLine(chalk.bold('  How ShipGuard helped')))
-  if (degraded) {
-    // Name WHAT did not run, using the stable machine codes the JSON also carries —
-    // a degraded verdict the user cannot explain is as useless as a false green.
-    lines.push(boxLine(chalk.red('  Incomplete scan — verdict is fail-closed until this is fixed:')))
-    for (const reason of result.degradedReasons ?? []) {
-      lines.push(boxLine(chalk.red(`    · ${reason.code}${reason.detail ? ` — ${truncate(reason.detail, 60)}` : ''}`)))
-    }
-    if ((result.degradedReasons ?? []).length === 0) {
-      lines.push(boxLine(chalk.red('    · reason not recorded — see `degraded` in --json output')))
-    }
+  // ---- line 1: the verdict ------------------------------------------------
+  const rr = rulesRanLines(input.rulesRan, input.generalRuleCount, terminal)
+  let header: string
+  if (incomplete && blocking === 0) {
+    const scannedFiles = cov ? cov.scanned : files
+    const tail = cov && cov.scanned > 0 ? ` · ${plural(total, 'finding', 'findings')} in the ${scannedFiles} that ${scannedFiles === 1 ? 'was' : 'were'}` : ` · ${plural(total, 'finding', 'findings')}`
+    header = `${word} · cannot clear this repo: ${otherReasonPhrase(ns, input)}${tail}`
+  } else if (rec === 'DO_NOT_SHIP') {
+    header = `${word} · ${blocking} blocking of ${plural(total, 'finding', 'findings')} · ${plural(files, 'file', 'files')}, ${rulesCountText(input.rulesRan, input.generalRuleCount)}, ${formatElapsed(input.elapsedMs)}`
   } else {
-    lines.push(boxLine(cfg.helpLine(riskScore.blockingCount)))
+    const counts = total === 0 ? '0 findings' : `${plural(total, 'finding', 'findings')}, ${blocking} blocking`
+    header = `${word} · ${counts} · ${plural(files, 'file', 'files')}, ${rulesCountText(input.rulesRan, input.generalRuleCount)}, ${formatElapsed(input.elapsedMs)}`
+  }
+  out.push(verdictColor(rec, header.slice(0, word.length)) + header.slice(word.length))
+
+  // ---- line 2: the limit sentence -----------------------------------------
+  if (incomplete && blocking === 0) {
+    push('Not scanned means not checked. This is a stop because of coverage, not because of a finding.')
+  } else if (rec === 'SAFE_TO_SHIP') {
+    push('"Safe" here means no rule matched. It is not a security audit.')
+  } else if (rec === 'DO_NOT_SHIP') {
+    if (!input.strict) push('This scan finished (exit 0). Add --strict to exit 1 on DO NOT SHIP.')
+  } else {
+    push('Nothing here blocks a push. Review the findings below.')
+  }
+  if (incomplete && blocking > 0 && ns && ns.fileCount > 0 && cov) {
+    push(`This scan is also incomplete: ${ns.fileCount} of ${cov.discovered} files were not scanned.`)
+  }
+  if (rr.runSentence) push(rr.runSentence)
+
+  // ---- findings -------------------------------------------------------------
+  const ordered = orderFindings(result.findings)
+  const blockers = ordered.filter((f) => f.blocking)
+  const rest = ordered.filter((f) => !f.blocking)
+  const fixLabelFor = (f: Finding) => fixGuidance(f, stacks)
+
+  if (blockers.length > 0) {
+    out.push('')
+    const since = input.fixLoop ? `; since the last run: ${input.fixLoop.fixed} fixed, ${input.fixLoop.added} new` : ''
+    push(`Fix first (${blockers.length} blocking${since}):`)
+    blockers.slice(0, lim.fix).forEach((f, i) => {
+      const g = fixLabelFor(f)
+      let what = g.what
+      if (f.category === 'secrets') what += ` (${input.secretLabel?.(f) ?? 'value hidden'})`
+      const origin = (f as FindingWithOrigin).origin === 'rulebook' ? ` [${input.planLabel && input.planLabel.length > 0 ? input.planLabel : 'rulebook'} rule]` : ''
+      const sev = f.severity.toUpperCase().padEnd(8)
+      push(`${String(i + 1).padStart(2)}. ${sevColor(f.severity, sev)} ${locOf(f)}  ${what}${origin}`)
+      push(`    fix: ${g.summary}`)
+    })
+    if (blockers.length > lim.fix) push(`    +${blockers.length - lim.fix} more, see report`)
   }
 
-  // Report paths — INSIDE the panel (rec #4). Previously printed after the box by
-  // logger.success(), whose green ✓ was then the last glyph a DO_NOT_SHIP run showed.
-  if (reportPaths) {
-    lines.push(boxSection())
-    lines.push(boxLine(chalk.bold('  Report written')))
-    lines.push(boxLine(`  ${truncatePath(reportPaths.mdPath, 68)}`))
-    // The agent-facing path is the RUN-SCOPED result (rec #8), not the latest.json
-    // pointer — pointing an agent at the pointer would just add a hop.
-    lines.push(boxLine(chalk.dim(`  agent view: ${truncatePath(reportPaths.runJsonPath, 56)}`)))
+  if (rest.length > 0) {
+    out.push('')
+    const sevs = new Set(rest.map((f) => f.severity))
+    const sevWord = sevs.size === 1 ? [...sevs][0] : 'not blocking'
+    const lowConf = rest.some((f) => f.confidence === 'LOW')
+    push(`Also found (${rest.length} ${sevWord}${lowConf ? ', may be false positives, check by hand' : ''}):`)
+    rest.slice(0, lim.also).forEach((f) => {
+      const g = fixLabelFor(f)
+      const origin = (f as FindingWithOrigin).origin === 'rulebook' ? ` [${input.planLabel && input.planLabel.length > 0 ? input.planLabel : 'rulebook'} rule]` : ''
+      push(`    ${locOf(f)}  ${g.what}${origin}`)
+      if (g.notAVulnerabilityIf) push(`      not a vulnerability if: ${dropPeriod(firstSentence(g.notAVulnerabilityIf))}`)
+    })
+    if (rest.length > lim.also) push(`    +${rest.length - lim.also} more in the report`)
   }
 
-  // Learn more
-  lines.push(boxSection())
-  lines.push(boxLine(chalk.bold('  Learn more')))
-  lines.push(boxLine(`  Docs     ${chalk.underline(DOCS_URL)}`))
-  lines.push(boxLine(`  Site     ${chalk.underline(SITE_URL)}`))
-  lines.push(boxLine(`  Pricing  ${chalk.underline(PRICING_URL)}`))
-
-  // ── VERDICT — LAST (rec #4) ───────────────────────────────────────────────
-  // Everything above is context; this is the answer. It is last so that a scrolled,
-  // piped, or truncated terminal keeps it, and so the final glyph on screen is the
-  // verdict's own glyph rather than a green ✓ from whatever printed afterwards.
-  lines.push(boxSection())
-  const verdictLabel = cfg.color(chalk.bold(`${cfg.icon}  ${cfg.label}`))
-  lines.push(boxLine(`  ${verdictLabel}`))
-  // A1 contract: blocking findings without --strict still exit 0. Say so next to the
-  // verdict so "DO NOT SHIP" never implies a process failure that didn't happen.
-  if ((riskScore.blockingCount > 0 || degraded) && !strict) {
-    lines.push(boxLine(chalk.dim('  (informational — exit 0; use --strict to enforce as exit 1)')))
+  // ---- not scanned ------------------------------------------------------------
+  const entries: NotScannedEntry[] = ns?.entries ?? []
+  if (entries.length > 0 || (ns && ns.otherReasons.length > 0) || input.nothingToCheck) {
+    out.push('')
+    const shown = entries.slice(0, lim.files)
+    const count = entries.reduce((n, e) => n + (e.path ? 1 : (e.count ?? 1)), 0)
+    if (entries.length > 0) {
+      push(`Not scanned (${count}):`)
+      const pad = Math.max(0, ...shown.filter((e) => e.path).map((e) => (e.path as string).length))
+      for (const e of shown) {
+        const label = e.path ? e.path.padEnd(pad) : '(names in the JSON)'
+        push(` - ${label}  ${e.reason}`)
+        e.fix.forEach((l, i) => {
+          out.push(i === 0 ? `   fix: ${l}` : `        ${l}`)
+        })
+      }
+      if (entries.length > lim.files) push(` +${entries.length - lim.files} more in the report`)
+    }
+    for (const r of ns?.otherReasons ?? []) push(`Did not run: ${r.text}`)
+    if (input.nothingToCheck) push('Nothing was scanned: git reports no changed files. This is not a safe-to-ship result.')
   }
-  // Attitude line — a DEGRADED scan gets its own wording: the stock DO_NOT_SHIP line
-  // ("fix the criticals first") would be false when the verdict came from an INCOMPLETE
-  // scan rather than from findings (rec #1).
-  const attitudeLine = degraded
-    ? chalk.red('  INCOMPLETE — parts of this scan did not run, so it cannot say this is safe.')
-    : recommendation === 'REVIEW_BEFORE_SHIP'
-      ? cfg.attitudeLine(riskScore.blockingCount)
-      : (cfg as typeof VERDICT_CONFIG['SAFE_TO_SHIP']).attitudeLine()
-  lines.push(boxLine(attitudeLine))
-  lines.push(boxEmpty())
 
-  // Bottom border
-  lines.push(boxBottom())
-  lines.push('')
+  // ---- closing lines -----------------------------------------------------------
+  out.push('')
+  if (input.ignoredTestValues && input.ignoredTestValues > 0) {
+    push(`Ignored ${plural(input.ignoredTestValues, 'test value', 'test values')} (placeholder and sample values; listed in the report).`)
+  }
+  if (input.reportPath) {
+    push(result.findings.length > 0 ? `Report: ${input.reportPath}   (all fixes; agents: shipguard scan --json)` : `Report: ${input.reportPath}`)
+  }
+  if (input.fixLoop?.repeatLine) push(input.fixLoop.repeatLine)
+  push(nextText(input, rerun, blocking, rest.length, rec, incomplete))
+  const manifest = input.manifest
+  if (realStacks(stacks).length === 0 && manifest) {
+    push(`Stack: project found, framework not recognised (${manifest}). Stack-specific checks may not have applied.`)
+  }
+  push(rr.line)
+  for (const l of input.planLines ?? []) push(l)
 
-  return lines.join('\n')
+  if (input.strict && input.exitCode === 1) {
+    push('Exit 1: --strict stops on DO NOT SHIP. Fix the items above or use shipguard ignore with a reason.')
+  }
+  return out
 }
-
-// ---------------------------------------------------------------------------
-// End-of-scan action footer (copy-paste commands, zero learning curve)
-// ---------------------------------------------------------------------------
 
 /**
- * Render the "What now?" action footer shown after every scan.
- *
- * @param opts.hasFindings     - whether there are any findings (affects rate suggestion)
- * @param opts.topRuleId       - first finding's ruleId, used in `rate` example
- * @param opts.isLoggedIn      - if false, show login + --pro nudge
+ * Render the human scan screen. At most 25 lines (spec 01 rule 5): when the first cut is longer, the
+ * detail is trimmed in a fixed order (Also found, then Not scanned files, then Fix first items) and a
+ * `+N more` line says what was left to the report.
  */
-export function actionFooter(opts: {
-  hasFindings: boolean
-  topRuleId?: string
-  isLoggedIn?: boolean
+export function renderScanScreen(input: ScanScreenInput): string {
+  const lim: ScreenLimits = { fix: 5, also: 3, files: 5 }
+  const shrink = (): boolean => {
+    if (lim.also > 0) { lim.also = Math.max(0, lim.also - 1); return true }
+    if (lim.files > 1) { lim.files--; return true }
+    if (lim.fix > 1) { lim.fix--; return true }
+    return false
+  }
+  // Wrapped terminal output may legitimately exceed the budget in physical lines; the budget counts
+  // logical lines, so measure on the unwrapped build.
+  const measure = (l: ScanScreenInput): number => buildScreen({ ...l, columns: undefined }, lim).length
+  while (measure(input) > SCREEN_MAX_LINES && shrink()) {
+    // keep trimming until the screen fits or nothing is left to trim
+  }
+  return buildScreen(input, lim).join('\n')
+}
+
+/**
+ * The one quiet line (spec 01, "Quiet mode"): pure `key=value` pairs after the fixed prefix.
+ * Key order is fixed: verdict blocking findings incomplete notScanned fallback agentAction run report.
+ */
+export function renderQuietLine(input: {
+  result: ScanResult
+  agentAction?: string
+  notScanned?: number
+  fallbackCode?: string | null
+  reportPath?: string | null
 }): string {
-  const { hasFindings, topRuleId, isLoggedIn } = opts
-  const lines: string[] = ['']
+  const rec = effectiveRecommendation(input.result)
+  const r = input.result
+  const incomplete = r.degraded === true
+  const parts = [
+    `verdict=${rec}`,
+    `blocking=${r.riskScore.blockingCount}`,
+    `findings=${r.riskScore.totalFindings}`,
+    `incomplete=${incomplete ? 'yes' : 'no'}`,
+  ]
+  if (input.notScanned && input.notScanned > 0) parts.push(`notScanned=${input.notScanned}`)
+  if (input.fallbackCode) parts.push(`fallback=${input.fallbackCode}`)
+  parts.push(`agentAction=${input.agentAction ?? simpleAgentAction(r)}`)
+  if (r.runId) parts.push(`run=${r.runId.replace(/[^A-Za-z0-9]/g, '').slice(0, 8)}`)
+  if (input.reportPath && !/\s/.test(input.reportPath)) parts.push(`report=${input.reportPath}`)
+  return `shipguard: ${parts.join(' ')}`
+}
 
-  lines.push(chalk.bold('  ── What now? ──────────────────────────────────────────────'))
-  lines.push('')
-  lines.push(`  ${chalk.cyan('shipguard hook --target git')}         ${chalk.dim('# run this gate before every push')}`)
-
-  if (hasFindings && topRuleId) {
-    lines.push(`  ${chalk.cyan(`shipguard rate 1 helpful`)}                ${chalk.dim('# was this finding helpful?')}`)
-    lines.push(`  ${chalk.cyan(`shipguard rate 1 not-helpful`)}            ${chalk.dim('# false positive?')}`)
-  } else if (hasFindings) {
-    lines.push(`  ${chalk.cyan('shipguard rate <n> helpful')}          ${chalk.dim('# rate a finding (or not-helpful)')}`)
-  }
-
-  lines.push(`  ${chalk.cyan('shipguard feedback "<thoughts>"')}     ${chalk.dim('# what do you think?')}`)
-
-  if (!isLoggedIn) {
-    lines.push('')
-    // Truth check (2026-08-04): logging in does not unlock a separate "Pro rules" set —
-    // it serves the FULL CURRENT corpus, the same content every paid tier gets, metered by
-    // the plan's included credits. Say that, not the old claim.
-    lines.push(`  ${chalk.yellow('shipguard login')}                    ${chalk.dim('# sign in to run rulebook scans')}`)
-    lines.push(`  ${chalk.yellow('shipguard scan --pro')}               ${chalk.dim('# download the full rulebook for this scan (1 credit)')}`)
-  }
-
-  lines.push('')
-  lines.push(`  ${chalk.dim('Full docs: ' + DOCS_URL)}`)
-  lines.push('')
-
-  return lines.join('\n')
+/** Fallback `agentAction` for the quiet line until W2b's outcome table supplies the real one. */
+function simpleAgentAction(r: ScanResult): string {
+  if (r.riskScore.blockingCount > 0) return 'fix_and_rerun'
+  if (r.degraded === true) return 'ask_human'
+  return 'proceed'
 }
 
 // ---------------------------------------------------------------------------
-// First-run welcome banner
+// First-run welcome (TTY only)
 // ---------------------------------------------------------------------------
 
 function getShipguardConfigDir(): string {
@@ -676,10 +579,10 @@ function getShipguardConfigDir(): string {
 }
 
 /**
- * Show a one-time welcome banner on first ever run.
+ * Show a one-time welcome text on first ever run (plain lines, no box).
  *
  * @param configDir  - override the config dir (used in tests)
- * @returns banner string (non-empty on first call; empty string thereafter)
+ * @returns text (non-empty on first call; empty string thereafter)
  */
 export function welcomeBanner(configDir?: string): string {
   const dir = configDir ?? getShipguardConfigDir()
@@ -689,87 +592,29 @@ export function welcomeBanner(configDir?: string): string {
     return ''
   }
 
-  // Create marker (create dir if needed)
   try {
     ensureSecureDir(dir)
     writeSecureFileSync(marker, '1')
   } catch {
-    // Non-fatal — if we can't write the marker, just show the banner every time
+    // Non-fatal: if we can't write the marker, just show the text every time
   }
-
-  // Banner inner width matches BOX_WIDTH (78 total: 2 borders + 76 inner)
-  // We offset the box by 2 spaces so it aligns nicely with terminal margins.
-  const BANNER_INNER = BOX_WIDTH - 2  // 76 chars between │ and │
-
-  function bannerLine(content: string): string {
-    const inner = ` ${content}`
-    const w = displayWidth(inner)
-    const pad = Math.max(0, BANNER_INNER - w)
-    return chalk.cyan('  │') + inner + ' '.repeat(pad) + chalk.cyan('│')
-  }
-
-  const top = chalk.bold(chalk.cyan('  ╭' + '─'.repeat(BANNER_INNER) + '╮'))
-  const bottom = chalk.bold(chalk.cyan('  ╰' + '─'.repeat(BANNER_INNER) + '╯'))
-  const empty = chalk.cyan('  │') + ' '.repeat(BANNER_INNER) + chalk.cyan('│')
 
   return [
     '',
-    top,
-    bannerLine('ShipGuard by AgenticCLI'),
-    bannerLine('The security scanner your coding agent runs before every commit.'),
-    bannerLine('Rules come down. Code never goes up.'),
-    empty,
-    bannerLine(chalk.bold('Quick start:')),
-    bannerLine(`  ${chalk.green('shipguard scan <path>')}    Run a scan on your project`),
-    bannerLine(`  ${chalk.green('shipguard login')}           Run rulebook scans (sign in)`),
-    bannerLine(`  ${chalk.green('shipguard scan --json')}     Machine-readable output for CI/agents`),
-    empty,
-    bannerLine(`Docs: ${chalk.underline(DOCS_URL)}`),
-    empty,
-    bannerLine(chalk.dim('Pseudonymous usage ping — opt out: shipguard telemetry disable')),
-    bannerLine(chalk.dim(`or SHIPGUARD_TELEMETRY=0 · Details: ${chalk.underline(goLink('telemetry'))}`)),
-    bottom,
+    chalk.bold('ShipGuard by AgenticCLI') + ': the security scanner your coding agent runs before every commit.',
+    DATA_FLOW_LINE,
+    `Quick start: shipguard scan   |   machine-readable: shipguard scan --json   |   docs: ${DOCS_URL}`,
     '',
   ].join('\n')
-}
-
-// ---------------------------------------------------------------------------
-// Quiet verdict line (for --quiet mode)
-// ---------------------------------------------------------------------------
-
-/**
- * Single-line verdict for --quiet mode.
- *
- * @param strict - whether --strict was passed. When blocking findings exist
- *                 without --strict, append an explicit note that the exit
- *                 code is still 0 (A1 contract) — see verdictPanel() comment.
- */
-export function quietVerdict(result: ScanResult, strict?: boolean): string {
-  const { score, totalFindings, blockingCount } = result.riskScore
-  // Authoritative verdict (rec #2), not the deprecated riskScore mirror.
-  const recommendation = effectiveRecommendation(result)
-  const degraded = result.degraded === true
-  const icon = recommendation === 'SAFE_TO_SHIP' ? '✅' : recommendation === 'DO_NOT_SHIP' ? '⛔' : '⚠️'
-  const colorFn = recommendation === 'SAFE_TO_SHIP' ? chalk.green : recommendation === 'DO_NOT_SHIP' ? chalk.red : chalk.yellow
-  // A one-line verdict that hides "this scan was incomplete" is the false-safe in
-  // miniature — say it on the same line (rec #1).
-  const degradedNote = (degraded ? '  incomplete=yes' : '') + (result.coverage?.scanned === 0 ? '  nothing-scanned=yes' : '')
-  const suffix = blockingCount > 0 && !strict ? '  (informational — exit 0; use --strict to enforce)' : ''
-  return colorFn(`${icon} ${recommendation.replace(/_/g, ' ')}  score=${score}/100  findings=${totalFindings}  blocking=${blockingCount}${degradedNote}${suffix}`)
 }
 
 // ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
 
-function truncate(str: string, maxLen: number): string {
-  return str.length <= maxLen ? str : `${str.slice(0, maxLen - 3)}...`
-}
-
 function truncatePath(filePath: string, maxLen: number): string {
   if (filePath.length <= maxLen) return filePath
   const parts = filePath.split('/')
-  // Keep last 2 segments
   const tail = parts.slice(-2).join('/')
   return tail.length <= maxLen ? `…/${tail}` : `…${tail.slice(-maxLen)}`
 }

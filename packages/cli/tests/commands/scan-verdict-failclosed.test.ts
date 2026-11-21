@@ -101,16 +101,17 @@ describe('#1 — a degraded scan never says SAFE_TO_SHIP', () => {
     expect(code).toBe(0)
   })
 
-  it('human mode: the panel says INCOMPLETE, not "fix the criticals first"', () => {
+  it('human mode: line 1 says the repo cannot be cleared because of coverage, names the file, never "SHIP IT"', () => {
     const { stdout } = runCli(['scan', mkDegradedButCleanFixture()])
-    expect(stdout).toContain('INCOMPLETE')
-    expect(stdout).toContain('FILE_TOO_LARGE')
+    expect(stdout.split('\n')[0]).toMatch(/^DO NOT SHIP · cannot clear this repo: 1 of \d+ files were not scanned/)
+    expect(stdout).toContain('too large')
     expect(stdout).not.toContain('SHIP IT')
+    expect(stdout).not.toMatch(/fix the criticals/i)
   })
 
   it('--quiet: the one-line verdict admits the scan was incomplete', () => {
     const { stdout } = runCli(['scan', mkDegradedButCleanFixture(), '--quiet'])
-    expect(stdout).toContain('DO NOT SHIP')
+    expect(stdout).toContain('verdict=DO_NOT_SHIP')
     expect(stdout).toContain('incomplete=yes')
   })
 })

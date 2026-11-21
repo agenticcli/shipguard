@@ -1,5 +1,12 @@
 import type { Recommendation, RiskScore, ScanResult } from '@agenticcli/shared'
 
+/** Verdict words on screen match the JSON enum one to one (spec 01 "Shared words"). */
+export const VERDICT_WORDS: Record<Recommendation, string> = {
+  SAFE_TO_SHIP: 'SAFE TO SHIP',
+  REVIEW_BEFORE_SHIP: 'REVIEW BEFORE SHIP',
+  DO_NOT_SHIP: 'DO NOT SHIP',
+}
+
 /**
  * THE single place the ship / don't-ship verdict is computed.
  *
@@ -11,7 +18,7 @@ import type { Recommendation, RiskScore, ScanResult } from '@agenticcli/shared'
  * WHY (the false-safe verdict): a scan that could not read every file it was
  * asked to read has not checked the thing it is being asked about. Printing
  * "SAFE_TO_SHIP" beside its own `degraded: true` flag is the single worst output a
- * release gate can produce — it is a truthful field and a false headline in the same
+ * ship check can produce — it is a truthful field and a false headline in the same
  * document, and every consumer that keys on the headline is misled.
  *
  * WHAT THIS DOES NOT DO — the load-bearing distinction:
