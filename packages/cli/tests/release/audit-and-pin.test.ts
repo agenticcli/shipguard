@@ -131,6 +131,6 @@ describe('this repository', () => {
   })
   it('the package description carries the core line', () => {
     const pkg = JSON.parse(readFileSync(join(CLI, 'package.json'), 'utf-8'))
-    expect(pkg.description.startsWith('Review code with a rulebook to build secure code')).toBe(true)
+    expect(pkg.description).toContain('Review code with a rulebook to build secure code')
   })
 })

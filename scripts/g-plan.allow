@@ -5,3 +5,8 @@ packages/cli/src/checks/secrets.ts|access Google Cloud services or Google Maps
 packages/cli/src/checks/secrets.ts|Restrict key usage in the Google Cloud Console
 # Comment in core/verdict.ts about the headline; the file belongs to W2a, which can reword it and delete this line.
 packages/cli/src/core/verdict.ts|release gate can produce
+# Rule texts in the shipped free bundle (generated from the rule corpus) that name cloud providers or cloud accounts
+# in the generic sense, plus one provider documentation URL. Not product claims. Exact phrases only.
+rules/free-bundle.json|https://cloud.google.com/iam/docs/best-practices-for-managing-service-account-keys
+rules/free-bundle.json|API keys, database URLs, signing keys, cloud credentials
+rules/free-bundle.json|enables full cloud account takeover
