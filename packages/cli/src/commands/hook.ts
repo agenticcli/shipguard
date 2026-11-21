@@ -8,14 +8,20 @@ import { isGitRepo } from '../core/git.js'
 import {
   BINDING_NOTES,
   CLAUDE_HOOK_COMMAND,
-  CLAUDE_HOOK_FINGERPRINT,
+  CLAUDE_HOOK_TIMEOUT_SECONDS,
   GATE_COMMAND,
+  GATE_HOST_COMMAND,
   GIT_HOOK_NAMES,
+  SHIM_RELATIVE_PATH,
+  SHIM_VERSION,
   ciWorkflowYaml,
+  claudeShimScript,
+  classifyClaudeHookCommand,
   gitHookScript,
   gitHookBlock,
   isManaged,
   replaceManagedBlock,
+  shimFileVersion,
   type HookTarget,
 } from '../core/hook-templates.js'
 
@@ -24,8 +30,9 @@ import {
  *
  * This is the feature that makes the passive default coherent: ShipGuard never blocks on
  * its own, so the INSTALLATION — a deliberate human act — is what turns the power stop on
- * at the boundary where it matters. Everything installed here runs
- * `shipguard scan --json --strict`, because a hook without --strict is a no-op.
+ * at the boundary where it matters. The git and Claude Code hooks run `shipguard gate` through
+ * one small shell script (fail closed, one deadline, see core/hook-templates.ts); the CI job runs
+ * `shipguard scan --json --strict`, because a job without --strict is a no-op.
  *
  * Three targets, three honesty levels. The command prints which layer binds whom
  * every time it installs, not only in the docs.
@@ -49,7 +56,7 @@ interface InstallOutcome {
  *               splitting the two is what keeps a re-run from re-inserting a file
  *               preamble (e.g. a shebang) into the middle of the file
  */
-function writeManaged(path: string, whole: string, block: string, executable: boolean): InstallOutcome {
+function writeManaged(path: string, whole: string, block: string, executable: boolean, manualLine: string): InstallOutcome {
   if (!existsSync(path)) {
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, whole, 'utf-8')
@@ -65,7 +72,7 @@ function writeManaged(path: string, whole: string, block: string, executable: bo
     return {
       path,
       status: 'refused',
-      manualLine: GATE_COMMAND,
+      manualLine,
     }
   }
 
@@ -98,7 +105,7 @@ function resolveGitHooksDir(cwd: string): string {
 function installGit(cwd: string): InstallOutcome[] {
   const hooksDir = resolveGitHooksDir(cwd)
   return GIT_HOOK_NAMES.map((name) =>
-    writeManaged(join(hooksDir, name), gitHookScript(name), gitHookBlock(name), true),
+    writeManaged(join(hooksDir, name), gitHookScript(name), gitHookBlock(name), true, `${GATE_HOST_COMMAND} --host git --hook ${name}`),
   )
 }
 
@@ -107,20 +114,47 @@ interface ClaudeSettings {
   hooks?: {
     PreToolUse?: Array<{
       matcher?: string
-      hooks?: Array<{ type?: string; command?: string }>
+      hooks?: Array<{ type?: string; command?: string; timeout?: number; onFailure?: string }>
     }>
   }
   [key: string]: unknown
 }
 
+/**
+ * The Claude Code hook script: written whole when it is ours (it carries the version marker) or
+ * absent; a file somebody else put there is never overwritten.
+ */
+function installClaudeShim(cwd: string): InstallOutcome {
+  const path = join(cwd, SHIM_RELATIVE_PATH)
+  const script = claudeShimScript()
+  if (!existsSync(path)) {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, script, 'utf-8')
+    chmodSync(path, 0o755)
+    return { path, status: 'created' }
+  }
+  const current = readFileSync(path, 'utf-8')
+  if (shimFileVersion(current) === 0) {
+    return { path, status: 'refused', manualLine: `${GATE_HOST_COMMAND} --host claude` }
+  }
+  if (current === script) return { path, status: 'unchanged' }
+  writeFileSync(path, script, 'utf-8')
+  chmodSync(path, 0o755)
+  return { path, status: 'updated' }
+}
+
 function installClaude(cwd: string): InstallOutcome[] {
   const path = join(cwd, '.claude', 'settings.json')
-  const entry = { matcher: 'Bash', hooks: [{ type: 'command', command: CLAUDE_HOOK_COMMAND }] }
+  // `onFailure: block` (stops a command when the host kills the hook) needs Claude Code 2.1.295 or
+  // later, so `shipguard setup --agent claude` decides it per installed version; this alias does not.
+  const entry = { matcher: 'Bash', hooks: [{ type: 'command', command: CLAUDE_HOOK_COMMAND, timeout: CLAUDE_HOOK_TIMEOUT_SECONDS }] }
+  const shim = installClaudeShim(cwd)
+  if (shim.status === 'refused') return [shim]
 
   if (!existsSync(path)) {
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, JSON.stringify({ hooks: { PreToolUse: [entry] } }, null, 2) + '\n', 'utf-8')
-    return [{ path, status: 'created' }]
+    return [{ path, status: 'created' }, shim]
   }
 
   const raw = readFileSync(path, 'utf-8')
@@ -134,26 +168,29 @@ function installClaude(cwd: string): InstallOutcome[] {
       `Could not parse ${path}: ${err instanceof Error ? err.message : err}. ` +
       `Refusing to touch it.`,
     )
-    return [{ path, status: 'refused', manualLine: CLAUDE_HOOK_COMMAND }]
+    return [{ path, status: 'refused', manualLine: CLAUDE_HOOK_COMMAND }, shim]
   }
 
   const preToolUse = settings.hooks?.PreToolUse ?? []
-  // Ours is identified by the gate invocation inside the command string — the same
-  // fingerprint idea as the shell marker, adapted to JSON.
-  const ourIndex = preToolUse.findIndex((e) =>
-    (e.hooks ?? []).some((h) => typeof h.command === 'string' && h.command.includes(CLAUDE_HOOK_FINGERPRINT)),
-  )
+  const isOurs = (h: { command?: string }): boolean => typeof h.command === 'string' && classifyClaudeHookCommand(h.command) !== 'foreign'
+  // Ours is the entry that runs the shim, or the 0.12 inline entry (upgraded in place).
+  const ourIndex = preToolUse.findIndex((e) => (e.hooks ?? []).some(isOurs))
 
   const next = [...preToolUse]
   let status: InstallOutcome['status']
   if (ourIndex === -1) {
     next.push(entry)
     status = 'created'
-  } else if (JSON.stringify(next[ourIndex]) === JSON.stringify(entry)) {
-    status = 'unchanged'
   } else {
-    next[ourIndex] = entry
-    status = 'updated'
+    // Keep an `onFailure` that setup wrote; replace everything else we own.
+    const keep = (next[ourIndex].hooks ?? []).find(isOurs)?.onFailure
+    const wanted = keep ? { ...entry, hooks: [{ ...entry.hooks[0], onFailure: keep }] } : entry
+    if (JSON.stringify(preToolUse[ourIndex]) === JSON.stringify(wanted)) {
+      status = 'unchanged'
+    } else {
+      next[ourIndex] = wanted
+      status = 'updated'
+    }
   }
 
   if (status !== 'unchanged') {
@@ -163,13 +200,13 @@ function installClaude(cwd: string): InstallOutcome[] {
     }
     writeFileSync(path, JSON.stringify(merged, null, 2) + '\n', 'utf-8')
   }
-  return [{ path, status }]
+  return [{ path, status }, shim]
 }
 
 function installCi(cwd: string): InstallOutcome[] {
   const path = join(cwd, '.github', 'workflows', 'shipguard.yml')
   const yaml = ciWorkflowYaml()
-  return [writeManaged(path, yaml, yaml, false)]
+  return [writeManaged(path, yaml, yaml, false, GATE_COMMAND)]
 }
 
 // ---------------------------------------------------------------------------
@@ -187,15 +224,16 @@ export function hookCommand(): Command {
       'git',
     )
     .addHelpText('after', `
-What each target installs (all of them run \`${GATE_COMMAND}\`):
+What each target installs:
 
-  --target git     .git/hooks/pre-push and pre-merge-commit
+  --target git     .git/hooks/pre-push and pre-merge-commit (each runs \`${GATE_HOST_COMMAND} --host git\`)
                    ${BINDING_NOTES.git}
 
-  --target claude  .claude/settings.json — a PreToolUse hook on Bash \`git merge\`/\`git push\`
+  --target claude  .claude/hooks/shipguard-gate.sh (v${SHIM_VERSION}, about 40 lines, readable) and a PreToolUse
+                   hook in .claude/settings.json that runs it on Bash git push, git merge and PR merges
                    ${BINDING_NOTES.claude}
 
-  --target ci      .github/workflows/shipguard.yml
+  --target ci      .github/workflows/shipguard.yml (runs \`${GATE_COMMAND}\`)
                    ${BINDING_NOTES.ci}
 
 Install all three where you can. ShipGuard never blocks on its own — installing a
