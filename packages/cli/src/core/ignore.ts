@@ -11,10 +11,12 @@
  * Whatever is ignored by this list is counted in `coverage.ignoredByDefault`, never silent.
  */
 import { dirname, join } from 'node:path'
+import fg from 'fast-glob'
 import { Minimatch } from 'minimatch'
 import type { Policy } from '@agenticcli/shared'
 import { HISTORY_PATH_ENV_VAR } from '@agenticcli/shared'
 import { RUNS_SUBDIR } from './report.js'
+import { logger } from '../utils/logger.js'
 
 export const DEFAULT_IGNORE = [
   'node_modules/**',
@@ -49,14 +51,17 @@ export const DEFAULT_IGNORE = [
 export function selfArtifactIgnorePatterns(policy: Policy): string[] {
   const patterns: string[] = []
 
-  const add = (p: string | undefined): void => {
+  // These come from the scanned project's own policy file, so they are LITERAL paths: every glob
+  // character is escaped before the pattern reaches fast-glob (picomatch). Unescaped, a policy value
+  // such as `+(*a)` makes picomatch backtrack exponentially (a 29-character file name took 20 s).
+  const add = (p: string | undefined, suffix = ''): void => {
     if (!p) return
     // Only project-relative paths can be matched against fast-glob's relative results;
     // an absolute path is outside the scan root's pattern space anyway.
     if (p.startsWith('/')) return
     const rel = p.replace(/^\.\//, '')
     if (!rel) return
-    patterns.push(rel)
+    patterns.push(fg.escapePath(rel) + suffix)
   }
 
   const reportOutput = policy.report?.output
@@ -66,7 +71,7 @@ export function selfArtifactIgnorePatterns(policy: Policy): string[] {
     add(reportOutput.replace(/\.md$/, '.json'))
     // ...and the whole per-run report directory: run filenames are unpredictable run ids.
     const reportDir = dirname(reportOutput)
-    add(join(reportDir === '.' ? '' : reportDir, RUNS_SUBDIR, '**'))
+    add(join(reportDir === '.' ? '' : reportDir, RUNS_SUBDIR), '/**')
   }
   add(policy.history?.path)
   // The env override wins over the policy value (see history/path.ts), so honour it here too.
@@ -78,17 +83,83 @@ export function selfArtifactIgnorePatterns(policy: Policy): string[] {
 export interface IgnoreRule {
   pattern: string
   by: 'default' | 'user'
+  /** Present for a reasoned `shipguard ignore <path>` entry; plain `ignore.paths` patterns have none. */
+  reason?: string
 }
 
-/** Defaults and ShipGuard's own artifacts count as `default`; `policy.ignore.paths` counts as `user`. */
+/**
+ * One reasoned exception in `shipguard.policy.yml`, written by `shipguard ignore`:
+ *   ignore:
+ *     entries:
+ *       - { path: data/dump.txt, reason: "...", by: user, date: 2026-11-21 }          # a file or folder, taken literally
+ *       - { finding: missing_idempotency, file: app/api/x/route.ts, reason: "...", by: agent, date: ... }
+ * `by` says who asked: `user` from a terminal, `agent` when it ran without one. A reason is required:
+ * an entry without one is NOT honoured (an undocumented exception is not accepted), and says so.
+ */
+export interface IgnoreEntry {
+  path?: string
+  finding?: string
+  /** With `finding`: limit it to this repo-relative file; absent = that rule everywhere. */
+  file?: string
+  reason: string
+  by: string
+  date: string
+}
+
+const warnedEntries = new Set<string>()
+
+/** The valid entries of the policy. Invalid ones are skipped with one warning each (never silently). */
+export function readIgnoreEntries(policy: Policy): IgnoreEntry[] {
+  const raw = (policy.ignore as { entries?: unknown } | undefined)?.entries
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) {
+    warnOnce('ignore.entries', 'ignore.entries in shipguard.policy.yml is not a list, so none of its entries are applied.')
+    return []
+  }
+  const out: IgnoreEntry[] = []
+  raw.forEach((e: unknown, i: number) => {
+    const o = (e ?? {}) as Record<string, unknown>
+    const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+    const path = str(o.path)
+    const finding = str(o.finding)
+    const reason = str(o.reason)
+    if ((path === undefined) === (finding === undefined)) {
+      warnOnce(`ignore.entries[${i}]`, `ignore.entries[${i}] in shipguard.policy.yml needs exactly one of path or finding, so it is not applied.`)
+      return
+    }
+    if (reason === undefined) {
+      warnOnce(`ignore.entries[${i}]`, `ignore.entries[${i}] (${path ?? finding}) in shipguard.policy.yml has no reason, so it is not applied. Add one: shipguard ignore ... --reason "<why>"`)
+      return
+    }
+    out.push({ ...(path ? { path } : { finding, ...(str(o.file) ? { file: str(o.file) } : {}) }), reason, by: str(o.by) ?? 'unknown', date: str(o.date) ?? String(o.date ?? '') })
+  })
+  return out
+}
+
+function warnOnce(key: string, message: string): void {
+  if (warnedEntries.has(key)) return
+  warnedEntries.add(key)
+  logger.warn(message)
+}
+
+/** A path entry is a literal file or folder: glob characters in the name are escaped, never expanded. */
+export function escapeGlobLiteral(path: string): string {
+  return path.replace(/[\\*?[\]{}()!+@]/g, (c) => `\\${c}`)
+}
+
+/** Defaults and ShipGuard's own artifacts count as `default`; `policy.ignore.paths` and path entries count as `user`. */
 export function buildIgnoreRules(policy: Policy): IgnoreRule[] {
   const defaults = [...new Set([...DEFAULT_IGNORE, ...selfArtifactIgnorePatterns(policy)])]
   const isDefault = new Set(defaults)
   // The built-in policy lists some of the same patterns; those are defaults, not the user's choice.
   const user = [...new Set(policy.ignore?.paths ?? [])].filter((p) => !isDefault.has(p))
+  const entries = readIgnoreEntries(policy)
+    .filter((e): e is IgnoreEntry & { path: string } => e.path !== undefined)
+    .map((e): IgnoreRule => ({ pattern: escapeGlobLiteral(e.path), by: 'user', reason: e.reason }))
   return [
     ...defaults.map((pattern): IgnoreRule => ({ pattern, by: 'default' })),
     ...user.map((pattern): IgnoreRule => ({ pattern, by: 'user' })),
+    ...entries.filter((e) => !user.includes(e.pattern)),
   ]
 }
 
