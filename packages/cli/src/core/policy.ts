@@ -60,6 +60,28 @@ const DEFAULT_POLICY: Policy = {
   },
 }
 
+const isMapping = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * What is wrong with the SHAPE of a parsed policy file, or null. The scan and the gate read these keys without checking,
+ * so a file that parses as YAML but is a list, a number, or has `ignore: nope` must be refused up front with a clear
+ * cause (INVALID_POLICY), never reach the scanner and crash there or be silently ignored. An empty file is fine (defaults).
+ */
+export function policyShapeProblem(parsed: unknown): string | null {
+  if (parsed === null || parsed === undefined) return null
+  if (!isMapping(parsed)) return 'the file must be a list of "key: value" lines at the top level'
+  for (const key of ['project', 'scan', 'limits', 'report', 'history', 'gate', 'ignore'] as const) {
+    if (parsed[key] !== undefined && !isMapping(parsed[key])) return `"${key}" must have indented "name: value" lines under it`
+  }
+  for (const key of ['block', 'warn'] as const) {
+    const v = parsed[key]
+    if (v !== undefined && !(Array.isArray(v) && v.every((x) => typeof x === 'string'))) return `"${key}" must be a list of names`
+  }
+  const paths = isMapping(parsed['ignore']) ? parsed['ignore']['paths'] : undefined
+  if (paths !== undefined && !(Array.isArray(paths) && paths.every((x) => typeof x === 'string'))) return '"ignore.paths" must be a list of path patterns'
+  return null
+}
+
 const warned = new Set<string>()
 
 /**
@@ -103,11 +125,13 @@ export async function loadPolicy(dir: string): Promise<Policy> {
   try {
     const content = await readFile(policyPath, 'utf-8')
     const parsed = YAML.parse(content)
+    const shape = policyShapeProblem(parsed)
+    if (shape !== null) throw new Error(shape)
     // Deep-merge limits so existing policies without a `limits` block still get defaults
     return containWritePaths(dir, {
       ...DEFAULT_POLICY,
-      ...parsed,
-      limits: { ...DEFAULT_POLICY.limits, ...(parsed.limits ?? {}) },
+      ...(parsed ?? {}),
+      limits: { ...DEFAULT_POLICY.limits, ...(parsed?.limits ?? {}) },
     })
   } catch (error) {
     throw new Error(`Invalid policy file: ${error instanceof Error ? error.message : error}`)
