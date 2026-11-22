@@ -64,4 +64,20 @@ describe('scan id is reused on a retry without node:sqlite (Node < 22.5)', () =>
     expect((await scan(q)).reused).toBe(false)
     expect(readFileSync(join(out, 'target.json'), 'utf-8')).toBe('precious')
   })
+
+  it('four scans started together: the lock keeps one entry, so three reuse the first id', async () => {
+    const p = mkTree({ 'a.js': 'console.log(1)\n' })
+    const runs = await Promise.all([scan(p), scan(p), scan(p), scan(p)])
+    expect(runs.filter((r) => r.reused).length, JSON.stringify(runs.map((r) => r.reused))).toBe(3)
+    expect(Object.keys(JSON.parse(readFileSync(fallbackFile(p), 'utf-8')).entries)).toHaveLength(1)
+  })
+
+  it('a huge file is not read (ignored, then replaced by a small valid one)', async () => {
+    const p = mkTree({ 'a.js': 'console.log(1)\n' })
+    mkdirSync(join(p, '.shipguard'))
+    writeFileSync(fallbackFile(p), 'x'.repeat(400 * 1024))
+    expect((await scan(p)).reused).toBe(false)
+    expect(readFileSync(fallbackFile(p), 'utf-8').length).toBeLessThan(1000)
+    expect((await scan(p)).reused).toBe(true)
+  })
 })

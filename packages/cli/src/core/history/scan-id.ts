@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { Policy } from '@agenticcli/shared'
@@ -9,7 +9,7 @@ import { resolveHistoryPath } from './path.js'
 import { resolveRepoIdentity, resolveContentIdentity, resolveListingIdentity } from './identity.js'
 import { openHistoryStore } from './store.js'
 import { logger } from '../../utils/logger.js'
-import { pathEscapeReason } from '../../utils/paths.js'
+import { ensureShipguardDirIgnored, pathEscapeReason } from '../../utils/paths.js'
 
 /**
  * ScanId reuse — closes the last gap in retry idempotency.
@@ -180,6 +180,7 @@ export interface ResolveScanIdResult {
 /** Where the reservations live when the SQLite history store cannot open (Node older than 22.5, corrupt or locked db). */
 export const SCAN_ID_FALLBACK_FILE = '.shipguard/scan-id-reuse.json'
 const FALLBACK_MAX_ENTRIES = 200
+const FALLBACK_MAX_BYTES = 256 * 1024
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
@@ -190,21 +191,50 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * used, and the caller mints a fresh id like today.
  */
 function reserveScanIdFile(root: string, repoId: string, reuseKey: string, reuseWindowMs: number): ResolveScanIdResult | null {
+  let lock: string | null = null
   try {
     if (pathEscapeReason(root, SCAN_ID_FALLBACK_FILE) !== null) return null
+    ensureShipguardDirIgnored(root)
     const file = join(root, SCAN_ID_FALLBACK_FILE)
+    mkdirSync(dirname(file), { recursive: true })
+    // One writer at a time (a directory is created atomically). The file is read AFTER the lock is held, so two scans that
+    // start together cannot overwrite each other's entry; a lock older than 10 s is a crashed run and is taken over.
+    lock = `${file}.lock`
+    const until = Date.now() + 3000
+    for (;;) {
+      try {
+        mkdirSync(lock)
+        break
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+        try {
+          if (Date.now() - lstatSync(lock).mtimeMs > 10_000) rmSync(lock, { recursive: true, force: true })
+        } catch (statErr) {
+          logger.debug(`scan-id: lock check failed: ${statErr instanceof Error ? statErr.message : String(statErr)}`)
+        }
+        if (Date.now() > until) {
+          lock = null
+          return null
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25)
+      }
+    }
     const now = Date.now()
     let entries: Record<string, { scanId: string; createdAt: number }> = {}
     try {
-      const parsed: unknown = JSON.parse(readFileSync(file, 'utf-8'))
-      const raw = typeof parsed === 'object' && parsed !== null ? (parsed as { entries?: unknown }).entries : undefined
-      if (typeof raw === 'object' && raw !== null) {
-        for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-          const e = v as { scanId?: unknown; createdAt?: unknown } | null
-          if (e && typeof e.scanId === 'string' && UUID_RE.test(e.scanId) && typeof e.createdAt === 'number' && now - e.createdAt <= reuseWindowMs && e.createdAt <= now) {
-            entries[k] = { scanId: e.scanId, createdAt: e.createdAt }
+      if (lstatSync(file).size <= FALLBACK_MAX_BYTES) {
+        const parsed: unknown = JSON.parse(readFileSync(file, 'utf-8'))
+        const raw = typeof parsed === 'object' && parsed !== null ? (parsed as { entries?: unknown }).entries : undefined
+        if (typeof raw === 'object' && raw !== null) {
+          for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, FALLBACK_MAX_ENTRIES * 2)) {
+            const e = v as { scanId?: unknown; createdAt?: unknown } | null
+            if (e && typeof e.scanId === 'string' && UUID_RE.test(e.scanId) && typeof e.createdAt === 'number' && now - e.createdAt <= reuseWindowMs && e.createdAt <= now) {
+              entries[k] = { scanId: e.scanId, createdAt: e.createdAt }
+            }
           }
         }
+      } else {
+        logger.debug(`scan-id: ${SCAN_ID_FALLBACK_FILE} is larger than ${FALLBACK_MAX_BYTES} bytes, ignoring it`)
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logger.debug(`scan-id: fallback file ignored: ${err instanceof Error ? err.message : String(err)}`)
@@ -216,14 +246,21 @@ function reserveScanIdFile(root: string, repoId: string, reuseKey: string, reuse
     const scanId = randomUUID()
     entries[key] = { scanId, createdAt: now }
     const newest = Object.entries(entries).sort((a, b) => b[1].createdAt - a[1].createdAt).slice(0, FALLBACK_MAX_ENTRIES)
-    mkdirSync(dirname(file), { recursive: true })
-    const tmp = `${file}.${process.pid}.tmp`
-    writeFileSync(tmp, JSON.stringify({ version: 1, entries: Object.fromEntries(newest) }) + '\n', 'utf-8')
+    const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+    writeFileSync(tmp, JSON.stringify({ version: 1, entries: Object.fromEntries(newest) }) + '\n', { encoding: 'utf-8', flag: 'wx' })
     renameSync(tmp, file)
     return { scanId, scanIdReused: false }
   } catch (err) {
     logger.debug(`scan-id: fallback file unusable: ${err instanceof Error ? err.message : String(err)}`)
     return null
+  } finally {
+    if (lock !== null) {
+      try {
+        rmSync(lock, { recursive: true, force: true })
+      } catch (err) {
+        logger.debug(`scan-id: could not remove the lock: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
   }
 }
 

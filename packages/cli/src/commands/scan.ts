@@ -1,6 +1,6 @@
 import { Command, Option } from 'commander'
 import { existsSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { ensureShipguardDirIgnored, refuseWrite } from '../utils/paths.js'
 import { scan } from '../core/scanner.js'
 import { generateReport } from '../core/report.js'
@@ -992,7 +992,13 @@ async function runScan(ctx: {
   const envelope = scanOptions.json || shouldReport ? buildEnvelope(Boolean(scanOptions.json), plannedReport) : null
   let reportPaths: Awaited<ReturnType<typeof generateReport>> | undefined
   // A committed `.shipguard -> /elsewhere` must not receive the report: refused with a warning, the scan still prints.
-  const reportRefused = shouldReport && refuseWrite(cwd, scanOptions.reportPath, 'the report')
+  // Every folder and file generateReport writes is checked: latest.md/.json AND the runs/ folder with the run files in it.
+  const reportDir = dirname(scanOptions.reportPath)
+  const reportBase = basename(scanOptions.reportPath, '.md')
+  const reportTargets = plannedReport
+    ? [scanOptions.reportPath, join(reportDir, `${reportBase}.json`), join(reportDir, 'runs'), plannedReport.runJsonPath, plannedReport.runJsonPath.replace(/\.json$/, '.md')]
+    : []
+  const reportRefused = shouldReport && reportTargets.map((t) => refuseWrite(cwd, t, 'the report')).some(Boolean)
   if (shouldReport && !reportRefused) {
     if (relative(cwd, resolve(cwd, scanOptions.reportPath)).split(/[\\/]/)[0] === '.shipguard') ensureShipguardDirIgnored(cwd)
     const reportElapsedMs = Date.now() - startTime

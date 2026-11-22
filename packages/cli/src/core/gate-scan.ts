@@ -212,7 +212,9 @@ export function copyReports(extracted: string, topLevel: string, runId: string |
   const from = join(extracted, '.shipguard', 'reports')
   if (!existsSync(from) || pathEscapeReason(extracted, '.shipguard/reports') !== null) return null
   const to = join(topLevel, '.shipguard', 'reports')
-  if (refuseWrite(topLevel, '.shipguard/reports', 'the report')) return null
+  // The folder, the three file names and the runs/ folder it copies into: any symlink or escape means nothing is copied.
+  const targets = ['.shipguard/reports', '.shipguard/reports/latest.md', '.shipguard/reports/latest.json', '.shipguard/reports/runs']
+  if (targets.map((t) => refuseWrite(topLevel, t, 'the report')).some(Boolean)) return null
   try {
     mkdirSync(to, { recursive: true })
     for (const name of ['latest.md', 'latest.json']) {

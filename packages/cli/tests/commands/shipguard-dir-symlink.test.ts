@@ -64,6 +64,27 @@ describe('.shipguard committed as a symlink is never written through', () => {
     expect(readdirSync(out)).toEqual([])
   })
 
+  it('.shipguard/reports/runs as a symlink: no latest.* and no runs/<id> files are written outside (scan and gate copy)', async () => {
+    const out = tmp('sg-dirsym-out-')
+    const p = mkTree({ 'a.js': 'console.log(1)\n' }, { git: true })
+    commitAll(p)
+    mkdirSync(join(p, '.shipguard', 'reports'), { recursive: true })
+    symlinkSync(out, join(p, '.shipguard', 'reports', 'runs'))
+    const r = await runCli(['scan', p, '--json'], { env: env() })
+    expect(r.code, r.stderr).toBe(0)
+    expect(r.stderr).toContain('Not saving the report')
+    expect(readdirSync(out), 'files created through runs/').toEqual([])
+    expect(existsSync(join(p, '.shipguard', 'reports', 'latest.md'))).toBe(false)
+    // The gate (blocked commit, so it has a report to copy) copies nothing through the link either.
+    const q = mkTree({ 'lib/k.ts': `export const k = "sk_live_${'abcdefghijklmnopqrstuvwx1234567'}"\n` }, { git: true })
+    commitAll(q)
+    mkdirSync(join(q, '.shipguard', 'reports'), { recursive: true })
+    symlinkSync(out, join(q, '.shipguard', 'reports', 'runs'))
+    const g = await runGate(q)
+    expect(g.code, g.stderr).toBe(1)
+    expect(readdirSync(out)).toEqual([])
+  })
+
   it('the gate, in a repo whose commit holds a .shipguard symlink: it still answers (pass) and writes nothing behind the link', async () => {
     const out = tmp('sg-dirsym-out-')
     const p = mkTree({ 'a.js': 'console.log(1)\n' }, { git: true })
