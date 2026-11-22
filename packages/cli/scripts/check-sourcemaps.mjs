@@ -3,8 +3,8 @@
  * check-sourcemaps — every dist/*.js has a dist/*.js.map whose sources are real repo files.
  * Usage: node scripts/check-sourcemaps.mjs <dist-dir>
  * Fails (exit 1) when: a .js has no map, a .js lacks its //# sourceMappingURL line, a map lists a
- * source under node_modules or with an absolute path, or an embedded source differs from the file
- * on disk (maps are resolved against the dist dir, so ../src/x.ts is packages/cli/src/x.ts).
+ * source under node_modules or with an absolute path, or a source text embedded in the map (the shipped
+ * maps embed none, see tsup.config.ts) differs from the file on disk (maps are resolved against the dist dir, so ../src/x.ts is packages/cli/src/x.ts).
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'

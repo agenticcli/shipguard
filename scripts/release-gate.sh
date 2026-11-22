@@ -113,8 +113,8 @@ if ! node "$CLI_DIR/scripts/check-bundle-imports.mjs" "$DIST"; then
 fi
 echo "PASS [G3] no @agenticcli/* runtime imports in bundle"
 
-# Gate 4: Tarball size sanity (<= 800 kB packed, the 0.13 budget; 0.12.1 ships source maps with embedded
-# sources, measured 528 kB packed / 2.0 MB unpacked). G9 below checks the full budget list.
+# Gate 4: Tarball size sanity (<= 800 kB packed, the 0.13 budget; the maps carry line mappings only, no
+# embedded source text: about 373 kB packed / 1.5 MB unpacked). G9 below checks the full budget list.
 # Loud on every failure: a pack error or unparseable output must FAIL the gate, never default to 0.
 PACK_ERR="$(mktemp)"
 PACK_JSON="$(cd "$CLI_DIR" && npm pack --dry-run --json --ignore-scripts 2>"$PACK_ERR")" || {

@@ -110,7 +110,7 @@ Details: [docs/privacy.md](https://github.com/agenticcli/shipguard/blob/main/doc
 
 ## Verify this package
 
-The package ships source maps (`dist/*.js.map`) with the real source files embedded. To rebuild it from its tag and compare hashes, and for the list of every network call in the CLI, see [REBUILD.md](https://github.com/agenticcli/shipguard/blob/main/REBUILD.md).
+The package ships source maps (`dist/*.js.map`) that point to the public source at the tagged commit. To rebuild it from its tag and compare hashes, and for the list of every network call in the CLI, see [REBUILD.md](https://github.com/agenticcli/shipguard/blob/main/REBUILD.md).
 
 ## Documentation
 

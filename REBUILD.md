@@ -7,7 +7,7 @@ Two questions people ask about the ShipGuard CLI. This page answers both with so
 
 ## 1. Rebuild the package and compare
 
-From 0.12.1 the npm package ships source maps (`dist/*.js.map`) with the real `src/` files embedded, so you can read the code behind the bundle without a checkout. To check that the bundle is what this repo builds:
+The npm package ships source maps (`dist/*.js.map`). From 0.13.0 the maps point to the public source at the tagged commit (they hold line mappings, not a copy of the source text); 0.12.1 embedded the source text. To check that the bundle is what this repo builds:
 
 ```bash
 # needs node 24, pnpm 9.15.0, git, network

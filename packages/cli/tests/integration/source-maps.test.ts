@@ -3,7 +3,8 @@
  *
  * Runs against the real built dist/ and the real `npm pack` file list (never publishes):
  *   - every dist/*.js has a .map, and every map source is a real repo file, never node_modules or an absolute path;
- *   - embedded sources equal the files on disk (nothing hidden in the maps);
+ *   - the maps point at the public sources (line mappings only): no `sourcesContent` is embedded, which keeps the
+ *     package under the 800 KiB budget; if one is ever embedded it must equal the file on disk;
  *   - the packed file set is exactly the allowed folders (no Pro rules, no env files, no private keys);
  *   - the checksum manifest still covers the .js files and does not list maps;
  *   - compare-dist.mjs says MATCH for identical builds and MISMATCH for a changed .js, a changed .map or a missing .map.
@@ -65,8 +66,10 @@ describe('source maps in dist/', () => {
     expect(r.status).toBe(1)
     expect(r.stderr).toMatch(/bad source path/)
 
+    // The shipped maps embed no source text; if text is embedded anyway it must equal the file on disk.
     const tampered = JSON.parse(saved)
-    tampered.sourcesContent[0] = tampered.sourcesContent[0] + '\n// injected'
+    expect(tampered.sourcesContent, 'maps must not embed sourcesContent (package size budget)').toBeUndefined()
+    tampered.sourcesContent = tampered.sources.map(() => '// injected')
     writeFileSync(first, JSON.stringify(tampered))
     expect(run(CHECK, nested).stderr).toMatch(/embedded source differs/)
   })
@@ -94,7 +97,7 @@ describe('packed tarball with source maps', () => {
   })
 
   it('stays under the release-gate size ceiling (G4: 800 kB packed, the 0.13 budget in scripts/release-gate.sh)', () => {
-    // W1b: wiring the plan modules into the commands puts them in the bundle (they were tree-shaken before): 670 kB -> 786 kB.
+    // Maps carry no embedded source text (tsup.config.ts): about 825 kB -> 373 kB packed after W1b and the e2e fixes.
     expect(size).toBeLessThan(819_200)
   })
 

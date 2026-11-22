@@ -462,10 +462,12 @@ const ASSIGNED_LITERAL_RE = compileDetectorRegex(`[=:]\\s*['"\`]?([^\\s'"\`;,]+)
  * True only when the key is assigned to `apiKey` and the surrounding lines look like a Firebase
  * client config, and the file does not use the server-side Admin SDK.
  */
-const FIREBASE_CONFIG_CONTEXT_RE = /firebaseConfig|initializeApp|authDomain|messagingSenderId|storageBucket|measurementId/
+const FIREBASE_CONFIG_CONTEXT_RE = compileDetectorRegex(`firebaseConfig|initializeApp|authDomain|messagingSenderId|storageBucket|measurementId`)
+const API_KEY_ASSIGN_RE = compileDetectorRegex(`\\bapiKey['"]?\\s*[:=]`)
+const FIREBASE_ADMIN_RE = compileDetectorRegex(`firebase-admin|firebase_admin`)
 export function isFirebaseWebConfigKey(lines: string[], i: number, content: string): boolean {
-  if (!/\bapiKey['"]?\s*[:=]/.test(lines[i])) return false
-  if (/firebase-admin|firebase_admin/.test(content)) return false
+  if (!API_KEY_ASSIGN_RE.test(lines[i])) return false
+  if (FIREBASE_ADMIN_RE.test(content)) return false
   const window = lines.slice(Math.max(0, i - 12), i + 13).join('\n')
   return FIREBASE_CONFIG_CONTEXT_RE.test(window)
 }
