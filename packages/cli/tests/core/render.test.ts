@@ -117,19 +117,15 @@ describe('welcomeBanner', () => {
     expect(banner).toBe('')
   })
 
-  it('welcome banner contains quick-start hint', () => {
+  it('the first-run notice is the one shared write notice (spec 06), not a banner', () => {
     const configDir = mkTemp()
     const banner = welcomeBanner(configDir)
     const stripped = banner.replace(/\x1b\[[0-9;]*m/g, '')
-    // Should mention shipguard scan
-    expect(stripped).toMatch(/shipguard scan/i)
-    // Should mention the docs URL
-    expect(stripped).toContain('agenticcli.dev')
+    expect(stripped).toBe('wrote .shipguard/ (reports, history; ignored by git) and ~/.config/shipguard/ (usage-ping id)')
+    expect(stripped).not.toContain('\n') // one line, no banner
   })
 
-  it('carries the one shared data-flow line, including the weekly public fetch', () => {
-    const banner = welcomeBanner(mkTemp())
-    expect(banner).toContain(DATA_FLOW_LINE)
+  it('the one shared data-flow line still names the weekly public fetch', () => {
     expect(DATA_FLOW_LINE).toMatch(/once a week/)
   })
 })

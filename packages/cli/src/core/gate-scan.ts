@@ -257,7 +257,7 @@ function reasonFor(code: string, bytes: number | null, detail: string | null): s
 }
 
 function fixText(f: Json): string | null {
-  const fix = f.fix
+  const fix = isObj(f.fixInfo) ? f.fixInfo : f.fix
   if (isObj(fix) && str(fix.summary)) return firstSentence(String(fix.summary))
   if (typeof fix === 'string' && fix.trim()) return firstSentence(fix)
   const rec = str(f.recommendation)
@@ -273,7 +273,7 @@ function stackNames(j: Json): string[] {
 /** `36 chars, value hidden` for a secret finding, read from the JSON evidence object; the value itself is never in it. */
 function secretLabelOf(raw: Json): string | null {
   if (str(raw.category) !== 'secrets') return null
-  const ev = isObj(raw.evidence) ? raw.evidence : null
+  const ev = isObj(raw.evidenceInfo) ? raw.evidenceInfo : null
   return secretScreenLabel(ev && ev.kind === 'secret' && typeof ev.length === 'number' ? ev.length : null)
 }
 

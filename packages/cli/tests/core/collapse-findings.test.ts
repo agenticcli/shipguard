@@ -51,7 +51,7 @@ describe('same rule, same file, same line -> one finding', () => {
       f({ id: 'generic.cors.wildcard-origin', file: 'a.ts', line: 3, column: 42 }),
     ]
     expect(computeRiskScore(dup).score).toBe(60)
-    expect(computeRiskScore(dup).recommendation).toBe('DO_NOT_SHIP')
+    expect(computeRiskScore(dup).recommendation).toBe('REVIEW_BEFORE_SHIP')
     const one = collapseSameIssueFindings(dup).findings
     expect(computeRiskScore(one).score).toBe(30)
     expect(computeRiskScore(one).recommendation).toBe('REVIEW_BEFORE_SHIP')

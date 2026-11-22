@@ -28,6 +28,8 @@ export interface Finding {
   confidence?: Confidence
   aiCodeTarget?: boolean
   suppressed?: boolean
+  /** The reason saved with a `shipguard ignore` entry that suppressed this finding (screen and report "Ignored"). Not in the JSON. */
+  suppressionReason?: string
   cwe?: string[]
   /**
    * Per-occurrence suppression state from the contract's CanonicalFinding.
@@ -298,6 +300,9 @@ export interface ScanCoverage {
     special: string[]
     nulSubstituted: string[]
     selfArtifacts: string[]
+    /** Degrading skips by name (screen and JSON name every file). Optional: absent on a result built before 0.13.1. */
+    invalidUtf8?: string[]
+    unreadable?: string[]
   }
 }
 

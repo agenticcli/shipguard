@@ -146,12 +146,16 @@ export function writeUserEnabled(dir: string, enabled: boolean): string {
   return writeConfig(dir, { ...readUserConfig(dir), enabled })
 }
 
+/** Folders whose notice this process already printed: an unwritable config folder cannot keep the marker, so the notice would print twice in one run. */
+const noticePrinted = new Set<string>()
+
 export function noticeShown(dir: string = getConfigDir()): boolean {
-  return existsSync(join(dir, NOTICE_MARKER))
+  return noticePrinted.has(dir) || existsSync(join(dir, NOTICE_MARKER))
 }
 
 /** Record that the notice was printed. Best-effort: if it cannot be written the notice just repeats. */
 export function markNoticeShown(dir: string = getConfigDir()): void {
+  noticePrinted.add(dir)
   if (isSafeMode()) return
   try {
     ensureSecureDir(dir)

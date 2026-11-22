@@ -10,7 +10,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { ensureShipguardDirIgnored, refuseWrite } from '../utils/paths.js'
+import { ensureShipguardDirIgnored, refuseWrite, saveProblem } from '../utils/paths.js'
 import chalk from 'chalk'
 import { parseMaskedSecret } from './redact.js'
 import { decideRecommendation, planJson, receiptNote, usageNote } from './plan-lines.js'
@@ -129,8 +129,8 @@ const DEGRADED_INFO: Record<string, DegradedInfo> = {
     fix: `find out what it is; only if the user confirms it is safe, exclude it (${IGNORE_HINT})`,
     askUser: true, coverageKey: 'unknownBinary',
   },
-  FILE_UNREADABLE: { fix: 'fix the permissions, then re-run', askUser: false },
-  INVALID_UTF8: { fix: `find out what it is; only if the user confirms it is safe, exclude it (${IGNORE_HINT})`, askUser: true },
+  FILE_UNREADABLE: { fix: 'fix the permissions, then re-run', askUser: false, coverageKey: 'unreadable' },
+  INVALID_UTF8: { fix: `find out what it is; only if the user confirms it is safe, exclude it (${IGNORE_HINT})`, askUser: true, coverageKey: 'invalidUtf8' },
   OUTPUT_TRUNCATED: { fix: 'limit reached; the remaining files were not scanned: raise limits.maxFiles or scan a subfolder', askUser: false },
   SYMLINK_SKIPPED: { fix: 'ShipGuard never follows symlinks; if this path holds real source, replace the symlink with the real file or folder', askUser: false, coverageKey: 'symlink' },
   CODEREF_SKIPPED: { fix: 'some rulebook rules need a newer ShipGuard: update it (npm i -D @agenticcli/shipguard@latest)', askUser: false },
@@ -213,11 +213,15 @@ export function buildFindingJson(f: Finding, ctx: FindingContext): Record<string
     line: f.line ?? null,
     endLine: null,
     column: f.column ?? null,
-    evidence: evidenceOf(f),
+    // 0.12 shape, kept exactly: a string (already redacted by core/redact.ts) or null. The object form is `evidenceInfo`.
+    evidence: f.evidence ?? null,
+    evidenceInfo: evidenceOf(f),
     why: firstSentence(f.explanation ?? ''),
     // Additive 0.12 key (main decision, wave 2): the long prose stays beside the short `why`, so a consumer that read it keeps working.
     explanation: f.explanation ?? '',
-    fix: {
+    // 0.12 shape, kept exactly: the fix text as a string. The object form is `fixInfo`.
+    fix: fixSummary,
+    fixInfo: {
       summary: fixSummary,
       // No stack-specific fix data ships yet: say so honestly (spec 04: generic when not known to be specific).
       certainty: 'generic',
@@ -322,7 +326,7 @@ export function writeLastRun(cwd: string, state: LastRunState, warn: (m: string)
     writeFileSync(tmp, JSON.stringify(state), { encoding: 'utf-8', mode: 0o600 })
     renameSync(tmp, p)
   } catch (err) {
-    warn(`Could not write ${LAST_RUN_FILE} (${err instanceof Error ? err.message : err}); repeat detection is off for this run.`)
+    if (!saveProblem(err)) warn(`Could not write ${LAST_RUN_FILE} (${err instanceof Error ? err.message : err}); repeat detection is off for this run.`)
   }
 }
 
@@ -341,6 +345,8 @@ export function buildNotScanned(coverage: ScanCoverage | undefined, reasons: Deg
   add(coverage.files.tooLarge, 'FILE_TOO_LARGE', true)
   add(coverage.files.unknownBinary, 'UNSCANNED_UNKNOWN_BINARY', true)
   add(coverage.files.symlink, 'SYMLINK_SKIPPED', degradedCodes.has('SYMLINK_SKIPPED'))
+  add(coverage.files.invalidUtf8 ?? [], 'INVALID_UTF8', true)
+  add(coverage.files.unreadable ?? [], 'UNREADABLE_FILE', true)
   // Known binaries and special files never degrade the verdict: listed, not counted.
   add(coverage.files.binary, 'BINARY', false)
   add(coverage.files.special, 'SPECIAL_FILE', false)
@@ -351,7 +357,7 @@ export function buildDegradedReasons(reasons: DegradeReason[], coverage: ScanCov
   return reasons.map((r) => {
     const code = r.code
     const info = DEGRADED_INFO[DEGRADED_CODE_RENAME[code] ?? code]
-    const files = info?.coverageKey && coverage ? [...coverage.files[info.coverageKey]] : []
+    const files = info?.coverageKey && coverage ? [...(coverage.files[info.coverageKey] ?? [])] : []
     return {
       code,
       files,
@@ -534,7 +540,7 @@ export function decideAgentAction(i: {
 // ---------------------------------------------------------------------------
 // Verdict, exit, plan
 // ---------------------------------------------------------------------------
-export type VerdictReason = 'BLOCKING_FINDINGS' | 'INCOMPLETE_SCAN' | 'RISK_SCORE' | 'REVIEW_BEFORE_SHIP' | 'SAFE_TO_SHIP'
+export type VerdictReason = 'BLOCKING_FINDINGS' | 'INCOMPLETE_SCAN' | 'REVIEW_BEFORE_SHIP' | 'SAFE_TO_SHIP'
 
 export function buildVerdictJson(i: {
   value: Recommendation
@@ -542,18 +548,19 @@ export function buildVerdictJson(i: {
   findingCount: number
   degraded: boolean
   filesScanned: number
-  filesDiscovered: number
+  /** Files that could not be scanned: the SAME number the screen prints (collectNotScanned().fileCount). */
+  notScannedCount: number
   rulebookFallback: boolean
 }): Record<string, unknown> {
   const reason: VerdictReason = i.degraded
     ? 'INCOMPLETE_SCAN'
-    : i.blockingCount > 0
+    : i.blockingCount > 0 || i.value === 'DO_NOT_SHIP'
       ? 'BLOCKING_FINDINGS'
-      : i.value === 'DO_NOT_SHIP'
-        ? 'RISK_SCORE'
-        : i.value
+      : i.value
   const summary = i.degraded
-    ? `${Math.max(i.filesDiscovered - i.filesScanned, 0)} of ${i.filesDiscovered} files were not scanned, ${i.findingCount} findings in the other ${i.filesScanned}`
+    ? i.notScannedCount > 0
+      ? `${i.notScannedCount} of ${i.filesScanned + i.notScannedCount} files were not scanned, ${i.findingCount} findings in the other ${i.filesScanned}`
+      : `the scan did not finish, ${i.findingCount} findings in ${i.filesScanned} files`
     : i.blockingCount > 0
       ? `${i.blockingCount} blocking finding${i.blockingCount === 1 ? '' : 's'} in ${i.filesScanned} files`
       : `${i.findingCount} finding${i.findingCount === 1 ? '' : 's'} in ${i.filesScanned} files`

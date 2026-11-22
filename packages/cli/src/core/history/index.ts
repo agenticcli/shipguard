@@ -9,6 +9,7 @@ import type {
   StateStatus,
 } from '@agenticcli/shared'
 import { relative } from 'node:path'
+import { saveProblem } from '../../utils/paths.js'
 import { generalRuleCountOrNull } from '../general-rule-count.js'
 import { UNVERSIONED } from './schema.js'
 import { resolveHistoryPath } from './path.js'
@@ -123,7 +124,7 @@ export async function recordScanHistory(input: RecordScanHistoryInput): Promise<
 
   if (!openResult.ok) {
     // Loud, not silent (loud errors) — but never fatal to the scan.
-    logger.warn(`ShipGuard history ${openResult.status}: ${openResult.reason}`)
+    if (!saveProblem(openResult.reason)) logger.warn(`ShipGuard history ${openResult.status}: ${openResult.reason}`)
     return {
       stateStatus: openResult.status,
       regressionCheckSkipped: true,
@@ -178,7 +179,7 @@ export async function recordScanHistory(input: RecordScanHistoryInput): Promise<
 
     const stateStatus: StateStatus = writeResult.ok ? 'complete' : 'unavailable'
     if (!writeResult.ok) {
-      logger.warn(`ShipGuard history write failed — this scan's findings/verdict are unaffected: ${writeResult.reason}`)
+      if (!saveProblem(writeResult.reason)) logger.warn(`ShipGuard history write failed — this scan's findings/verdict are unaffected: ${writeResult.reason}`)
     }
 
     const retentionDays = policy.history?.retention_days
@@ -203,9 +204,11 @@ export async function recordScanHistory(input: RecordScanHistoryInput): Promise<
     const regressionResult = computeRegressionResult(currentSnapshot, baseline)
     return { stateStatus, ...regressionResult }
   } catch (err) {
-    logger.warn(
-      `ShipGuard history recording failed unexpectedly — this scan's findings/verdict are unaffected: ${err instanceof Error ? err.message : err}`,
-    )
+    if (!saveProblem(err)) {
+      logger.warn(
+        `ShipGuard history recording failed unexpectedly — this scan's findings/verdict are unaffected: ${err instanceof Error ? err.message : err}`,
+      )
+    }
     return {
       stateStatus: 'unavailable',
       regressionCheckSkipped: true,

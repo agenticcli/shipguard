@@ -138,7 +138,11 @@ export function loginCommand(): Command {
       // Ctrl-C while waiting is LOGIN_CANCELLED (exit 130), not a crash and not a timeout. Removed again on every way out.
       let onSigint: () => void = () => {}
       const cancelled = new Promise<true>((resolve) => { onSigint = () => resolve(true); process.once('SIGINT', onSigint) })
-      const cancel = (): void => fail('LOGIN_CANCELLED', 'sign-in stopped.', { json, fix: 'sign in again when you are ready.' })
+      const cancel = (): void => {
+        fail('LOGIN_CANCELLED', 'sign-in stopped.', { json, fix: 'sign in again when you are ready.' })
+        // The poll timer is still pending: leave promptly once the message is out (unref: never keeps the process alive).
+        setTimeout(() => process.exit(130), 200).unref()
+      }
       try {
       for (;;) {
         if (await Promise.race([sleep(Math.min(pollMs, Math.max(deadline - Date.now(), 0))).then(() => false), cancelled])) return cancel()

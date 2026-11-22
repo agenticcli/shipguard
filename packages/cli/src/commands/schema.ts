@@ -98,13 +98,17 @@ export interface SchemaContract {
 export function buildScanJsonSchema(): Record<string, unknown> {
   const finding = {
     type: 'object',
-    required: ['id', 'occurrence', 'title', 'severity', 'confidence', 'category', 'blocking', 'file', 'line', 'endLine', 'column', 'evidence', 'why', 'fix', 'notAVulnerabilityIf', 'suppressed', 'suppressionState', 'origin', 'matcherType', 'aiCodeTarget', 'cwe', 'recommendation'],
+    required: ['id', 'occurrence', 'title', 'severity', 'confidence', 'category', 'blocking', 'file', 'line', 'endLine', 'column', 'evidence', 'evidenceInfo', 'why', 'fix', 'fixInfo', 'notAVulnerabilityIf', 'suppressed', 'suppressionState', 'origin', 'matcherType', 'aiCodeTarget', 'cwe', 'recommendation'],
     properties: {
       occurrence: { type: 'string', pattern: '^[0-9a-f]{12}$' },
       severity: { enum: ['critical', 'high', 'medium', 'low', 'info'] },
       origin: { enum: ['general', 'rulebook'] },
-      evidence: { oneOf: [{ type: 'null' }, { type: 'object', required: ['kind'], properties: { kind: { enum: ['secret', 'text'] } } }] },
-      fix: { type: 'object', required: ['summary', 'certainty', 'code', 'steps', 'verify', 'effort'], properties: { certainty: { enum: ['stack-specific', 'generic'] } } },
+      // 0.12 shapes, unchanged: strings (evidence is null when the finding has none).
+      evidence: { type: ['string', 'null'] },
+      fix: { type: 'string' },
+      // 0.13 objects, under new keys (additive: no 0.12 key changes type).
+      evidenceInfo: { oneOf: [{ type: 'null' }, { type: 'object', required: ['kind'], properties: { kind: { enum: ['secret', 'text'] } } }] },
+      fixInfo: { type: 'object', required: ['summary', 'certainty', 'code', 'steps', 'verify', 'effort'], properties: { certainty: { enum: ['stack-specific', 'generic'] } } },
     },
   }
   return {
