@@ -456,6 +456,20 @@ const PLACEHOLDER_VALUE_RE = compileDetectorRegex(
 const ASSIGNED_LITERAL_RE = compileDetectorRegex(`[=:]\\s*['"\`]?([^\\s'"\`;,]+)`)
 
 /** True when `value` is a key that is designed to be public (see block comment above). Pure. */
+/**
+ * A Google `AIza...` key inside a Firebase web config object is a public identifier by design
+ * (Firebase docs: "Firebase API keys are not secrets"; access is governed by rules, not this key).
+ * True only when the key is assigned to `apiKey` and the surrounding lines look like a Firebase
+ * client config, and the file does not use the server-side Admin SDK.
+ */
+const FIREBASE_CONFIG_CONTEXT_RE = /firebaseConfig|initializeApp|authDomain|messagingSenderId|storageBucket|measurementId/
+export function isFirebaseWebConfigKey(lines: string[], i: number, content: string): boolean {
+  if (!/\bapiKey['"]?\s*[:=]/.test(lines[i])) return false
+  if (/firebase-admin|firebase_admin/.test(content)) return false
+  const window = lines.slice(Math.max(0, i - 12), i + 13).join('\n')
+  return FIREBASE_CONFIG_CONTEXT_RE.test(window)
+}
+
 export function isPublicKeyValue(value: string): boolean {
   const v = value.trim()
   if (PUBLISHABLE_PREFIX_RE.test(v)) return true
@@ -810,18 +824,21 @@ export function checkSecretsWithStats(files: FileInfo[], policy: Policy): Secret
           // (a JWT's capture stops at the first dot); never read a LATER value on the line for a bare-token match.
           const isAssignMatch = lineMatch.match.includes('=') || lineMatch.match.includes(':')
           if (isPublicKeyValue((isAssignMatch ? assignedLiteral(line.slice(lineMatch.index)) : '') || secretValue)) continue
+          const firebasePublic = secretValue.startsWith('AIza') && isFirebaseWebConfigKey(lines, i, content)
           const secretFinding: Finding = {
             id: pattern.id,
             title: pattern.name,
-            severity: pattern.severity,
+            severity: firebasePublic ? 'low' : pattern.severity,
             category: 'secrets',
             file: relativePath,
             line: i + 1,
             evidence: maskSecret(pattern.name, secretValue),
             confidence: looksFakeKey(secretValue) ? 'LOW' : pattern.confidence,
-            explanation: pattern.explanation,
+            explanation: firebasePublic
+              ? 'Firebase web config apiKey. Firebase documents this key as a public identifier, not a secret; it ships in client apps. Protect data with Security Rules and App Check, and restrict the key by HTTP referrer in the Google console.'
+              : pattern.explanation,
             recommendation: pattern.recommendation,
-            blocking: policy.block.includes(pattern.id),
+            blocking: firebasePublic ? false : policy.block.includes(pattern.id),
           }
           stampFindingIdentity(secretFinding, secretValue)
           if (!secretDedupe.fold(findings, i, secretStart(lineMatch, secretValue), secretValue, secretFinding)) {
