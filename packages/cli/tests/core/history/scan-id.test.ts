@@ -289,6 +289,8 @@ describe('resolveScanId — end-to-end over a real git repo + real SQLite store'
     writeFileSync(blocker, 'i am a file', 'utf-8')
     // Ask the store to live INSIDE a file path — mkdir must fail, HistoryStore.open returns { ok: false }.
     const policy = makePolicy({ history: { path: join(blocker, 'nested', 'history.db') } })
+    // The small fallback file (.shipguard/scan-id-reuse.json) must be impossible too, or nothing is "unavailable" any more.
+    writeFileSync(join(dir, '.shipguard'), 'i am a file too', 'utf-8')
 
     await expect(
       resolveScanId({ cwd: dir, policy, cliVersion: '0.4.1', changedOnly: false, categories: [], rulebookRequested: true, frameworks: [] }),

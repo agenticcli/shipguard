@@ -6,6 +6,7 @@ import type { RepoIdKind } from '@agenticcli/shared'
 import { DEFAULT_REPO_ID_FALLBACK_PATH } from '@agenticcli/shared'
 import { logger } from '../../utils/logger.js'
 import { assertCwdAlive } from '../../utils/cwd-guard.js'
+import { ensureShipguardDirIgnored, pathEscapeReason } from '../../utils/paths.js'
 
 export interface RepoIdentity {
   repoId: string
@@ -19,27 +20,6 @@ function tryGit(cwd: string, args: string[]): string | undefined {
     return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
   } catch {
     return undefined
-  }
-}
-
-/**
- * Idempotently ensure `entry` (e.g. `.shipguard/`) is present in the repo's own .gitignore.
- * Never throws — a failure here must not break a scan; it just means the user's own
- * .gitignore doesn't get the courtesy line and history.db/repo-id could get committed.
- */
-export function ensureGitignored(cwd: string, entry: string): void {
-  try {
-    const gitignorePath = join(cwd, '.gitignore')
-    const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : ''
-    const alreadyPresent = existing
-      .split('\n')
-      .map((l) => l.trim())
-      .some((l) => l === entry || l === entry.replace(/\/$/, ''))
-    if (alreadyPresent) return
-    const prefix = existing.length > 0 && !existing.endsWith('\n') ? '\n' : ''
-    writeFileSync(gitignorePath, `${existing}${prefix}${entry}\n`, 'utf-8')
-  } catch (err) {
-    logger.warn(`Could not update .gitignore for history store: ${err instanceof Error ? err.message : err}`)
   }
 }
 
@@ -68,8 +48,13 @@ export function resolveRepoIdentity(cwd: string): RepoIdentity {
   }
 
   // Fallback: no root commit readable (shallow clone, zero commits, not a git repo at all).
-  // Never blocks a scan — persist a UUID gitignored at .shipguard/repo-id.
+  // Never blocks a scan — persist a UUID at .shipguard/repo-id (the folder ignores itself via .shipguard/.gitignore).
   const fallbackPath = join(cwd, DEFAULT_REPO_ID_FALLBACK_PATH)
+  const refused = pathEscapeReason(cwd, DEFAULT_REPO_ID_FALLBACK_PATH)
+  if (refused !== null) {
+    logger.warn(`Not saving the repo id in ${DEFAULT_REPO_ID_FALLBACK_PATH}: ${refused}. History cannot find an earlier run this time.`)
+    return { repoId: randomUUID(), repoIdKind: 'fallback-uuid', remoteLabel }
+  }
   try {
     if (existsSync(fallbackPath)) {
       const existing = readFileSync(fallbackPath, 'utf-8').trim()
@@ -81,7 +66,7 @@ export function resolveRepoIdentity(cwd: string): RepoIdentity {
     assertCwdAlive()
     mkdirSync(dirname(fallbackPath), { recursive: true })
     writeFileSync(fallbackPath, `${id}\n`, 'utf-8')
-    ensureGitignored(cwd, '.shipguard/')
+    ensureShipguardDirIgnored(cwd)
     return { repoId: id, repoIdKind: 'fallback-uuid', remoteLabel }
   } catch (err) {
     // Even the fallback-uuid persistence failed (read-only fs, etc.) — mint an ephemeral

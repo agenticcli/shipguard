@@ -5,6 +5,8 @@ import type { StateStatus } from '@agenticcli/shared'
 import { CURRENT_SCHEMA_VERSION, MIGRATIONS } from './schema.js'
 import { keyFindingIdentity, loadOrCreateSalt } from './finding-key.js'
 import { logger } from '../../utils/logger.js'
+import { ensureHistoryFolderIgnored, historyPathRefusal, resolveHistoryPath } from './path.js'
+import type { Policy } from '@agenticcli/shared'
 import { assertCwdAlive } from '../../utils/cwd-guard.js'
 import type { RuleOutcome, ScanSnapshot } from './regression.js'
 
@@ -583,4 +585,15 @@ export class HistoryStore {
       // Nothing meaningful to do — the process is exiting anyway; never throw from close().
     }
   }
+}
+
+/**
+ * Open the history store for this project's policy: refused (typed "unavailable", scan unaffected) when the location is a
+ * symbolic link or outside the project, and `.shipguard/` is made self-ignoring in git first.
+ */
+export async function openHistoryStore(cwd: string, policy: Pick<Policy, 'history'>, cliVersion: string): Promise<OpenResult> {
+  const refusal = historyPathRefusal(cwd, policy)
+  if (refusal !== null) return { ok: false, status: 'unavailable', reason: refusal }
+  ensureHistoryFolderIgnored(cwd, policy)
+  return HistoryStore.open(resolveHistoryPath(cwd, policy), cliVersion)
 }

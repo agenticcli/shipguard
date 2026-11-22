@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { ensureShipguardDirIgnored, refuseWrite } from '../utils/paths.js'
 import chalk from 'chalk'
 import { parseMaskedSecret } from './redact.js'
 import { decideRecommendation, planJson, receiptNote, usageNote } from './plan-lines.js'
@@ -313,6 +314,8 @@ export function readLastRun(cwd: string, warn: (m: string) => void): LastRunStat
 
 export function writeLastRun(cwd: string, state: LastRunState, warn: (m: string) => void): void {
   const p = join(cwd, LAST_RUN_FILE)
+  if (refuseWrite(cwd, LAST_RUN_FILE, 'the repeat count')) return
+  ensureShipguardDirIgnored(cwd)
   try {
     mkdirSync(dirname(p), { recursive: true })
     const tmp = `${p}.${process.pid}.tmp`

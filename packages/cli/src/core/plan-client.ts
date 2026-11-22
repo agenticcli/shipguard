@@ -32,7 +32,8 @@ import { buildRerunCommand } from './rerun.js'
 import { gateGapLine, type DetectedStack } from './plan-lines.js'
 import { detectFrameworks } from './framework.js'
 import { loadPolicy } from './policy.js'
-import { resolveHistoryPath, resolveRepoIdentity, HistoryStore } from './history/index.js'
+import { resolveRepoIdentity } from './history/index.js'
+import { openHistoryStore } from './history/store.js'
 import { stackDisplayName } from './fix-guidance.js'
 import { bundledRulesMeta } from './bundled-rules.js'
 import { existsSync } from 'node:fs'
@@ -345,7 +346,7 @@ export interface LastScan {
 export async function lastScanHere(dir: string): Promise<LastScan | null> {
   try {
     const policy = await loadPolicy(dir)
-    const opened = await HistoryStore.open(resolveHistoryPath(dir, policy), CLI_VERSION)
+    const opened = await openHistoryStore(dir, policy, CLI_VERSION)
     if (!opened.ok) return null
     try {
       const row = opened.store.listRecentScans(resolveRepoIdentity(dir).repoId, 1)[0]

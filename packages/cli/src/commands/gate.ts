@@ -34,6 +34,7 @@ import {
 import { parseGateCommand, type GateInvocation } from '../core/gate-target.js'
 import { gateGapFromCache } from '../core/plan-client.js'
 import { SHIM_VERSION } from '../core/hook-templates.js'
+import { policyShapeProblem } from '../core/policy.js'
 import {
   claudePassJson,
   failClosedText,
@@ -245,6 +246,8 @@ function readPolicy(dir: string): PolicyRead {
       }
     }
     const parsed = doc.toJS() as { gate?: { timeoutSeconds?: unknown } } | null
+    const shape = policyShapeProblem(parsed)
+    if (shape !== null) return { ok: false, line: null, cause: shape }
     const t = parsed?.gate?.timeoutSeconds
     if (t !== undefined && (typeof t !== 'number' || !Number.isFinite(t) || t <= 0 || t > 3600)) {
       return { ok: false, line: null, cause: 'gate.timeoutSeconds must be a number of seconds between 1 and 3600' }

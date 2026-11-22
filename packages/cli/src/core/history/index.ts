@@ -14,7 +14,7 @@ import { UNVERSIONED } from './schema.js'
 import { resolveHistoryPath } from './path.js'
 import { resolveRepoIdentity } from './identity.js'
 import { computeScopeFingerprint } from './fingerprint.js'
-import { HistoryStore } from './store.js'
+import { HistoryStore, openHistoryStore } from './store.js'
 import { computeRegressionResult } from './regression.js'
 import type { RuleOutcome, ScanSnapshot } from './regression.js'
 import { deriveBlocking } from '../pro-scanner.js'
@@ -119,7 +119,7 @@ export async function recordScanHistory(input: RecordScanHistoryInput): Promise<
   const releaseId = proReleaseId ?? UNVERSIONED
 
   const historyPath = resolveHistoryPath(cwd, policy)
-  const openResult = await HistoryStore.open(historyPath, cliVersion)
+  const openResult = await openHistoryStore(cwd, policy, cliVersion)
 
   if (!openResult.ok) {
     // Loud, not silent (loud errors) — but never fatal to the scan.

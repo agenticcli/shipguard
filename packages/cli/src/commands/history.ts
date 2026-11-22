@@ -2,6 +2,7 @@ import { Command } from 'commander'
 import { resolve } from 'node:path'
 import { loadPolicy } from '../core/policy.js'
 import { resolveHistoryPath, resolveRepoIdentity, HistoryStore } from '../core/history/index.js'
+import { openHistoryStore } from '../core/history/store.js'
 import { logger } from '../utils/logger.js'
 import { VERDICT_WORDS } from '../core/verdict.js'
 import type { Recommendation } from '@agenticcli/shared'
@@ -80,7 +81,7 @@ export function historyCommand(): Command {
 
       const identity = resolveRepoIdentity(cwd)
       const historyPath = resolveHistoryPath(cwd, policy)
-      const openResult = await HistoryStore.open(historyPath, CLI_VERSION)
+      const openResult = await openHistoryStore(cwd, policy, CLI_VERSION)
 
       if (!openResult.ok) {
         if (machineOutput) {
