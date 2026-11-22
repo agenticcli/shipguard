@@ -30,6 +30,14 @@ export const SHIM_MARKER_PREFIX = '# shipguard-hook v'
 
 export type HookTarget = 'git' | 'claude' | 'ci'
 
+/**
+ * GitHub Actions the generated workflows use, pinned by full commit SHA (a tag can be moved; a SHA cannot). Each SHA was
+ * read from the GitHub API (repos/actions/<name>/git/ref/tags/<tag> -> commit, checked with repos/actions/<name>/commits/<sha>
+ * and the published release, 2026-11-22). Bump both together, by hand, from the API: never type a SHA from memory.
+ */
+export const ACTION_CHECKOUT = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0'
+export const ACTION_SETUP_NODE = 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0'
+
 /** The CI job invocation (the CI template keeps this exact command). */
 export const GATE_COMMAND = 'shipguard scan --json --strict'
 
@@ -207,8 +215,8 @@ jobs:
     name: ShipGuard verdict
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ${ACTION_CHECKOUT}
+      - uses: ${ACTION_SETUP_NODE}
         with:
           node-version: '20'
       - name: Run ShipGuard
