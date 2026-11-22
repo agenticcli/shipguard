@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { EXIT_CODES } from '@agenticcli/shared'
 import { logger } from '../utils/logger.js'
 import { detectJsonLayout, writeJsonLayout } from '../utils/json-layout.js'
+import { lastMember, parseJsonSpans, removeFromList } from '../utils/json-text.js'
 import {
   CLAUDE_HOOK_FINGERPRINT,
   GIT_HOOK_NAMES,
@@ -167,6 +168,47 @@ function recordedEntry(state: InstallState | null, path: string, kind: InstallEn
   return state?.entries.find((e) => e.path === path && e.kind === kind)
 }
 
+/**
+ * Our hook entries cut out of the settings TEXT: every other byte stays as the user wrote it (QA e2e A-08). A group
+ * left with no hook goes with it, then an emptied PreToolUse and an emptied "hooks". Undefined when the text cannot be
+ * edited safely or does not parse to what the object route computed (the caller then re-serialises).
+ */
+function cutOursAsText(raw: string, isOurs: (h: unknown) => unknown, expected: Record<string, unknown>): string | undefined {
+  try {
+    let text = raw
+    for (let guard = 0; guard < 200; guard++) {
+      const root = parseJsonSpans(text)
+      const hooksM = lastMember(root, 'hooks')
+      const preM = lastMember(hooksM?.value, 'PreToolUse')
+      if (!hooksM || !preM || preM.value.type !== 'array') break
+      let cut = false
+      for (let i = 0; i < preM.value.items.length && !cut; i++) {
+        const hm = lastMember(preM.value.items[i], 'hooks')
+        if (!hm || hm.value.type !== 'array') continue
+        for (let j = 0; j < hm.value.items.length && !cut; j++) {
+          const h = hm.value.items[j]
+          if (!isOurs(JSON.parse(text.slice(h.start, h.end)))) continue
+          if (hm.value.items.length > 1) text = removeFromList(text, hm.value, j)
+          else if (preM.value.items.length > 1) text = removeFromList(text, preM.value, i)
+          else if (hooksM.value.members.length > 1) text = removeFromList(text, hooksM.value, hooksM.value.members.indexOf(preM))
+          else if (root.members.length > 1) text = removeFromList(text, root, root.members.indexOf(hooksM))
+          else return undefined // the file would be empty: the object route decides (it deletes the file)
+          cut = true
+        }
+      }
+      if (!cut) break
+    }
+    if (JSON.stringify(JSON.parse(text)) !== JSON.stringify(expected)) {
+      logger.debug('uninstall: the text edit of settings.json did not match the plan; rewriting the file instead')
+      return undefined
+    }
+    return text
+  } catch (err) {
+    logger.debug(`uninstall: settings.json could not be edited as text (${err instanceof Error ? err.message : String(err)}); rewriting the file instead`)
+    return undefined
+  }
+}
+
 function settingsItem(cwd: string, state: InstallState | null): Item | null {
   const path = join(cwd, SETTINGS)
   const label = SETTINGS
@@ -258,7 +300,7 @@ function settingsItem(cwd: string, state: InstallState | null): Item | null {
     deletes: after === null,
     apply: () => {
       if (after === null) unlinkSync(path)
-      else writeFileSync(path, writeJsonLayout(after, layout), 'utf-8')
+      else writeFileSync(path, cutOursAsText(raw, isOurs, after) ?? writeJsonLayout(after, layout), 'utf-8')
     },
     verify: () => {
       const t = readText(path)

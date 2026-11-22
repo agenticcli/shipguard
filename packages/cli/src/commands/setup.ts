@@ -1,5 +1,6 @@
 import { Command } from 'commander'
 import { detectJsonLayout, writeJsonLayout, type JsonLayout } from '../utils/json-layout.js'
+import { appendToList, lastMember, parseJsonSpans } from '../utils/json-text.js'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -222,6 +223,36 @@ interface Action {
 
 const writes = (a: Action): boolean => a.status === 'new' || a.status === 'update'
 
+/**
+ * The settings text with our hook group appended (under hooks > PreToolUse, creating what is missing), every other
+ * byte untouched; undefined when the text cannot be edited safely (the caller then re-serialises). The result must
+ * parse to exactly the object the plan computed, or it is thrown away.
+ */
+function insertHookAsText(raw: string, layout: JsonLayout, group: unknown, expected: unknown): string | undefined {
+  try {
+    const root = parseJsonSpans(raw)
+    const style = { unit: layout.indent ?? '  ', multiline: layout.indent !== undefined, crlf: layout.crlf }
+    const hooksM = lastMember(root, 'hooks')
+    let text: string
+    if (hooksM === undefined) text = appendToList(raw, root, 'hooks', { PreToolUse: [group] }, style)
+    else if (hooksM.value.type !== 'object') return undefined
+    else {
+      const preM = lastMember(hooksM.value, 'PreToolUse')
+      if (preM === undefined) text = appendToList(raw, hooksM.value, 'PreToolUse', [group], style)
+      else if (preM.value.type === 'array') text = appendToList(raw, preM.value, null, group, style)
+      else return undefined
+    }
+    if (JSON.stringify(JSON.parse(text)) !== JSON.stringify(expected)) {
+      logger.debug('setup: the text edit of settings.json did not match the plan; rewriting the file instead')
+      return undefined
+    }
+    return text
+  } catch (err) {
+    logger.debug(`setup: settings.json could not be edited as text (${err instanceof Error ? err.message : String(err)}); rewriting the file instead`)
+    return undefined
+  }
+}
+
 function planClaudeSettings(cwd: string, claudeVersion: string | null): { action: Action; notes: string[] } {
   const path = join(cwd, '.claude', 'settings.json')
   const label = display(cwd, path)
@@ -250,7 +281,6 @@ function planClaudeSettings(cwd: string, claudeVersion: string | null): { action
   }
   // Keep the file's own layout (indent, compact one-liner, final newline), so uninstall can give it back exactly.
   const layout: JsonLayout = raw === null ? { indent: '  ', finalNewline: true, crlf: false, recognised: true } : detectJsonLayout(raw)
-  if (!layout.recognised) notes.push(`${label} is rewritten with 2-space indentation (its own layout could not be kept).`)
   const rawHooks = settings['hooks']
   if (rawHooks !== undefined && (typeof rawHooks !== 'object' || rawHooks === null || Array.isArray(rawHooks))) {
     return { action: { path, label, note: '"hooks" is not an object; not changed', status: 'refused', manual: `fix "hooks" in ${label} by hand (it must be an object), then run setup again`, agents: ['claude'] }, notes }
@@ -316,13 +346,17 @@ function planClaudeSettings(cwd: string, claudeVersion: string | null): { action
         ? `update the ShipGuard PreToolUse hook entry only (${flags})`
         : `add 1 PreToolUse hook (matcher Bash, ${flags}) that runs ${SHIM_RELATIVE_PATH}`
   const status: Action['status'] = same ? 'unchanged' : raw === null ? 'new' : 'update'
+  // First install into an existing file: add our entry AS TEXT, so every byte of the user's own file stays as written
+  // (uninstall cuts the same text out again). An update of an older entry, or text we cannot edit, re-serialises.
+  const textEdit = raw !== null && !hadShim && !sawLegacy ? insertHookAsText(raw, layout, { matcher: 'Bash', hooks: [ours] }, merged) : undefined
+  if (textEdit === undefined && raw !== null && !layout.recognised) notes.push(`${label} is rewritten with 2-space indentation (its own layout could not be kept).`)
   return {
     action: {
       path,
       label,
       note,
       status,
-      content: writeJsonLayout(merged, layout),
+      content: textEdit ?? writeJsonLayout(merged, layout),
       entry: { path: toPosix(relative(cwd, path)), kind: 'json-hook', sha256: sha256(JSON.stringify(ours)), version: SHIM_VERSION },
       agents: ['claude'],
     },
