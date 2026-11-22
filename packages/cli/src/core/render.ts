@@ -148,6 +148,8 @@ export interface ScanScreenInput {
   planLabel?: string | null
   /** Test values ignored in this scan (W5 counts them). */
   ignoredTestValues?: number
+  /** Firebase web config apiKeys noted (public identifiers, not findings). */
+  publicIdentifiers?: number
   /** Fix loop (spec 04): the "since the last run" header and the repeat line above `Next:`. */
   fixLoop?: { fixed: number; added: number; repeatLine?: string | null }
   /** Terminal width when stdout is a terminal; undefined = piped (no wrapping at all). */
@@ -403,6 +405,9 @@ function buildScreen(input: ScanScreenInput, lim: ScreenLimits): string[] {
   out.push('')
   if (input.ignoredTestValues && input.ignoredTestValues > 0) {
     push(`Ignored ${plural(input.ignoredTestValues, 'test value', 'test values')} (placeholder and sample values; listed in the report).`)
+  }
+  if (input.publicIdentifiers && input.publicIdentifiers > 0) {
+    push(`Noted ${plural(input.publicIdentifiers, 'Firebase web config key', 'Firebase web config keys')}: a public identifier by design, not a secret and not a finding. Restrict it by HTTP referrer in the Google console and turn on App Check.`)
   }
   if (input.reportPath) {
     push(result.findings.length > 0 ? `Report: ${input.reportPath}   (all fixes; agents: shipguard scan --json)` : `Report: ${input.reportPath}`)

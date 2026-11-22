@@ -292,6 +292,19 @@ describe('uninstall: scope and safety', () => {
     expect(existsSync(home)).toBe(true)
   })
 
+  it('A-12: "Removed N items" equals the removal lines; no logout hint once --purge-home signed the user out', async () => {
+    const dir = repo(FILES)
+    await setup(dir, 'all')
+    const home = mk('sg-un-h-')
+    const cfg = join(home, '.config', 'shipguard')
+    mkdirSync(cfg, { recursive: true })
+    writeFileSync(join(cfg, 'telemetry.json'), '{}')
+    const r = await un(dir, { yes: true, purge: true, purgeHome: true }, { configDir: cfg })
+    const removedLines = r.text.split('\n').filter((l) => l.startsWith('✓ removed')).length
+    expect(r.text).toContain(`Removed ${removedLines} items.`)
+    expect(r.text).not.toContain('shipguard logout')
+    expect(r.text).toContain('npm uninstall @agenticcli/shipguard')
+  })
   it('a tampered record cannot point uninstall at another file', async () => {
     const dir = repo({ ...FILES, 'precious.txt': 'keep me' })
     await setup(dir, 'claude')

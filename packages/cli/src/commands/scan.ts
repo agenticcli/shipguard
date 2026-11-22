@@ -1092,6 +1092,7 @@ async function runScan(ctx: {
       planLines: [...pitch.lines, ...receiptOut],
       planLabel: plan.server?.label ?? null,
       ignoredTestValues,
+      publicIdentifiers: result.coverage?.publicIdentifiers ?? 0,
       secretLabel,
       fixLoop: sinceLastRun
         ? { fixed: sinceLastRun.fixed.length, added: sinceLastRun.new.length, repeatLine: repeatLineFor(sinceLastRun, blockingCount) }
@@ -1129,13 +1130,10 @@ async function runScan(ctx: {
     // contract (exit code is verdict-neutral by default; verdict lives in JSON).
     // 'review' means "a human should look at this before trusting the verdict":
     // either a degraded/partial scan, or a REVIEW_BEFORE_SHIP recommendation.
-    const verdictBucket: TelemetryVerdict = result.degraded
-      ? 'review'
-      : result.riskScore.blockingCount > 0
-        ? 'blocked'
-        : result.riskScore.recommendation === 'REVIEW_BEFORE_SHIP'
-          ? 'review'
-          : 'safe'
+    // G-10: the ping carries the SAME verdict the run printed (effectiveRecommendation), so an incomplete scan that
+    // ends DO_NOT_SHIP pings 'blocked', not 'review'.
+    const verdictBucket: TelemetryVerdict =
+      verdictValue === 'DO_NOT_SHIP' ? 'blocked' : verdictValue === 'REVIEW_BEFORE_SHIP' ? 'review' : 'safe'
     telemetryDone = sendTelemetry(
       {
         cliVersion: CLI_VERSION,

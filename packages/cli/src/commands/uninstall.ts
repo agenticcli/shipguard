@@ -660,6 +660,8 @@ export async function runUninstall(opts: UninstallOptions, d: UninstallDeps): Pr
 
   // 4. Remove, one item at a time; the first failure stops the run and leaves the record so a rerun can finish
   const done: Item[] = []
+  let removedExtra = 0
+  let signedOut = false
   try {
     for (const i of removing) {
       i.apply()
@@ -680,6 +682,7 @@ export async function runUninstall(opts: UninstallOptions, d: UninstallDeps): Pr
     if (hasRecord && removeRecordNow && failures.length === 0) {
       unlinkSync(recordFile)
       out(`✓ removed the install record ${INSTALL_STATE_FILE}`)
+      removedExtra++
     } else if (hasRecord && !removeRecordNow && state !== null && failures.length === 0) {
       // Partial uninstall: keep the record for the agents that stay.
       const gone = new Set(removing.map((i) => display(cwd, i.path)))
@@ -696,11 +699,14 @@ export async function runUninstall(opts: UninstallOptions, d: UninstallDeps): Pr
       if (!existsSync(join(dotDir, 'installed.json')) || purgeDot) {
         rmSync(dotDir, { recursive: true, force: true })
         out(purgeDot && !onlyOurs ? `✓ removed ${INSTALL_STATE_DIR}/ (reports, history)` : `✓ removed ${INSTALL_STATE_DIR}/`)
+        removedExtra++
       }
     }
     if (homeExists && failures.length === 0) {
       rmSync(configDir, { recursive: true, force: true })
       out('✓ removed ~/.config/shipguard/ (you are signed out)')
+      removedExtra++
+      signedOut = true
     }
   } catch (err) {
     logger.error(`UNINSTALL_FAILED: could not remove the record or folders: ${err instanceof Error ? err.message : String(err)}`)
@@ -715,7 +721,8 @@ export async function runUninstall(opts: UninstallOptions, d: UninstallDeps): Pr
 
   // 6. What is left, named
   const keptNames = [...(policyKept ? ['shipguard.policy.yml'] : []), ...(dotKept ? [`${INSTALL_STATE_DIR}/ (reports, history, its .gitignore)`] : [])]
-  out(`Removed ${count} ${count === 1 ? 'item' : 'items'}.${keptNames.length > 0 ? ` Kept: ${keptNames.join(', ')}.` : ''}`)
+  const removedCount = done.length + removedExtra
+  out(`Removed ${removedCount} ${removedCount === 1 ? 'item' : 'items'}.${keptNames.length > 0 ? ` Kept: ${keptNames.join(', ')}.` : ''}`)
   const active = [...keptEdited.map((i) => `${i.label} (${i.note})`), ...sharedKept.map((s) => `${s.item.label} (still used by ${s.by.join(', ')})`)]
   if (active.length === 0) {
     out("Checking this project's own files: no ShipGuard hook or block is left.      ✓")
@@ -723,7 +730,7 @@ export async function runUninstall(opts: UninstallOptions, d: UninstallDeps): Pr
     out("Checking this project's own files: removed items are gone. Still active (named above):")
     for (const a of active) out(`  ${a}`)
   }
-  out('Still to do by hand: npm uninstall @agenticcli/shipguard; shipguard logout')
+  out(`Still to do by hand: npm uninstall @agenticcli/shipguard${signedOut ? '' : '; shipguard logout'}`)
   out('Reinstall any time: shipguard setup')
   return EXIT_CODES.SAFE
 }

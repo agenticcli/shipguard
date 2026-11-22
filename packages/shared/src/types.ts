@@ -285,6 +285,8 @@ export interface ScanCoverage {
    * key). Counted so the skip is auditable; never a finding. Optional: absent on a result built before it was counted.
    */
   ignoredTestValues?: number
+  /** Firebase web config apiKeys seen (public identifiers by design). Noted on the screen, never a finding, never in the verdict. */
+  publicIdentifiers?: number
   /**
    * `--changed` only. `listed` = every path git reported; `outsideScope` = those outside the scan folder.
    * `nothingToCheck` is present (always `true`) only when git ran fine and nothing but ShipGuard's own

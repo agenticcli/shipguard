@@ -667,6 +667,8 @@ export interface SecretsResult {
   findings: Finding[]
   /** Matches skipped because the value is a documented test or placeholder value. */
   ignoredTestValues: number
+  /** Firebase web config apiKeys: public by design, noted not reported (B-07/B-36). */
+  publicIdentifiers: number
 }
 
 function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
@@ -677,6 +679,7 @@ function checkSecrets(files: FileInfo[], policy: Policy): Finding[] {
 export function checkSecretsWithStats(files: FileInfo[], policy: Policy): SecretsResult {
   const findings: Finding[] = []
   let ignoredTestValues = 0
+  const publicIdentifiers = new Set<string>()
 
   for (const file of files) {
     const { content, relativePath } = file
@@ -827,20 +830,20 @@ export function checkSecretsWithStats(files: FileInfo[], policy: Policy): Secret
           const isAssignMatch = lineMatch.match.includes('=') || lineMatch.match.includes(':')
           if (isPublicKeyValue((isAssignMatch ? assignedLiteral(line.slice(lineMatch.index)) : '') || secretValue)) continue
           const firebasePublic = secretValue.startsWith('AIza') && isFirebaseWebConfigKey(lines, i, content)
+          // A Firebase web config apiKey is a public identifier: counted and noted, never a finding (B-07/B-36).
+          if (firebasePublic) { publicIdentifiers.add(`${relativePath}:${i}`); continue }
           const secretFinding: Finding = {
             id: pattern.id,
             title: pattern.name,
-            severity: firebasePublic ? 'low' : pattern.severity,
+            severity: pattern.severity,
             category: 'secrets',
             file: relativePath,
             line: i + 1,
             evidence: maskSecret(pattern.name, secretValue),
             confidence: looksFakeKey(secretValue) ? 'LOW' : pattern.confidence,
-            explanation: firebasePublic
-              ? 'Firebase web config apiKey. Firebase documents this key as a public identifier, not a secret; it ships in client apps. Protect data with Security Rules and App Check, and restrict the key by HTTP referrer in the Google console.'
-              : pattern.explanation,
+            explanation: pattern.explanation,
             recommendation: pattern.recommendation,
-            blocking: firebasePublic ? false : policy.block.includes(pattern.id),
+            blocking: policy.block.includes(pattern.id),
           }
           stampFindingIdentity(secretFinding, secretValue)
           if (!secretDedupe.fold(findings, i, secretStart(lineMatch, secretValue), secretValue, secretFinding)) {
@@ -858,7 +861,7 @@ export function checkSecretsWithStats(files: FileInfo[], policy: Policy): Secret
     }
   }
 
-  return { findings, ignoredTestValues }
+  return { findings, ignoredTestValues, publicIdentifiers: publicIdentifiers.size }
 }
 
 // ---------------------------------------------------------------------------

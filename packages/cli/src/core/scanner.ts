@@ -310,12 +310,14 @@ export async function scan(
   const sourceRedacted = new Set<Finding>()
   // Test and placeholder values the checks skipped (counted for `coverage.ignoredTestValues`, never findings).
   let ignoredTestValues = 0
+  let publicIdentifiers = 0
   const legacyFindings = applySuppressions(
     CHECK_MODULES.flatMap((mod) => {
       let found: Finding[]
       if (mod === secretsCheck) {
         const withStats = checkSecretsWithStats(files, policy)
         ignoredTestValues += withStats.ignoredTestValues
+        publicIdentifiers += withStats.publicIdentifiers
         found = withStats.findings
         for (const f of found) sourceRedacted.add(f)
       } else {
@@ -544,7 +546,7 @@ export async function scan(
 
   const isDegraded = degradedReasons.length > 0 || undefined
 
-  const coverage = { ...buildCoverage(state, mode, changedInfo), ignoredTestValues }
+  const coverage = { ...buildCoverage(state, mode, changedInfo), ignoredTestValues, ...(publicIdentifiers > 0 ? { publicIdentifiers } : {}) }
 
   const result: ScanResultWithMeta = {
     findings: allFindings,
