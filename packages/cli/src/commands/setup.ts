@@ -952,6 +952,19 @@ export function dependencyCommand(dir: string, version: string): { pm: string; a
   return { pm: 'npm', args: ['install', '--save-dev', '--save-exact', '--ignore-scripts', spec] }
 }
 
+/** Folders a package runner (npx, pnpm dlx, yarn dlx, bunx) puts on PATH for one run only; they vanish when it exits. */
+const RUNNER_TEMP_DIR = /[\\/](_npx|dlx-[^\\/]*|pnpm[\\/]dlx|xfs-[^\\/]*|bunx-[^\\/]*)([\\/]|$)/
+
+/** The `shipguard` a later hook would find on PATH: the first real executable, never one inside a runner's temp folder. */
+export function findShipguardOnPath(env: NodeJS.ProcessEnv): string | null {
+  for (const d of (env['PATH'] ?? '').split(':')) {
+    if (d === '' || RUNNER_TEMP_DIR.test(d)) continue
+    const candidate = join(d, 'shipguard')
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
 function probeVersion(bin: string, cwd: string): string | null {
   try {
     const text = execFileSync(bin, ['--version'], { cwd, encoding: 'utf-8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] })
@@ -986,7 +999,11 @@ function realDeps(cwd: string): SetupDeps {
         const v = probeVersion(local, dir)
         if (versionAtLeast(v, GATE_MIN_VERSION)) return { where: 'local', version: v as string, path: local }
       }
-      const v = probeVersion('shipguard', dir)
+      // Not a PATH install when the only `shipguard` on PATH is the temporary folder of `npx -p ... shipguard setup`:
+      // it is gone when npx exits, so every later push would need the network (e2e A-10).
+      const onPathBin = findShipguardOnPath(process.env)
+      if (onPathBin === null) return null
+      const v = probeVersion(onPathBin, dir)
       return versionAtLeast(v, GATE_MIN_VERSION) ? { where: 'PATH', version: v as string, path: 'shipguard' } : null
     },
     installDependency: (dir, version) => {
