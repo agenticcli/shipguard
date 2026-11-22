@@ -30,6 +30,7 @@ import {
   type InstallState,
 } from '../core/install-state.js'
 import { getConfigDir } from '../core/telemetry-config.js'
+import { pathEscapeReason } from '../utils/paths.js'
 
 /**
  * `shipguard uninstall`: reverse exactly what `shipguard setup` wrote (spec 07), and nothing else.
@@ -38,7 +39,8 @@ import { getConfigDir } from '../core/telemetry-config.js'
  * - Only a fixed list of ShipGuard locations is ever looked at (the Claude hook entry and script, the CLAUDE.md
  *   and AGENTS.md blocks, the git hooks folder git itself runs, the CI workflow). Paths in
  *   `.shipguard/installed.json` are NEVER followed: the record only supplies content hashes, so a tampered
- *   record cannot point uninstall at another file.
+ *   record cannot point uninstall at another file. A folder on the way to one of those locations that is a symbolic
+ *   link leaving the project (a committed `.claude -> ../elsewhere`) makes the item "kept, by hand", never a change.
  * - Content is removed only when it is ShipGuard's own: a whole file only when its hash matches the record (or, with
  *   no record, when it equals a known ShipGuard template); a block only between ShipGuard's own markers and, when
  *   there is a record, only when the hash still matches. Anything edited since is kept and named.
@@ -85,6 +87,12 @@ function isSymlink(path: string): boolean {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
     throw err
   }
+}
+
+/** Why the folder holding `path` is not safely inside the project (a committed symlink can point anywhere), else null. */
+function folderEscapes(cwd: string, path: string): string | null {
+  const parent = dirname(path)
+  return parent === resolve(cwd) ? null : pathEscapeReason(cwd, parent)
 }
 
 function readText(path: string): string | null {
@@ -168,6 +176,8 @@ function settingsItem(cwd: string, state: InstallState | null): Item | null {
   const owners: Agent[] = ['claude']
   const stays = (note: string, manual: string): Item => ({ path, label, owners, state: 'keep-edited', note, manual, apply: () => undefined, verify: () => null, deletes: false })
   if (isSymlink(path)) return stays('is a symbolic link; not changed', `remove the ShipGuard hook entry (the one that names ${CLAUDE_HOOK_FINGERPRINT}) by hand`)
+  const esc = folderEscapes(cwd, path)
+  if (esc !== null) return stays(`its folder is not safely inside the project (${esc}); not changed`, `remove the ShipGuard hook entry (the one that names ${CLAUDE_HOOK_FINGERPRINT}) by hand`)
   let settings: Record<string, unknown>
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -281,6 +291,8 @@ function wholeFileItem(
   if (text === null || !marker(text)) return null
   const stays = (note: string, manual: string): Item => ({ path, label: rel, owners, state: 'keep-edited', note, manual, apply: () => undefined, verify: () => null, deletes: false })
   if (isSymlink(path)) return stays('is a symbolic link; not changed', `delete ${rel} yourself if you want it gone`)
+  const esc = folderEscapes(cwd, path)
+  if (esc !== null) return stays(`its folder is not safely inside the project (${esc}); not changed`, `delete ${rel} yourself if you want it gone`)
   const rec = recordedEntry(state, rel, 'file')
   const unedited = rec !== undefined ? rec.sha256 === sha256(text) : knownTemplate(text)
   if (!unedited) {
@@ -308,6 +320,8 @@ function mdBlockItem(cwd: string, state: InstallState | null, file: string, owne
   if (text === null || !text.includes(MD_MARKER_PREFIX)) return null
   const stays = (note: string, manual: string): Item => ({ path, label: file, owners, state: 'keep-edited', note, manual, apply: () => undefined, verify: () => null, deletes: false })
   if (isSymlink(path)) return stays('is a symbolic link; not changed', `delete the block between the ShipGuard markers in ${file} yourself`)
+  const esc = folderEscapes(cwd, path)
+  if (esc !== null) return stays(`its folder is not safely inside the project (${esc}); not changed`, `delete the block between the ShipGuard markers in ${file} yourself`)
   const block = extractMdBlock(text)
   if (block === undefined) {
     const [a, b] = lineRange(text, MD_MARKER_PREFIX, MD_MARKER_END)
@@ -454,8 +468,12 @@ export async function runUninstall(opts: UninstallOptions, d: UninstallDeps): Pr
     return EXIT_CODES.CONFIG_ERROR
   }
 
-  // 1. Find what is there
-  const state = readInstallState(cwd)
+  // 1. Find what is there. A `.shipguard` that is a symbolic link out of the project (a committed one) is never read,
+  // changed or deleted through: no record, no folder work.
+  const dotDir = join(cwd, INSTALL_STATE_DIR)
+  const dotEscape = existsSync(dotDir) || isSymlink(dotDir) ? pathEscapeReason(cwd, dotDir) : null
+  if (dotEscape !== null) logger.warn(`${INSTALL_STATE_DIR} is not safely inside the project (${dotEscape}); it is not read or changed.`)
+  const state = dotEscape === null ? readInstallState(cwd) : null
   const items: Item[] = []
   const push = (i: Item | null): void => {
     if (i !== null) items.push(i)
@@ -520,12 +538,11 @@ export async function runUninstall(opts: UninstallOptions, d: UninstallDeps): Pr
     else keptEdited.push(i)
   }
 
-  const dotDir = join(cwd, INSTALL_STATE_DIR)
-  const hasDot = existsSync(dotDir)
+  const hasDot = dotEscape === null && existsSync(dotDir)
   const dotEntries = hasDot ? readdirSync(dotDir) : []
   const onlyOurs = dotEntries.every((n) => n === 'installed.json' || n === '.gitignore')
   const recordFile = join(cwd, INSTALL_STATE_FILE)
-  const hasRecord = existsSync(recordFile)
+  const hasRecord = dotEscape === null && existsSync(recordFile)
   const homeExists = opts.purgeHome === true && existsSync(configDir)
 
   if (items.length === 0 && !hasRecord && !(opts.purge && hasDot) && !homeExists) {

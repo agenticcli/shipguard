@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { logger } from '../utils/logger.js'
+import { GIT_HOOK_NAMES, SHIM_RELATIVE_PATH } from './hook-templates.js'
 
 export const INSTALL_STATE_DIR = '.shipguard'
 export const INSTALL_STATE_FILE = '.shipguard/installed.json'
@@ -50,6 +51,15 @@ export function sha256(text: string): string {
   return createHash('sha256').update(text).digest('hex')
 }
 
+/**
+ * Where `setup` writes anything it records. A record is a file in the project that a clone brings along, so an entry for
+ * any other path is not ours: it is dropped, never followed. (Git hooks live in a folder git names, so only the file
+ * name is checked there.)
+ */
+const KNOWN_ENTRY_PATHS: readonly string[] = ['.claude/settings.json', SHIM_RELATIVE_PATH, 'CLAUDE.md', 'AGENTS.md', '.github/workflows/shipguard.yml']
+const isKnownEntryPath = (path: string, kind: InstallEntryKind): boolean =>
+  KNOWN_ENTRY_PATHS.includes(path) || (kind === 'block' && (GIT_HOOK_NAMES as readonly string[]).includes(path.split('/').pop() ?? ''))
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 function parseState(raw: unknown): InstallState | null {
@@ -64,6 +74,10 @@ function parseState(raw: unknown): InstallState | null {
     if (!isRecord(e)) return null
     if (typeof e['path'] !== 'string' || typeof e['sha256'] !== 'string') return null
     if (e['kind'] !== 'file' && e['kind'] !== 'block' && e['kind'] !== 'json-hook') return null
+    if (!isKnownEntryPath(e['path'], e['kind'])) {
+      logger.debug(`install-state: ignoring a record entry for ${JSON.stringify(e['path'])}: not a place setup writes`)
+      continue
+    }
     outEntries.push({
       path: e['path'],
       kind: e['kind'],
