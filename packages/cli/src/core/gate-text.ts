@@ -63,7 +63,7 @@ export interface CheckedInfo {
   label: string
   /** Uncommitted tracked files (never scanned by the gate); null = git could not say. */
   workingTree: string[] | null
-  /** git merge from a git hook: what was checked is the merge result about to be committed, not an incoming commit. */
+  /** git hook merge: the staged merge result was checked, not an incoming commit. */
   mergeResult?: boolean
 }
 
@@ -153,7 +153,7 @@ function checkedLine(ctx: GateTextContext): string {
   if (!c) return ''
   const what =
     ctx.kind === 'push' ? 'the commit a push sends'
-      : ctx.kind === 'merge' ? (c.mergeResult ? 'the merged result this merge is about to commit' : 'the incoming commit of a merge')
+      : ctx.kind === 'merge' ? (c.mergeResult ? 'the merged result about to be committed' : 'the incoming commit of a merge')
         : ctx.kind === 'ci' ? 'the commit this CI run checks'
           : 'the local commit only (the PR head on GitHub and the merged result are not checked; CI covers those)'
   const wt =
@@ -341,19 +341,15 @@ export function passText(input: PassInput): PassText {
             : 'Working tree: clean (nothing uncommitted is left out).',
       )
     }
-  } else if (ctx.kind === 'merge' && c?.mergeResult) {
-    out.push(`Checked: ${c.dir} @ ${c.sha.slice(0, 7)} (${c.label}), the merged result this merge is about to commit: ${scan.filesScanned} files${rules}, ${scan.seconds.toFixed(1)}s.${scan.runId ? ` Run ${scan.runId}.` : ''}`)
-    out.push(
-      `Verdict: ${safe ? `SAFE TO SHIP (0 findings; ${VERDICT_LIMIT})` : `REVIEW BEFORE SHIP (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')}, 0 blocking)`}. ${v.allowed}.`,
-    )
-    const wt = c.workingTree
-    if (wt === null) out.push('Working tree: could not be read, so unstaged and untracked files are unknown (they are not checked).')
-    else if (wt.length > 0) out.push(`Working tree: ${wt.length} file${wt.length === 1 ? '' : 's'} changed or new, not staged. They are not part of this merge and were not checked.`)
   } else if (ctx.kind === 'merge') {
-    out.push(`Checked: ${c?.dir} @ ${c?.sha.slice(0, 7)} (${c?.label}) only: ${scan.filesScanned} files${rules}, ${scan.seconds.toFixed(1)}s.${scan.runId ? ` Run ${scan.runId}.` : ''}`)
+    const mr = c?.mergeResult === true
+    out.push(`Checked: ${c?.dir} @ ${c?.sha.slice(0, 7)} (${c?.label})${mr ? ', the merged result about to be committed:' : ' only:'} ${scan.filesScanned} files${rules}, ${scan.seconds.toFixed(1)}s.${scan.runId ? ` Run ${scan.runId}.` : ''}`)
     out.push(
-      `NOT checked: the merged result in your branch. Verdict for that commit: ${safe ? `SAFE TO SHIP (0 findings; ${VERDICT_LIMIT})` : `REVIEW BEFORE SHIP (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')}, 0 blocking)`}. ${v.allowed}.`,
+      `${mr ? 'Verdict' : 'NOT checked: the merged result in your branch. Verdict for that commit'}: ${safe ? `SAFE TO SHIP (0 findings; ${VERDICT_LIMIT})` : `REVIEW BEFORE SHIP (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')}, 0 blocking)`}. ${v.allowed}.`,
     )
+    const wt = c?.workingTree
+    if (mr && wt && wt.length > 0) out.push(`Working tree: ${wt.length} file${wt.length === 1 ? '' : 's'} changed or new, not staged: not part of this merge and not checked.`)
+    else if (mr && wt === null) out.push('Working tree: could not be read, so unstaged and untracked files are unknown (not checked).')
   } else {
     out.push(`Checked: ${c?.dir} @ ${c?.sha.slice(0, 7)} (${c?.label}) only. NOT checked: the PR head on GitHub or the merged result; the CI check covers those.${scan.runId ? ` Run ${scan.runId}.` : ''}`)
     out.push(

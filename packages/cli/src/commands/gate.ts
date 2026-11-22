@@ -86,7 +86,6 @@ export interface GateDeps {
   resolveCommit: (dir: string, name: string) => string | null
   headLabel: (dir: string) => string
   uncommittedFiles: (dir: string, opts?: WorkingTreeOptions) => string[] | null
-  /** The tree the index holds (the merge result inside a pre-merge-commit hook); null when git fails. `indexFile` is absolute. */
   stagedTree: (dir: string, indexFile?: string) => string | null
   /** The commits of every ref under the given ref prefixes; null when git fails or there are too many. */
   listRefCommits: (dir: string, prefixes: string[]) => Array<{ sha: string; label: string }> | null
@@ -146,7 +145,7 @@ interface Job {
   hookCwd: string
   /** git host: commits named by git itself, in place of the refs in the command text. */
   shas?: Array<{ sha: string; label: string }>
-  /** git host, pre-merge-commit: git has not written MERGE_HEAD yet, so the staged merge result is what gets checked. */
+  /** pre-merge-commit: MERGE_HEAD does not exist yet, so the staged merge result is checked. */
   mergeResult?: boolean
 }
 

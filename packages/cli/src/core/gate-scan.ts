@@ -107,16 +107,13 @@ export function headLabel(dir: string): string {
 }
 
 export interface WorkingTreeOptions {
-  /** Also list untracked files (not ignored ones). They are never pushed or scanned, so a clean pass must not call them "clean". */
+  /** Also list untracked files: never pushed or scanned, so a pass must not call the tree "clean". */
   untracked?: boolean
-  /** `head` (default): every difference from HEAD. `index`: only what is NOT staged (a merge in progress has its result staged by design). */
+  /** `index`: only what is NOT staged (a merge in progress has its result staged). Default `head`. */
   against?: 'head' | 'index'
 }
 
-/**
- * Files that differ from HEAD (staged or not), plus untracked ones when asked. Paths under `.shipguard/`
- * (ShipGuard's own state) are never listed. null = git could not say: the state is UNKNOWN, never "clean".
- */
+/** Files that differ from HEAD (plus untracked ones when asked), never `.shipguard/`. null = git could not say: unknown, never "clean". */
 export function uncommittedFiles(dir: string, opts: WorkingTreeOptions = {}): string[] | null {
   const out = gitRaw(dir, ['status', '--porcelain=v1', '-z', `--untracked-files=${opts.untracked ? 'normal' : 'no'}`])
   if (out === null) return null
@@ -128,7 +125,7 @@ export function uncommittedFiles(dir: string, opts: WorkingTreeOptions = {}): st
     if (r.length <= 3) continue
     const x = r[0]
     const y = r[1]
-    // A rename or copy is followed by one extra entry holding the old path: not a separate file.
+    // a rename or copy is followed by an entry with the old path
     if (x === 'R' || x === 'C' || y === 'R' || y === 'C') i++
     if (opts.against === 'index' && y === ' ') continue
     const path = r.slice(3)
@@ -138,11 +135,7 @@ export function uncommittedFiles(dir: string, opts: WorkingTreeOptions = {}): st
   return files
 }
 
-/**
- * The tree the index holds right now (`git write-tree`), or null when git fails. In a pre-merge-commit hook
- * this is the merge result about to be committed: git writes MERGE_HEAD only AFTER that hook runs, so the
- * incoming commit cannot be read there. `indexFile` is the hook's own GIT_INDEX_FILE, as an absolute path.
- */
+/** The tree the index holds (`git write-tree`). In a pre-merge-commit hook that is the merge result: git writes MERGE_HEAD only AFTER the hook. `indexFile` = the hook's GIT_INDEX_FILE, absolute. */
 export function stagedTree(dir: string, indexFile?: string): string | null {
   try {
     const env = { ...GIT_ENV, ...(indexFile ? { GIT_INDEX_FILE: resolve(dir, indexFile) } : {}) }

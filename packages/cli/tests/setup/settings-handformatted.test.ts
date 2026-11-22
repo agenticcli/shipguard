@@ -108,7 +108,7 @@ describe('json-text helper', () => {
       const added = appendToList(t, root, key, { x: [1, { y: 2 }] }, style)
       expect(() => JSON.parse(added)).not.toThrow()
       const again = parseJsonSpans(added)
-      const n = (again.type === 'object' ? again.members : again.items).length
+      const n = again.members.length
       expect(removeFromList(added, again, n - 1)).toBe(t)
     }
   })

@@ -95,7 +95,7 @@ describe('E-04: the git pre-merge-commit hook', () => {
     git(main, 'merge', '--no-commit', '--no-ff', 'feat')
     const { deps, out } = mkDeps(main, '')
     expect(await runGate({ host: 'git', hook: 'pre-merge-commit' }, deps)).toBe(0)
-    expect(out.stderr).toContain('the merged result this merge is about to commit')
+    expect(out.stderr).toContain('the merged result about to be committed')
     expect(out.stderr).toContain('Merge allowed')
     expect(out.stderr).not.toContain('NOT checked')
     // The staged merge result is not "uncommitted work left out".

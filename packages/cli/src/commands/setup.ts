@@ -112,7 +112,7 @@ export interface SetupDeps {
   signedIn: () => boolean
   /** Run a hook command in a sandbox for the fail-closed check; null means the sandbox could not be built. */
   sandbox: boolean
-  /** The built CLI file the gate self-test runs (planted blocker, clean tree); without it that test is reported as not run. */
+  /** The built CLI the gate self-test runs; without it the test is reported as not run. */
   cliEntry?: string
 }
 
@@ -223,11 +223,7 @@ interface Action {
 
 const writes = (a: Action): boolean => a.status === 'new' || a.status === 'update'
 
-/**
- * The settings text with our hook group appended (under hooks > PreToolUse, creating what is missing), every other
- * byte untouched; undefined when the text cannot be edited safely (the caller then re-serialises). The result must
- * parse to exactly the object the plan computed, or it is thrown away.
- */
+/** The settings text with our hook group appended (creating hooks / PreToolUse if missing), every other byte untouched; undefined when it cannot be proven equal to the plan (the caller re-serialises). */
 function insertHookAsText(raw: string, layout: JsonLayout, group: unknown, expected: unknown): string | undefined {
   try {
     const root = parseJsonSpans(raw)
@@ -243,12 +239,12 @@ function insertHookAsText(raw: string, layout: JsonLayout, group: unknown, expec
       else return undefined
     }
     if (JSON.stringify(JSON.parse(text)) !== JSON.stringify(expected)) {
-      logger.debug('setup: the text edit of settings.json did not match the plan; rewriting the file instead')
+      logger.debug('setup: the settings.json text edit did not match the plan; rewriting instead')
       return undefined
     }
     return text
   } catch (err) {
-    logger.debug(`setup: settings.json could not be edited as text (${err instanceof Error ? err.message : String(err)}); rewriting the file instead`)
+    logger.debug(`setup: settings.json text edit failed (${err instanceof Error ? err.message : String(err)}); rewriting instead`)
     return undefined
   }
 }
@@ -346,8 +342,7 @@ function planClaudeSettings(cwd: string, claudeVersion: string | null): { action
         ? `update the ShipGuard PreToolUse hook entry only (${flags})`
         : `add 1 PreToolUse hook (matcher Bash, ${flags}) that runs ${SHIM_RELATIVE_PATH}`
   const status: Action['status'] = same ? 'unchanged' : raw === null ? 'new' : 'update'
-  // First install into an existing file: add our entry AS TEXT, so every byte of the user's own file stays as written
-  // (uninstall cuts the same text out again). An update of an older entry, or text we cannot edit, re-serialises.
+  // First install: add our entry as text (uninstall cuts it out again); an update, or text we cannot edit, re-serialises.
   const textEdit = raw !== null && !hadShim && !sawLegacy ? insertHookAsText(raw, layout, { matcher: 'Bash', hooks: [ours] }, merged) : undefined
   if (textEdit === undefined && raw !== null && !layout.recognised) notes.push(`${label} is rewritten with 2-space indentation (its own layout could not be kept).`)
   return {
@@ -552,13 +547,7 @@ function failClosedCheck(script: string, kind: 'claude' | 'git', env: NodeJS.Pro
   }
 }
 
-/**
- * The real gate self-test (spec 07, R11): run the installed hook script exactly as Claude Code would, twice, through
- * this very ShipGuard (a `shipguard` wrapper is the only ShipGuard on the sandbox PATH; npx is hidden):
- *  - a throwaway repo whose commit holds a planted fake key: the script must block (exit 2);
- *  - a throwaway repo with a clean commit: the script must pass (exit 0).
- * Returns null when the sandbox cannot be built (no git, no tools, no built CLI).
- */
+/** Spec 07 R11: run the installed hook script as Claude Code does, through this ShipGuard: a planted-key commit must block (2), a clean one pass (0). null = not runnable here. */
 function gateSelfTest(script: string, env: NodeJS.ProcessEnv, cliEntry: string | undefined): { blocked: SelfTestRun; clean: SelfTestRun } | null {
   if (!cliEntry || !existsSync(cliEntry)) return null
   const root = mkdtempSync(join(tmpdir(), 'shipguard-selftest-'))
@@ -567,30 +556,24 @@ function gateSelfTest(script: string, env: NodeJS.ProcessEnv, cliEntry: string |
     mkdirSync(bin)
     for (const t of [...SANDBOX_TOOLS, 'git']) {
       const real = onPath(t, env)
-      if (real === null) {
-        if (t === 'timeout') continue // the shim has a plain-shell watchdog for it
-        logger.debug(`setup: gate self-test needs ${t}, which was not found on PATH`)
-        return null
-      }
-      symlinkSync(real, join(bin, t))
+      if (real !== null) symlinkSync(real, join(bin, t))
+      else if (t !== 'timeout') return null // the shim has its own watchdog when timeout is missing
     }
     const wrapper = join(bin, 'shipguard')
-    writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${cliEntry}" "$@"\n`, 'utf-8')
+    writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${cliEntry}" "$@"\n`)
     chmodSync(wrapper, 0o755)
-
     const run = (name: string, files: Record<string, string>): SelfTestRun => {
       const project = join(root, name)
       mkdirSync(join(project, '.claude', 'hooks'), { recursive: true })
-      const g = (...a: string[]): void => void execFileSync(join(bin, 'git'), ['-C', project, '-c', 'user.name=shipguard', '-c', 'user.email=shipguard@example.invalid', '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore', env: { PATH: bin, HOME: root } })
-      g('init', '-q', '-b', 'main')
       for (const [f, body] of Object.entries(files)) {
         mkdirSync(dirname(join(project, f)), { recursive: true })
-        writeFileSync(join(project, f), body, 'utf-8')
+        writeFileSync(join(project, f), body)
       }
-      g('add', '-A')
-      g('commit', '-q', '-m', 'self-test')
-      // The hook script goes in AFTER the commit: it is not part of what is scanned.
-      writeFileSync(join(project, SHIM_RELATIVE_PATH), script, 'utf-8')
+      const git = (...a: string[]): void => void execFileSync(join(bin, 'git'), ['-C', project, '-c', 'user.name=s', '-c', 'user.email=s@example.invalid', '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore', env: { PATH: bin, HOME: root } })
+      git('init', '-q', '-b', 'main')
+      git('add', '-A')
+      git('commit', '-q', '-m', 'self-test')
+      writeFileSync(join(project, SHIM_RELATIVE_PATH), script) // after the commit: not part of what is scanned
       const r = spawnSync(join(bin, 'sh'), ['-c', CLAUDE_HOOK_COMMAND], {
         cwd: project,
         input: JSON.stringify({ cwd: project, tool_input: { command: 'git push origin main' } }),
@@ -598,13 +581,13 @@ function gateSelfTest(script: string, env: NodeJS.ProcessEnv, cliEntry: string |
         timeout: 90_000,
         env: { PATH: bin, HOME: root, CLAUDE_PROJECT_DIR: project, SHIPGUARD_TELEMETRY: 'off', DO_NOT_TRACK: '1' },
       })
-      return { code: r.status, text: `${r.stderr ?? ''}`.trim().split('\n').pop() ?? '' }
+      return { code: r.status, last: (r.stderr ?? '').trim().split('\n').pop() ?? '' }
     }
-    // Assembled at run time so this file never holds a live-looking key.
-    const planted = `export const k = "${['sk', 'live', 'abcdefghijklmnopqrstuvwx1234567'].join('_')}"\n`
-    const blocked = run('planted', { 'package.json': '{"name":"selftest"}\n', 'lib/pay.ts': planted })
-    const clean = run('clean', { 'package.json': '{"name":"selftest"}\n', 'lib/a.ts': 'export const a = 1\n' })
-    return { blocked, clean }
+    const key = ['sk', 'live', 'abcdefghijklmnopqrstuvwx1234567'].join('_') // assembled: this file holds no live-looking key
+    return {
+      blocked: run('planted', { 'lib/pay.ts': `export const k = "${key}"\n` }),
+      clean: run('clean', { 'lib/a.ts': 'export const a = 1\n' }),
+    }
   } catch (err) {
     logger.debug(`setup: gate self-test could not run: ${err instanceof Error ? err.message : String(err)}`)
     return null
@@ -615,8 +598,7 @@ function gateSelfTest(script: string, env: NodeJS.ProcessEnv, cliEntry: string |
 
 interface SelfTestRun {
   code: number | null
-  /** The last stderr line (the gate's machine line on a block). */
-  text: string
+  last: string
 }
 
 // ---------------------------------------------------------------------------
@@ -861,9 +843,10 @@ export async function runSetup(opts: SetupOptions, d: SetupDeps): Promise<number
     }
     if (shim !== null && d.sandbox) {
       const t = gateSelfTest(shim, d.env, d.cliEntry)
+      const fix = `Fix: read ${SHIM_RELATIVE_PATH}, then run shipguard setup --agent claude again.`
       if (t === null) out('Not run: the gate self-test (a planted blocker must block, a clean tree must pass): this ShipGuard or a tool it needs was not found.')
-      else if (t.blocked.code !== 2) fail(`SETUP_VERIFY_FAILED: the hook did not block the test push (exit ${String(t.blocked.code)}, expected 2). Nothing is protected yet. Fix: read ${SHIM_RELATIVE_PATH}, then run shipguard setup --agent claude again.${t.blocked.text ? ` Last line: ${t.blocked.text}` : ''}`)
-      else if (t.clean.code !== 0) fail(`SETUP_VERIFY_FAILED: the hook blocked a clean test push (exit ${String(t.clean.code)}, expected 0), so it would stop real work. Fix: read ${SHIM_RELATIVE_PATH}.${t.clean.text ? ` Last line: ${t.clean.text}` : ''}`)
+      else if (t.blocked.code !== 2) fail(`SETUP_VERIFY_FAILED: the hook did not block the test push (exit ${String(t.blocked.code)}, expected 2). Nothing is protected yet. ${fix} ${t.blocked.last}`.trim())
+      else if (t.clean.code !== 0) fail(`SETUP_VERIFY_FAILED: the hook blocked a clean test push (exit ${String(t.clean.code)}, expected 0). ${fix} ${t.clean.last}`.trim())
       else out('✓ gate self-test: a push with a planted blocker is blocked (exit 2), a clean tree passes (exit 0)')
     }
   }
@@ -952,10 +935,10 @@ export function dependencyCommand(dir: string, version: string): { pm: string; a
   return { pm: 'npm', args: ['install', '--save-dev', '--save-exact', '--ignore-scripts', spec] }
 }
 
-/** Folders a package runner (npx, pnpm dlx, yarn dlx, bunx) puts on PATH for one run only; they vanish when it exits. */
+/** Temp folders npx, pnpm/yarn dlx and bunx put on PATH for one run: gone when it exits, so never an install (e2e A-10). */
 const RUNNER_TEMP_DIR = /[\\/](_npx|dlx-[^\\/]*|pnpm[\\/]dlx|xfs-[^\\/]*|bunx-[^\\/]*)([\\/]|$)/
 
-/** The `shipguard` a later hook would find on PATH: the first real executable, never one inside a runner's temp folder. */
+
 export function findShipguardOnPath(env: NodeJS.ProcessEnv): string | null {
   for (const d of (env['PATH'] ?? '').split(':')) {
     if (d === '' || RUNNER_TEMP_DIR.test(d)) continue
@@ -999,8 +982,6 @@ function realDeps(cwd: string): SetupDeps {
         const v = probeVersion(local, dir)
         if (versionAtLeast(v, GATE_MIN_VERSION)) return { where: 'local', version: v as string, path: local }
       }
-      // Not a PATH install when the only `shipguard` on PATH is the temporary folder of `npx -p ... shipguard setup`:
-      // it is gone when npx exits, so every later push would need the network (e2e A-10).
       const onPathBin = findShipguardOnPath(process.env)
       if (onPathBin === null) return null
       const v = probeVersion(onPathBin, dir)
