@@ -22,7 +22,7 @@ import { logger } from '../utils/logger.js'
  */
 export function upgradeCommand(): Command {
   return new Command('upgrade')
-    .description('What the full rulebook would add for this repo, and how to start it')
+    .description('What a plan would add for this repo and how to start it')
     .option('--json', 'Machine-readable output (the same envelope as status --json, plus path)')
     .option('--open', 'Open the checkout link in a browser')
     .option('--dry-run', 'Show the request that would be sent, without sending it')

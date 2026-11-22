@@ -82,6 +82,58 @@ export function policyShapeProblem(parsed: unknown): string | null {
   return null
 }
 
+/** Plain-words causes for the YAML parser's error codes (the parser's own sentence is never shown). */
+const YAML_CAUSES: Record<string, string> = {
+  BAD_INDENT: 'is indented wrongly',
+  TAB_AS_INDENT: 'is indented with a tab; use spaces',
+  DUPLICATE_KEY: 'repeats a key that is already used above',
+  MISSING_CHAR: 'opens a quote, list or block that is never closed',
+  BLOCK_AS_IMPLICIT_KEY: 'is missing a colon or an indent',
+  MULTILINE_IMPLICIT_KEY: 'has a key that runs over more than one line',
+}
+
+/** The line (1-based) of the innermost `[` or `{` opened before `end` and never closed, or null. Quotes and comments are skipped. */
+function unclosedOpenerLine(text: string, end: number): { line: number; char: '[' | '{' } | null {
+  const stack: Array<{ line: number; char: '[' | '{' }> = []
+  let line = 1
+  let quote: string | null = null
+  for (let i = 0; i < Math.min(end, text.length); i++) {
+    const c = text[i]
+    if (c === '\n') { line++; quote = null; continue }
+    if (quote) { if (c === quote) quote = null; continue }
+    if (c === '"' || c === "'") { quote = c; continue }
+    if (c === '#' && (i === 0 || /\s/.test(text[i - 1]))) { while (i < text.length && text[i + 1] !== '\n') i++; continue }
+    if (c === '[' || c === '{') stack.push({ line, char: c })
+    else if (c === ']' || c === '}') stack.pop()
+  }
+  return stack.length > 0 ? stack[stack.length - 1] : null
+}
+
+/**
+ * The first YAML error of a policy file in OUR words, with the line it belongs to, or null when the YAML parses.
+ * Used by the scan, `schema` and the gate so the same file gets the same message everywhere (spec 06 "INVALID_POLICY").
+ * An unclosed `[` or `{` is reported at the line that opened it, not at the end of the file where the parser notices.
+ */
+export function explainPolicyYamlError(text: string): { line: number | null; cause: string } | null {
+  const err = YAML.parseDocument(text, { lineCounter: new YAML.LineCounter() }).errors[0]
+  if (!err) return null
+  const errLine = err.linePos?.[0]?.line ?? null
+  const open = /^(Flow sequence|Flow map)/.test(err.message) || err.code === 'MISSING_CHAR' ? unclosedOpenerLine(text, err.pos[0]) : null
+  if (open) {
+    const [what, close] = open.char === '[' ? ['a list', ']'] : ['a block', '}']
+    return { line: open.line, cause: `line ${open.line} starts ${what} with ${open.char} and never closes it with ${close}.` }
+  }
+  const why = YAML_CAUSES[err.code] ?? 'is not valid YAML'
+  return { line: errLine, cause: errLine ? `line ${errLine} ${why}.` : `the file ${why}.` }
+}
+
+/** A policy file that cannot be used; `cause` is already in plain words (with its line), `line` is for the error envelope. */
+export class PolicyFileError extends Error {
+  constructor(readonly cause: string, readonly line: number | null) {
+    super(`Invalid policy file: ${cause}`)
+  }
+}
+
 const warned = new Set<string>()
 
 /**
@@ -124,9 +176,11 @@ export async function loadPolicy(dir: string): Promise<Policy> {
 
   try {
     const content = await readFile(policyPath, 'utf-8')
+    const yamlProblem = explainPolicyYamlError(content)
+    if (yamlProblem) throw new PolicyFileError(yamlProblem.cause, yamlProblem.line)
     const parsed = YAML.parse(content)
     const shape = policyShapeProblem(parsed)
-    if (shape !== null) throw new Error(shape)
+    if (shape !== null) throw new PolicyFileError(shape, null)
     // Deep-merge limits so existing policies without a `limits` block still get defaults
     return containWritePaths(dir, {
       ...DEFAULT_POLICY,
@@ -134,7 +188,9 @@ export async function loadPolicy(dir: string): Promise<Policy> {
       limits: { ...DEFAULT_POLICY.limits, ...(parsed?.limits ?? {}) },
     })
   } catch (error) {
-    throw new Error(`Invalid policy file: ${error instanceof Error ? error.message : error}`)
+    if (error instanceof PolicyFileError) throw error
+    // A read failure (permission, folder instead of file) or an unexpected bug: say what it was, never swallow it.
+    throw new PolicyFileError(error instanceof Error ? error.message : String(error), null)
   }
 }
 

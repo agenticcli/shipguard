@@ -138,8 +138,10 @@ const ALLOWED_FINDING_KEYS = new Set<string>([
   'column',
   'suppressionState',
   'matcherType',
-  // 7 (0.13): every finding carries the SAME keys (nullable, never absent); `fix` is an object,
-  // `explanation` is `why`, `evidence` is an object (the three breaking changes of spec 02 rule 6).
+  // 7 (0.13): every finding carries the SAME keys (nullable, never absent). ADDITIVE: `fix` and
+  // `evidence` stay the 0.12 strings; the object forms are the new keys `fixInfo` and `evidenceInfo`.
+  'fixInfo',
+  'evidenceInfo',
   'occurrence',
   'endLine',
   'why',
@@ -207,7 +209,7 @@ describe('--json ScanResult schema freeze ', () => {
     )
     expect(Object.keys(cov.decoded).sort()).toEqual(['asciiStrings', 'binaryStringsScanned', 'multiReading', 'nulSubstituted', 'utf16'])
     expect(Object.keys(cov.files).sort()).toEqual(
-      ['binary', 'nulSubstituted', 'selfArtifacts', 'special', 'symlink', 'tooLarge', 'unknownBinary'].sort(),
+      ['binary', 'invalidUtf8', 'nulSubstituted', 'selfArtifacts', 'special', 'symlink', 'tooLarge', 'unknownBinary', 'unreadable'].sort(),
     )
     expect(cov.mode).toBe('full')
   })

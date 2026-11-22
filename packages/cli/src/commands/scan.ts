@@ -1,11 +1,11 @@
 import { Command, Option } from 'commander'
 import { existsSync, statSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
-import { ensureShipguardDirIgnored, refuseWrite } from '../utils/paths.js'
+import { ensureShipguardDirIgnored, refuseWrite, saveFailed, saveProblem } from '../utils/paths.js'
 import { scan } from '../core/scanner.js'
 import { generateReport } from '../core/report.js'
 import { toSarif } from '../core/sarif.js'
-import { loadPolicy } from '../core/policy.js'
+import { loadPolicy, PolicyFileError } from '../core/policy.js'
 import { isGitRepo } from '../core/git.js'
 import { logger } from '../utils/logger.js'
 import { goLink } from '../core/links.js'
@@ -502,16 +502,16 @@ async function runScan(ctx: {
   try {
     policy = await loadPolicy(cwd)
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    const line = /line (\d+)/i.exec(message)
+    const cause = error instanceof PolicyFileError ? error.cause : error instanceof Error ? error.message : String(error)
+    const line = error instanceof PolicyFileError ? error.line : null
     return failWith(
       buildErrorEnvelope({
         code: 'INVALID_POLICY',
-        message: `shipguard.policy.yml could not be read${line ? ` (line ${line[1]})` : ''}.`,
+        message: `shipguard.policy.yml could not be read${line ? ` (line ${line})` : ''}.`,
         cliVersion: CLI_VERSION,
-        cause: message,
-        fix: `Fix shipguard.policy.yml${line ? ` at line ${line[1]}` : ''}, or move the file aside and run shipguard init to make a fresh one.`,
-        extra: { file: 'shipguard.policy.yml', ...(line ? { line: Number(line[1]) } : {}) },
+        cause,
+        fix: `Fix shipguard.policy.yml${line ? ` at line ${line}` : ''}, or move the file aside and run shipguard init to make a fresh one.`,
+        extra: { file: 'shipguard.policy.yml', ...(line ? { line } : {}) },
       }),
       { startTime, projectDir: cwd, opts },
     )
@@ -929,10 +929,10 @@ async function runScan(ctx: {
       verdict: buildVerdictJson({
         value: verdictValue,
         blockingCount,
-        findingCount: result.findings.length,
+        findingCount: result.findings.filter((f) => !f.suppressed).length,
         degraded: result.degraded === true,
         filesScanned: result.filesScanned,
-        filesDiscovered: result.coverage?.discovered ?? result.filesScanned,
+        notScannedCount: notScannedSummary.fileCount,
         rulebookFallback: fb !== null && fb.code !== 'RULEBOOK_PARTIAL',
       }),
       exitCode,
@@ -1016,7 +1016,7 @@ async function runScan(ctx: {
     } catch (error) {
       // Loud. A failed report write never changes the verdict or the exit
       // code, but it is never swallowed either.
-      logger.error(`Report generation failed: ${error instanceof Error ? error.message : error}`)
+      if (!saveProblem(error)) logger.error(`Report generation failed: ${error instanceof Error ? error.message : error}`)
     }
   }
 
@@ -1053,12 +1053,10 @@ async function runScan(ctx: {
     const elapsedMs = Date.now() - startTime
     const nctx = nagCtx(planEnv)
 
-    // First-run welcome text (TTY only, not in --json/--sarif/--quiet)
+    // First-run write notice: ONCE, on stderr (stdout line 1 stays the verdict; not in --json/--sarif/--quiet)
     const isTTY = Boolean(process.stdout.isTTY)
-    if (isTTY) {
-      const banner = welcomeBanner()
-      if (banner) console.log(banner)
-    }
+    const writeNotice = welcomeBanner()
+    if (writeNotice && !saveFailed()) process.stderr.write(`${writeNotice}\n`)
 
     // Free-to-Pro line (one shared 7-day counter per repo) and the first-Pro receipt: after the result, terminal only.
     const pitch = screenPitch({
@@ -1166,12 +1164,6 @@ async function runScan(ctx: {
       )
     } else if (result.riskScore.blockingCount > 0) {
       logger.warn(`Strict mode: ${result.riskScore.blockingCount} blocking finding(s) — exiting with code 1`)
-    } else {
-      logger.warn(
-        `Strict mode: verdict is DO_NOT_SHIP (risk score ${result.riskScore.score}/100) — exiting with code 1. ` +
-        `No individual finding is policy-blocking, but the combined risk score of the active findings ` +
-        `crossed the DO_NOT_SHIP threshold. Fix or drop --strict to get a report without a hard stop.`
-      )
     }
   }
 

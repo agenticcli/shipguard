@@ -43,7 +43,7 @@ describe('scan config error in machine mode', () => {
     expect(r.code).toBe(2)
     const parsed = JSON.parse(r.stdout)
     expect(parsed.error.code).toBe('INVALID_POLICY')
-    expect(parsed.error.cause).toMatch(/Invalid policy file/)
+    expect(parsed.error.cause).toMatch(/^line \d+ /) // our words with the line, never the parser's sentence
     expect(parsed.agentAction).toBe('fix_and_rerun')
     expect(r.stderr).toMatch(/INVALID_POLICY/)
   })

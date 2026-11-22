@@ -39,49 +39,54 @@ function mkResult(score: number, degraded?: boolean): ScanResult {
   }
 }
 
+const NONE = { blockingCount: 0, criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0, infoCount: 0 }
+
 describe('#1 — degraded forces DO_NOT_SHIP, fail-closed', () => {
-  it('a perfectly clean score is DO_NOT_SHIP once the scan is degraded', () => {
-    expect(computeVerdict({ riskScore: { score: 0 }, degraded: true })).toBe('DO_NOT_SHIP')
+  it('a clean scan is DO_NOT_SHIP once it is degraded', () => {
+    expect(computeVerdict({ riskScore: NONE, degraded: true })).toBe('DO_NOT_SHIP')
   })
 
-  it('degradation beats every score band', () => {
-    for (const score of [0, 20, 21, 49, 50, 100]) {
-      expect(computeVerdict({ riskScore: { score }, degraded: true })).toBe('DO_NOT_SHIP')
+  it('degradation beats every findings state', () => {
+    for (const r of [NONE, { ...NONE, lowCount: 1 }, { ...NONE, highCount: 1, blockingCount: 1 }]) {
+      expect(computeVerdict({ riskScore: r, degraded: true })).toBe('DO_NOT_SHIP')
     }
   })
 
-  it('an undegraded scan keeps the published score thresholds', () => {
-    expect(computeVerdict({ riskScore: { score: 0 } })).toBe('SAFE_TO_SHIP')
-    expect(computeVerdict({ riskScore: { score: 20 } })).toBe('SAFE_TO_SHIP')
-    expect(computeVerdict({ riskScore: { score: 21 } })).toBe('REVIEW_BEFORE_SHIP')
-    expect(computeVerdict({ riskScore: { score: 49 } })).toBe('REVIEW_BEFORE_SHIP')
-    expect(computeVerdict({ riskScore: { score: 50 } })).toBe('DO_NOT_SHIP')
+  it('an undegraded scan follows spec 02 rows 4-6: blocking = DO_NOT_SHIP, other findings = REVIEW, none = SAFE', () => {
+    expect(computeVerdict({ riskScore: NONE })).toBe('SAFE_TO_SHIP')
+    expect(computeVerdict({ riskScore: { ...NONE, lowCount: 1 } })).toBe('REVIEW_BEFORE_SHIP')
+    expect(computeVerdict({ riskScore: { ...NONE, infoCount: 1 } })).toBe('REVIEW_BEFORE_SHIP')
+    expect(computeVerdict({ riskScore: { ...NONE, highCount: 1, blockingCount: 1 } })).toBe('DO_NOT_SHIP')
+  })
+
+  it('a high score with zero blocking findings is REVIEW_BEFORE_SHIP, never DO_NOT_SHIP (B-29)', () => {
+    expect(computeVerdict({ riskScore: { ...NONE, mediumCount: 11 } })).toBe('REVIEW_BEFORE_SHIP')
   })
 
   it('degraded:false and degraded:undefined behave identically (no accidental fail-closed)', () => {
-    expect(computeVerdict({ riskScore: { score: 0 }, degraded: false })).toBe('SAFE_TO_SHIP')
-    expect(computeVerdict({ riskScore: { score: 0 }, degraded: undefined })).toBe('SAFE_TO_SHIP')
+    expect(computeVerdict({ riskScore: NONE, degraded: false })).toBe('SAFE_TO_SHIP')
+    expect(computeVerdict({ riskScore: NONE, degraded: undefined })).toBe('SAFE_TO_SHIP')
   })
 
   it('the enum is NOT extended — only the three published values can ever be returned', () => {
     const seen = new Set<string>()
     for (const degraded of [true, false]) {
-      for (let score = 0; score <= 100; score++) {
-        seen.add(computeVerdict({ riskScore: { score }, degraded }))
+      for (const r of [NONE, { ...NONE, lowCount: 1 }, { ...NONE, highCount: 1, blockingCount: 1 }]) {
+        seen.add(computeVerdict({ riskScore: r, degraded }))
       }
     }
     expect([...seen].sort()).toEqual(['DO_NOT_SHIP', 'REVIEW_BEFORE_SHIP', 'SAFE_TO_SHIP'])
   })
 
-  it('computeRiskScore routes its thresholds through the same one place', () => {
-    // A single info finding = weight 1 → score 1 → SAFE_TO_SHIP band.
+  it('computeRiskScore routes its verdict through the same one place', () => {
     const rs = computeRiskScore([
       {
         id: 'x', title: 't', severity: 'info', category: 'secrets', file: 'a.js',
         explanation: 'e', recommendation: 'r', blocking: false,
       },
     ])
-    expect(rs.recommendation).toBe(computeVerdict({ riskScore: { score: rs.score } }))
+    expect(rs.recommendation).toBe('REVIEW_BEFORE_SHIP')
+    expect(rs.recommendation).toBe(computeVerdict({ riskScore: rs }))
   })
 })
 
@@ -103,7 +108,7 @@ describe('#2 — riskScore.recommendation is a written mirror, never a second co
   })
 
   it('applyVerdict is idempotent (scanner.ts applies it, scan.ts re-applies it)', () => {
-    const once = applyVerdict(mkResult(60, false))
+    const once = applyVerdict(mkResult(60, true))
     const twice = applyVerdict(once)
     expect(twice.recommendation).toBe('DO_NOT_SHIP')
     expect(twice.riskScore.recommendation).toBe('DO_NOT_SHIP')

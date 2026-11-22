@@ -33,8 +33,8 @@ export const VERDICT_WORDS: Record<Recommendation, string> = {
  * the existing DO_NOT_SHIP value; the WHY lives in `degraded` + `degradedReasons`.
  */
 export function computeVerdict(input: {
-  /** Only `score` is read — the thresholds live here and nowhere else. */
-  riskScore: Pick<RiskScore, 'score'>
+  /** Active (not suppressed) finding counts; only these decide the verdict. */
+  riskScore: Pick<RiskScore, 'blockingCount' | 'criticalCount' | 'highCount' | 'mediumCount' | 'lowCount' | 'infoCount'>
   /** true when ANY part of the scan did not run to completion. Fail-closed. */
   degraded?: boolean
 }): Recommendation {
@@ -42,10 +42,14 @@ export function computeVerdict(input: {
   // the findings it did manage to collect happen to score.
   if (input.degraded === true) return 'DO_NOT_SHIP'
 
-  const score = input.riskScore.score
-  if (score <= 20) return 'SAFE_TO_SHIP'
-  if (score < 50) return 'REVIEW_BEFORE_SHIP'
-  return 'DO_NOT_SHIP'
+  // Spec 02 outcome table (rows 3-6): a blocking finding is DO_NOT_SHIP, any other
+  // active finding is REVIEW_BEFORE_SHIP, none is SAFE_TO_SHIP. The risk SCORE no
+  // longer decides the verdict, so the screen, the JSON, `--strict` and the gate
+  // (which all read this one value) can never disagree (E2E B-17/B-29).
+  const r = input.riskScore
+  if (r.blockingCount > 0) return 'DO_NOT_SHIP'
+  if (r.criticalCount + r.highCount + r.mediumCount + r.lowCount + r.infoCount > 0) return 'REVIEW_BEFORE_SHIP'
+  return 'SAFE_TO_SHIP'
 }
 
 /**

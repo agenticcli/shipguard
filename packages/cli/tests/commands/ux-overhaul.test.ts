@@ -22,7 +22,6 @@ import type { ScanResult, Policy } from '@agenticcli/shared'
 // All top-level imports (await at module level is fine in ESM vitest)
 // ---------------------------------------------------------------------------
 
-const { quickstartHelp } = await import('../../src/core/render.js')
 
 const { generateReport } = await import('../../src/core/report.js')
 
@@ -141,57 +140,6 @@ describe('unknown command — exit 2 regression ', () => {
       'utf-8'
     )
     expect(cliSrc).toContain('CommanderError')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// 2. Quickstart help screen
-// ---------------------------------------------------------------------------
-
-describe('quickstartHelp', () => {
-  it('TTY: contains branded header and key commands', () => {
-    const help = stripAnsi(quickstartHelp(true))
-    expect(help).toMatch(/ShipGuard/i)
-    expect(help).toContain('scan')
-    expect(help).toContain('login')
-    expect(help).toContain('init')
-    expect(help).toContain('feedback')
-    expect(help).toContain('rate')
-    expect(help).toContain('help')
-  })
-
-  it('TTY: contains quickstart block with npx command', () => {
-    const help = stripAnsi(quickstartHelp(true))
-    expect(help).toMatch(/Get started|2 commands/i)
-    expect(help).toContain('npx @agenticcli/shipguard scan')
-  })
-
-  it('TTY: contains exit-code legend', () => {
-    const help = stripAnsi(quickstartHelp(true))
-    expect(help).toMatch(/exit codes?/i)
-    expect(help).toContain('0')
-    expect(help).toContain('1')
-    expect(help).toContain('2')
-    expect(help).toContain('3')
-  })
-
-  it('TTY: contains docs and site links', () => {
-    const help = stripAnsi(quickstartHelp(true))
-    expect(help).toContain('agenticcli.dev/go/docs')
-    expect(help).toContain('agenticcli.dev')
-  })
-
-  it('non-TTY: no ANSI escape codes', () => {
-    const help = quickstartHelp(false)
-    expect(help).not.toMatch(/\x1b\[/)
-    expect(help).toContain('ShipGuard')
-    expect(help).toContain('scan')
-    expect(help).toContain('agenticcli.dev/go/docs')
-  })
-
-  it('non-TTY: exit codes listed in compact form (A1: 0=completed/verdict-in-JSON, 1=blocked --strict-only)', () => {
-    const help = quickstartHelp(false)
-    expect(help).toMatch(/0=completed|1=blocked/i)
   })
 })
 

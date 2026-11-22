@@ -97,21 +97,42 @@ export function collectNotScanned(result: ScanResult, opts: NotScannedOptions = 
         fix: ['replace the symlink with the real file or folder to have it scanned (ShipGuard never follows symlinks)'],
       })
     }
-    if (cov.skipped.invalidUtf8 > 0) {
+    const utf8Names = cov.files.invalidUtf8 ?? []
+    for (const p of utf8Names) {
+      entries.push({
+        path: p,
+        code: 'INVALID_UTF8',
+        reason: 'not valid text (skipped on purpose so a secret split by bad bytes is not mangled)',
+        fix: [`find out what it is; only if the user confirms it is safe: ${ignoreCmd(p)}`],
+      })
+    }
+    // Names are capped at 50 in coverage; the exact count stays, so a larger remainder is one count line.
+    if (cov.skipped.invalidUtf8 > utf8Names.length) {
+      const rest = cov.skipped.invalidUtf8 - utf8Names.length
       entries.push({
         path: null,
-        count: cov.skipped.invalidUtf8,
+        count: rest,
         code: 'INVALID_UTF8',
-        reason: `${cov.skipped.invalidUtf8} file(s) not valid text (names are in the JSON degradedReasons)`,
+        reason: `${rest} more file(s) not valid text`,
         fix: ['find out what they are; only if the user confirms they are safe: shipguard ignore <file> --reason "<why: what this file is>"'],
       })
     }
-    if (cov.skipped.unreadable > 0) {
+    const unreadableNames = cov.files.unreadable ?? []
+    for (const p of unreadableNames) {
+      entries.push({
+        path: p,
+        code: 'UNREADABLE_FILE',
+        reason: 'cannot be read (permission or removed during the scan)',
+        fix: ['fix permissions, then re-run'],
+      })
+    }
+    if (cov.skipped.unreadable > unreadableNames.length) {
+      const rest = cov.skipped.unreadable - unreadableNames.length
       entries.push({
         path: null,
-        count: cov.skipped.unreadable,
+        count: rest,
         code: 'UNREADABLE_FILE',
-        reason: `${cov.skipped.unreadable} file(s) cannot be read (permission or removed during the scan)`,
+        reason: `${rest} more file(s) cannot be read (permission or removed during the scan)`,
         fix: ['fix permissions, then re-run'],
       })
     }

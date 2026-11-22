@@ -9,7 +9,7 @@ import { resolveHistoryPath } from './path.js'
 import { resolveRepoIdentity, resolveContentIdentity, resolveListingIdentity } from './identity.js'
 import { openHistoryStore } from './store.js'
 import { logger } from '../../utils/logger.js'
-import { ensureShipguardDirIgnored, pathEscapeReason } from '../../utils/paths.js'
+import { ensureShipguardDirIgnored, pathEscapeReason, saveProblem } from '../../utils/paths.js'
 
 /**
  * ScanId reuse — closes the last gap in retry idempotency.
@@ -338,7 +338,7 @@ export async function resolveScanId(input: ResolveScanIdInput): Promise<ResolveS
         logger.debug(`scan-id: history store unavailable (${openResult.status}); reservation kept in ${SCAN_ID_FALLBACK_FILE}`)
         return viaFile
       }
-      logger.warn(`ShipGuard scanId persistence unavailable (${openResult.status}) — minting a fresh scanId: ${openResult.reason}`)
+      if (!saveProblem(openResult.reason)) logger.warn(`ShipGuard scanId persistence unavailable (${openResult.status}) — minting a fresh scanId: ${openResult.reason}`)
       return { scanId: randomUUID(), scanIdReused: false }
     }
 
@@ -346,7 +346,7 @@ export async function resolveScanId(input: ResolveScanIdInput): Promise<ResolveS
     try {
       const result = store.reserveScanId(identity.repoId, reuseKey, reuseWindowMs)
       if (!result.ok) {
-        logger.warn(`ShipGuard scanId persistence failed — minting a fresh scanId: ${result.reason}`)
+        if (!saveProblem(result.reason)) logger.warn(`ShipGuard scanId persistence failed — minting a fresh scanId: ${result.reason}`)
         return { scanId: randomUUID(), scanIdReused: false }
       }
       return { scanId: result.scanId, scanIdReused: result.reused }
@@ -354,9 +354,11 @@ export async function resolveScanId(input: ResolveScanIdInput): Promise<ResolveS
       store.close()
     }
   } catch (err) {
-    logger.warn(
-      `ShipGuard scanId persistence failed unexpectedly — minting a fresh scanId: ${err instanceof Error ? err.message : err}`,
-    )
+    if (!saveProblem(err)) {
+      logger.warn(
+        `ShipGuard scanId persistence failed unexpectedly — minting a fresh scanId: ${err instanceof Error ? err.message : err}`,
+      )
+    }
     return { scanId: randomUUID(), scanIdReused: false }
   }
 }

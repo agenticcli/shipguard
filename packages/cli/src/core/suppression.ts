@@ -102,8 +102,10 @@ export function applyPolicyIgnores(findings: Finding[], entries: readonly Ignore
   const byFinding = entries.filter((e) => e.finding !== undefined)
   if (byFinding.length === 0) return findings
   for (const f of findings) {
-    if (byFinding.some((e) => e.finding === f.id && (e.file === undefined || e.file === f.file))) {
+    const hit = byFinding.find((e) => e.finding === f.id && (e.file === undefined || e.file === f.file))
+    if (hit) {
       f.suppressed = true
+      f.suppressionReason = hit.reason
       f.blocking = false
     }
   }

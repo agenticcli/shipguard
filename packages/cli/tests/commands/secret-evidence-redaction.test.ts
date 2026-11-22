@@ -242,7 +242,7 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
   it('the --json evidence of a secret is type and length only (spec 06: no character of the value)', () => {
     const json = JSON.parse(captured.json)
     const byId = (id: string): { kind: string; secretType: string; valueHidden: boolean } =>
-      json.findings.find((f: { id: string }) => f.id === id)?.evidence
+      json.findings.find((f: { id: string }) => f.id === id)?.evidenceInfo
     for (const id of [
       'generic.secrets.stripe-live-key',
       'generic.secrets.aws-access-key',
@@ -269,7 +269,7 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
     ].sort())
     // schema 7: every finding carries the SAME keys (nullable, never absent).
     const ALLOWED_FINDING_KEYS = [
-      'aiCodeTarget', 'blocking', 'category', 'column', 'confidence', 'cwe', 'endLine', 'evidence', 'explanation', 'file', 'fix',
+      'aiCodeTarget', 'blocking', 'category', 'column', 'confidence', 'cwe', 'endLine', 'evidence', 'evidenceInfo', 'explanation', 'file', 'fix', 'fixInfo',
       'id', 'line', 'matcherType', 'notAVulnerabilityIf', 'occurrence', 'origin', 'recommendation', 'severity',
       'suppressed', 'suppressionState', 'title', 'why',
     ]
@@ -280,7 +280,9 @@ describe('SEC-EVID-1 — no raw secret on any output surface', () => {
       keys.forEach((k) => seen.add(k))
       for (const k of REQUIRED_FINDING_KEYS) expect(keys, `finding ${f.id} lacks ${k}`).toContain(k)
       expect(keys.filter((k) => !ALLOWED_FINDING_KEYS.includes(k)), `unexpected key on ${f.id}`).toEqual([])
-      if (f.evidence !== null) expect(typeof f.evidence).toBe('object')
+      // additive rule: `evidence` stays the 0.12 string (already redacted); the object is `evidenceInfo`
+      if (f.evidence !== null) expect(typeof f.evidence).toBe('string')
+      if (f.evidenceInfo !== null) expect(typeof f.evidenceInfo).toBe('object')
       expect(typeof f.id).toBe('string')
       expect(typeof f.file).toBe('string')
     }

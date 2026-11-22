@@ -16,7 +16,6 @@ import { uninstallCommand } from './commands/uninstall.js'
 import { schemaCommand } from './commands/schema.js'
 import { feedbackCommand, rateCommand } from './commands/feedback.js'
 import { telemetryCommand } from './commands/telemetry.js'
-import { quickstartHelp } from './core/render.js'
 import { CLI_VERSION, sendLifecycleEvent, setGateKind } from './core/telemetry.js'
 import { announceSafeMode } from './core/telemetry-config.js'
 import { installStreamErrorHandlers, exitWhenDrained, emitError } from './utils/exit.js'
@@ -164,14 +163,14 @@ addSubcommand(rateCommand())
 addSubcommand(telemetryCommand())
 
 // ---------------------------------------------------------------------------
-// `help` / `?` subcommand — branded quickstart screen
+// `help` / `?` subcommand: the same command table as --help
 // ---------------------------------------------------------------------------
 program.addCommand(
   new Command('help')
-    .description('Show the quickstart guide')
+    .description('Show the command list (same as --help)')
     .action(() => {
-      const isTTY = Boolean(process.stdout.isTTY)
-      process.stdout.write(quickstartHelp(isTTY) + '\n')
+      // Same table as `--help` (spec 07 "Help and docs drift"): one generator, no hand-written list.
+      program.outputHelp()
     })
 )
 
@@ -183,8 +182,7 @@ program.addCommand(
 // ---------------------------------------------------------------------------
 program.allowExcessArguments(true)
 program.action(() => {
-  const isTTY = Boolean(process.stdout.isTTY)
-  process.stdout.write(quickstartHelp(isTTY) + '\n')
+  program.outputHelp()
 })
 
 // ---------------------------------------------------------------------------

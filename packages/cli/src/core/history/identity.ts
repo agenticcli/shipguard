@@ -6,7 +6,7 @@ import type { RepoIdKind } from '@agenticcli/shared'
 import { DEFAULT_REPO_ID_FALLBACK_PATH } from '@agenticcli/shared'
 import { logger } from '../../utils/logger.js'
 import { assertCwdAlive } from '../../utils/cwd-guard.js'
-import { ensureShipguardDirIgnored, pathEscapeReason } from '../../utils/paths.js'
+import { ensureShipguardDirIgnored, pathEscapeReason, saveProblem } from '../../utils/paths.js'
 
 export interface RepoIdentity {
   repoId: string
@@ -73,7 +73,7 @@ export function resolveRepoIdentity(cwd: string): RepoIdentity {
     // in-memory id for THIS scan only. History for this run will never find a baseline
     // (nothing was ever persisted under it), which is safe (regressionCheckSkipped), never
     // a false regression claim.
-    logger.warn(`Could not persist fallback repo identity: ${err instanceof Error ? err.message : err}`)
+    if (!saveProblem(err)) logger.warn(`Could not persist fallback repo identity: ${err instanceof Error ? err.message : err}`)
     return { repoId: randomUUID(), repoIdKind: 'fallback-uuid', remoteLabel }
   }
 }

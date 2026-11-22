@@ -36,7 +36,7 @@ import {
 import { parseGateCommand, type GateInvocation } from '../core/gate-target.js'
 import { gateGapFromCache } from '../core/plan-client.js'
 import { SHIM_VERSION } from '../core/hook-templates.js'
-import { policyShapeProblem } from '../core/policy.js'
+import { explainPolicyYamlError, policyShapeProblem } from '../core/policy.js'
 import {
   claudePassJson,
   failClosedText,
@@ -230,29 +230,14 @@ function buildJobs(host: GateHost, hook: string | undefined, raw: string, deps: 
 
 type PolicyRead = { ok: true; timeoutSeconds: number | undefined } | { ok: false; line: number | null; cause: string }
 
-const YAML_CAUSES: Record<string, string> = {
-  BAD_INDENT: 'a line is indented wrongly',
-  TAB_AS_INDENT: 'a line is indented with a tab; use spaces',
-  DUPLICATE_KEY: 'a key appears twice',
-  MISSING_CHAR: 'a list or text opened here is never closed',
-  BLOCK_AS_IMPLICIT_KEY: 'a line is missing a colon or an indent',
-  MULTILINE_IMPLICIT_KEY: 'a key runs over more than one line',
-}
-
 function readPolicy(dir: string): PolicyRead {
   const path = join(dir, 'shipguard.policy.yml')
   if (!existsSync(path)) return { ok: true, timeoutSeconds: undefined }
   try {
-    const doc = YAML.parseDocument(readFileSync(path, 'utf-8'))
-    const err = doc.errors[0]
-    if (err) {
-      return {
-        ok: false,
-        line: err.linePos?.[0]?.line ?? null,
-        cause: YAML_CAUSES[err.code] ?? 'the file is not valid YAML',
-      }
-    }
-    const parsed = doc.toJS() as { gate?: { timeoutSeconds?: unknown } } | null
+    const text = readFileSync(path, 'utf-8')
+    const problem = explainPolicyYamlError(text)
+    if (problem) return { ok: false, line: problem.line, cause: problem.cause }
+    const parsed = YAML.parse(text) as { gate?: { timeoutSeconds?: unknown } } | null
     const shape = policyShapeProblem(parsed)
     if (shape !== null) return { ok: false, line: null, cause: shape }
     const t = parsed?.gate?.timeoutSeconds
@@ -329,7 +314,7 @@ async function scanCommit(
         code: 'INVALID_POLICY',
         agentAction: 'fix_and_rerun',
         what: `shipguard.policy.yml could not be read${policy.line ? ` (line ${policy.line})` : ''}, so nothing was scanned.`,
-        lines: [`Cause: ${policy.cause}.`, `Fix: correct ${policy.line ? `line ${policy.line} of ` : ''}shipguard.policy.yml, commit it, then run it again.`],
+        lines: [`Cause: ${policy.cause.replace(/\.?$/, '.')}`, `Fix: correct ${policy.line ? `line ${policy.line} of ` : ''}shipguard.policy.yml, commit it, then run it again.`],
       })
     }
     const plan = planDeadline({ nowMs: startedMs, host, env: deps.env, gateTimeoutSeconds: policy.timeoutSeconds })

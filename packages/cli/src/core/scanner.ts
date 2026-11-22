@@ -138,6 +138,8 @@ function buildCoverage(
       special: sortedCapped(state.skippedSpecialFiles),
       nulSubstituted: sortedCapped(state.nulSubstitutedFiles),
       selfArtifacts: sortedCapped(state.selfArtifactFiles),
+      invalidUtf8: sortedCapped(state.invalidUtf8Files.map((f) => f.relativePath)),
+      unreadable: sortedCapped(state.unreadableFiles),
     },
   }
 }

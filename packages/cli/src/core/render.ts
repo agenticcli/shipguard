@@ -62,99 +62,6 @@ export function spinnerFrame(tick: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Branded quickstart screen (bare `shipguard`, `shipguard ?`, `shipguard help`)
-// ---------------------------------------------------------------------------
-
-/**
- * Render the branded quickstart screen.
- * TTY gets chalk color; non-TTY gets plain text (clean pipes/CI).
- * The `status` line is the server-neutral one from spec 05 (no credit wording).
- */
-export function quickstartHelp(isTTY: boolean): string {
-  const lines: string[] = []
-
-  if (isTTY) {
-    lines.push('')
-    lines.push(chalk.bold('  ShipGuard by AgenticCLI'))
-    lines.push('  The security scanner your coding agent runs before every commit.')
-    lines.push('')
-    lines.push(chalk.bold('  Get started in 2 commands:'))
-    lines.push('')
-    lines.push(`    ${chalk.green('npx @agenticcli/shipguard scan')}    ${chalk.dim('# zero install: scan right now')}`)
-    lines.push(`    ${chalk.green('shipguard scan --strict')}           ${chalk.dim('# CI mode: exit 1 on blocking issues')}`)
-    lines.push('')
-    lines.push(chalk.bold('  Commands:'))
-    lines.push('')
-    lines.push(`    ${chalk.cyan('scan')}      ${chalk.dim('[path]')}   Scan a project for high-risk issues`)
-    lines.push(`    ${chalk.cyan('init')}               Generate a .shipguard.yml policy file`)
-    lines.push(`    ${chalk.cyan('login')}              Sign in to run rulebook scans`)
-    lines.push(`    ${chalk.cyan('logout')}             Remove saved credentials`)
-    lines.push(`    ${chalk.cyan('status')}             Sign-in, plan and usage, as the server reports them`)
-    lines.push(`    ${chalk.cyan('upgrade')}            What the full rulebook would add for this repo`)
-    lines.push(`    ${chalk.cyan('setup')}              Set up the gate for your coding agent`)
-    lines.push(`    ${chalk.cyan('uninstall')}          Remove what setup wrote`)
-    lines.push(`    ${chalk.cyan('gate')}               Run the gate (used by hooks)`)
-    lines.push(`    ${chalk.cyan('ignore')}             Ignore a finding or file, with a reason`)
-    lines.push(`    ${chalk.cyan('hook')}      ${chalk.dim('--target')} Install the hook at the merge boundary`)
-    lines.push(`    ${chalk.cyan('schema')}    ${chalk.dim('--json')}   Print the machine-readable scan contract`)
-    lines.push(`    ${chalk.cyan('feedback')}           Where to send feedback (GitHub issues)`)
-    lines.push(`    ${chalk.cyan('rate')}      ${chalk.dim('<n> helpful|not-helpful')}  Rate a rule finding`)
-    lines.push(`    ${chalk.cyan('telemetry')} ${chalk.dim('status')}   Show or change the pseudonymous usage ping`)
-    lines.push(`    ${chalk.cyan('help')}  ${chalk.dim('/ ?')}        Show this screen`)
-    lines.push('')
-    lines.push(chalk.bold('  Exit codes (verdict-neutral: read the JSON for the verdict):'))
-    lines.push(`    ${chalk.green('0')}  Scan completed: the verdict is in the JSON \`recommendation\` field`)
-    lines.push(`    ${chalk.yellow('1')}  Blocked: ONLY with --strict, on blocking findings or an unfinished scan`)
-    lines.push(`    ${chalk.red('2')}  Config error`)
-    lines.push(`    ${chalk.red('3')}  Runtime error: scan could not meaningfully run`)
-    lines.push('')
-    lines.push(`  ${chalk.dim('Docs')}    ${chalk.underline(DOCS_URL)}`)
-    lines.push(`  ${chalk.dim('Site')}    ${chalk.underline(SITE_URL)}`)
-    lines.push(`  ${chalk.dim('Pricing')} ${chalk.underline(PRICING_URL)}`)
-    lines.push(`  ${chalk.dim('Issues')}  ${chalk.underline(ISSUES_URL)}`)
-    lines.push('')
-  } else {
-    // Plain text for non-TTY (piped, CI)
-    lines.push('')
-    lines.push('  ShipGuard by AgenticCLI')
-    lines.push('  The security scanner your coding agent runs before every commit.')
-    lines.push('')
-    lines.push('  Get started in 2 commands:')
-    lines.push('')
-    lines.push('    npx @agenticcli/shipguard scan    # zero install')
-    lines.push('    shipguard scan --strict           # CI mode')
-    lines.push('')
-    lines.push('  Commands:')
-    lines.push('    scan      [path]       Scan a project')
-    lines.push('    init                  Generate policy file')
-    lines.push('    login                 Authenticate')
-    lines.push('    logout                Remove credentials')
-    lines.push('    status                Sign-in, plan and usage, as the server reports them')
-    lines.push('    upgrade               What the full rulebook would add for this repo')
-    lines.push('    setup                 Set up the gate for your coding agent')
-    lines.push('    uninstall             Remove what setup wrote')
-    lines.push('    gate                  Run the gate (used by hooks)')
-    lines.push('    ignore                Ignore a finding or file, with a reason')
-    lines.push('    hook      --target     Install the hook at the merge boundary')
-    lines.push('    schema    --json       Machine-readable scan contract')
-    lines.push('    feedback               Where to send feedback (GitHub issues)')
-    lines.push('    rate      <n> helpful|not-helpful  Rate finding number n')
-    lines.push('    telemetry status|enable|disable|reset  Pseudonymous usage ping')
-    lines.push('    help / ?              Show this screen')
-    lines.push('')
-    lines.push('  Exit codes: 0=completed (verdict in JSON)  1=blocked (--strict only: blocking findings or unfinished scan)  2=config-error  3=runtime-error')
-    lines.push('')
-    lines.push(`  Docs:    ${DOCS_URL}`)
-    lines.push(`  Site:    ${SITE_URL}`)
-    lines.push(`  Pricing: ${PRICING_URL}`)
-    lines.push(`  Issues:  ${ISSUES_URL}`)
-    lines.push('')
-  }
-
-  return lines.join('\n')
-}
-
-// ---------------------------------------------------------------------------
 // Progress bar
 // ---------------------------------------------------------------------------
 
@@ -340,7 +247,7 @@ function otherReasonPhrase(ns: NotScannedSummary | undefined, input: ScanScreenI
   if (cov && cov.scanned === 0) {
     return cov.discovered === 0 ? 'nothing was scanned (no readable files were found)' : `nothing was scanned (0 of ${cov.discovered} files could be read)`
   }
-  if (ns && ns.fileCount > 0 && cov) return `${ns.fileCount} of ${cov.discovered} files were not scanned`
+  if (ns && ns.fileCount > 0 && cov) return `${ns.fileCount} of ${cov.scanned + ns.fileCount} files were not scanned`
   if (ns && ns.entries.some((e) => e.code === 'OUTPUT_TRUNCATED')) return 'the scan stopped at a limit'
   if (ns && ns.otherReasons.length > 0) return dropPeriod(ns.otherReasons[0].text)
   return 'parts of this scan did not run'
@@ -393,7 +300,8 @@ function buildScreen(input: ScanScreenInput, lim: ScreenLimits): string[] {
   const ns = input.notScanned
   const incomplete = result.degraded === true
   const blocking = result.riskScore.blockingCount
-  const total = result.riskScore.totalFindings
+  // Ignored (suppressed) findings are not findings of this run: they are counted in the report's Ignored section only.
+  const total = result.findings.filter((f) => !f.suppressed).length
   const cov = result.coverage
   const files = cov ? cov.scanned : result.filesScanned
   const terminal = input.columns != null
@@ -428,12 +336,12 @@ function buildScreen(input: ScanScreenInput, lim: ScreenLimits): string[] {
     push('Nothing here blocks a push. Review the findings below.')
   }
   if (incomplete && blocking > 0 && ns && ns.fileCount > 0 && cov) {
-    push(`This scan is also incomplete: ${ns.fileCount} of ${cov.discovered} files were not scanned.`)
+    push(`This scan is also incomplete: ${ns.fileCount} of ${cov.scanned + ns.fileCount} files were not scanned.`)
   }
   if (rr.runSentence) push(rr.runSentence)
 
   // ---- findings -------------------------------------------------------------
-  const ordered = orderFindings(result.findings)
+  const ordered = orderFindings(result.findings.filter((f) => !f.suppressed))
   const blockers = ordered.filter((f) => f.blocking)
   const rest = ordered.filter((f) => !f.blocking)
   const fixLabelFor = (f: Finding) => fixGuidance(f, stacks)
@@ -553,7 +461,7 @@ export function renderQuietLine(input: {
   const parts = [
     `verdict=${rec}`,
     `blocking=${r.riskScore.blockingCount}`,
-    `findings=${r.riskScore.totalFindings}`,
+    `findings=${r.findings.filter((f) => !f.suppressed).length}`,
     `incomplete=${incomplete ? 'yes' : 'no'}`,
   ]
   if (input.notScanned && input.notScanned > 0) parts.push(`notScanned=${input.notScanned}`)
@@ -572,7 +480,7 @@ function simpleAgentAction(r: ScanResult): string {
 }
 
 // ---------------------------------------------------------------------------
-// First-run welcome (TTY only)
+// First-run write notice (stderr, once; spec 06 "Silent writes become announced writes")
 // ---------------------------------------------------------------------------
 
 function getShipguardConfigDir(): string {
@@ -580,11 +488,15 @@ function getShipguardConfigDir(): string {
 }
 
 /**
- * Show a one-time welcome text on first ever run (plain lines, no box).
+ * The ONE shared write notice, returned once on the first ever run (the caller prints it on STDERR:
+ * line 1 of stdout is the verdict, spec 01 rule 1 and 6).
  *
  * @param configDir  - override the config dir (used in tests)
  * @returns text (non-empty on first call; empty string thereafter)
  */
+/** The one shared write notice (spec 06). */
+export const WRITE_NOTICE = 'wrote .shipguard/ (reports, history; ignored by git) and ~/.config/shipguard/ (usage-ping id)'
+
 export function welcomeBanner(configDir?: string): string {
   // Safe mode writes nothing under ~/.config (spec 06): no marker, and no banner either.
   if (isSafeMode()) return ''
@@ -602,13 +514,7 @@ export function welcomeBanner(configDir?: string): string {
     // Non-fatal: if we can't write the marker, just show the text every time
   }
 
-  return [
-    '',
-    chalk.bold('ShipGuard by AgenticCLI') + ': the security scanner your coding agent runs before every commit.',
-    DATA_FLOW_LINE,
-    `Quick start: shipguard scan   |   machine-readable: shipguard scan --json   |   docs: ${DOCS_URL}`,
-    '',
-  ].join('\n')
+  return WRITE_NOTICE
 }
 
 // ---------------------------------------------------------------------------

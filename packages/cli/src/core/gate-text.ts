@@ -214,15 +214,10 @@ export function scanBlockText(input: BlockInput): string {
       `${headline(ctx)} The scan is incomplete: ${missing} of ${scan.filesTotal} files were not scanned (${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')} in the other ${Math.max(0, scan.filesTotal - missing)}).`,
       `This is a coverage stop, not a finding. Nothing was ${v.done}.`,
     )
-  } else if (blocking.length > 0) {
+  } else {
     const where = ctx.kind === 'merge' && ctx.checked ? (ctx.checked.mergeResult ? ` in the merged result (${ctx.checked.sha.slice(0, 7)})` : ` in commit ${ctx.checked.sha.slice(0, 7)} (${ctx.checked.label})`) : ''
     out.push(
       `${headline(ctx)} DO NOT SHIP${where}: ${blocking.length} blocking ${pluralize(blocking.length, 'finding', 'findings')}${ctx.kind === 'merge' ? '' : ` in ${scan.filesTotal} files`}.`,
-      `Nothing was ${v.done}. Do not retry with --no-verify or another route; fix, commit, then ${again} again.`,
-    )
-  } else {
-    out.push(
-      `${headline(ctx)} DO NOT SHIP: ${scan.findings.length} ${pluralize(scan.findings.length, 'finding', 'findings')} together cross the ship threshold (none blocks alone).`,
       `Nothing was ${v.done}. Do not retry with --no-verify or another route; fix, commit, then ${again} again.`,
     )
   }

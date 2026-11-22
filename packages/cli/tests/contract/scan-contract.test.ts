@@ -73,8 +73,11 @@ describe('scan --json: schema 7 snapshot of every outcome', () => {
     expect(keySets.size).toBe(1)
     for (const f of j.findings) {
       expect(f.occurrence).toMatch(/^[0-9a-f]{12}$/)
-      expect(typeof f.fix).toBe('object')
-      expect(f.fix.verify).toMatchObject({ expect: 'no entry in findings[] has this occurrence key' })
+      // 0.12 shapes kept as strings; the objects live under fixInfo / evidenceInfo
+      expect(typeof f.fix).toBe('string')
+      expect(f.evidence === null || typeof f.evidence === 'string').toBe(true)
+      expect(typeof f.fixInfo).toBe('object')
+      expect(f.fixInfo.verify).toMatchObject({ expect: 'no entry in findings[] has this occurrence key' })
       expect(typeof f.why).toBe('string')
     }
     // blocking first, then severity
@@ -116,7 +119,7 @@ describe('scan --json: schema 7 snapshot of every outcome', () => {
   })
 })
 
-describe('additive: every 0.12.0 key keeps its name and type (only the three finding fields change)', () => {
+describe('additive: every 0.12.0 key keeps its name and type (`fix` and `evidence` stay strings)', () => {
   it('top level, riskScore, coverage and finding keys', async () => {
     const { j } = await json(blockedProject())
     for (const [key, type] of Object.entries(baseline.topLevel)) {
@@ -128,12 +131,14 @@ describe('additive: every 0.12.0 key keeps its name and type (only the three fin
     for (const f of j.findings) {
       expect(Object.keys(f)).toEqual(expect.arrayContaining(baseline.findingKeys))
     }
-    // the three declared breaking changes
+    // additive rule (main decision, E2E B-15): `fix` and `evidence` keep the 0.12 string shape; the objects are new keys
     for (const f of j.findings) {
-      expect(typeof f.fix).toBe('object')
+      expect(typeof f.fix).toBe('string')
+      expect(typeof f.fixInfo).toBe('object')
+      expect(f.evidenceInfo === null || typeof f.evidenceInfo === 'object').toBe(true)
       // main decision (wave 2): the 0.12 `explanation` prose stays, additively, beside the short `why`
       expect(typeof f.explanation).toBe('string')
-      expect(f.evidence === null || typeof f.evidence === 'object').toBe(true)
+      expect(f.evidence === null || typeof f.evidence === 'string').toBe(true)
     }
     // old aliases carry the same values as the new fields
     expect(j.recommendation).toBe(j.verdict.value)

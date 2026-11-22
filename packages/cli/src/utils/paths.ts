@@ -66,6 +66,36 @@ export function pathEscapeReason(root: string, value: unknown): string | null {
 
 const warnedWrites = new Set<string>()
 
+const SAVE_CODES: Record<string, string> = {
+  EACCES: 'permission denied',
+  EPERM: 'permission denied',
+  EROFS: 'the folder is read-only',
+  ENOSPC: 'no space left on the disk',
+  EDQUOT: 'the disk quota is used up',
+}
+const saveWarned = new Set<string>()
+
+/** True once a save problem was reported in this run (the "wrote .shipguard/" notice must not claim writes that failed). */
+export const saveFailed = (): boolean => saveWarned.size > 0
+
+/**
+ * A failure to save ShipGuard's own files in the project (a read-only folder, a full disk). ONE warning per cause per run in
+ * plain words, never the raw system error: the scan result is complete without these files. Returns true when `cause` is such
+ * a failure (it has been reported or already was), false when it is anything else (the caller words it itself).
+ */
+export function saveProblem(cause: unknown): boolean {
+  const text = cause instanceof Error ? `${(cause as NodeJS.ErrnoException).code ?? ''} ${cause.message}` : String(cause)
+  const code = Object.keys(SAVE_CODES).find((c) => text.includes(c))
+  if (!code) return false
+  const why = SAVE_CODES[code]
+  if (!saveWarned.has(why)) {
+    saveWarned.add(why)
+    logger.warn(`Could not save ShipGuard's files in this project (${why}). The scan result is complete; the report, history and repeat detection are off for this run. Fix: make the project folder writable, or scan a copy.`)
+  }
+  logger.debug(`save problem: ${text}`)
+  return true
+}
+
 /**
  * True (with one warning per run) when ShipGuard must NOT write `path` (relative to `root`, or inside it) because the way
  * to it is a symbolic link or leaves the project: a cloned repo can commit `.shipguard -> /somewhere`. Nothing is created
@@ -95,6 +125,6 @@ export function ensureShipguardDirIgnored(root: string): void {
     const ignore = resolve(dir, '.gitignore')
     if (!existsSync(ignore)) writeFileSync(ignore, '*\n', 'utf-8')
   } catch (err) {
-    logger.warn(`Could not write .shipguard/.gitignore: ${err instanceof Error ? err.message : err}`)
+    if (!saveProblem(err)) logger.warn(`Could not write .shipguard/.gitignore: ${err instanceof Error ? err.message : err}`)
   }
 }

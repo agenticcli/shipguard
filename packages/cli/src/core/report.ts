@@ -75,7 +75,9 @@ function buildUserMarkdown(result: ScanResult, ctx: ReportContext): string {
   const runId = result.runId ? result.runId.replace(/[^A-Za-z0-9]/g, '').slice(0, 8) : 'unknown'
   const files = result.coverage ? result.coverage.scanned : result.filesScanned
 
-  const ordered = orderFindings(findings)
+  const activeFindings = findings.filter((f) => !f.suppressed)
+  const ignoredFindings = findings.filter((f) => f.suppressed)
+  const ordered = orderFindings(activeFindings)
   const blockers = ordered.filter((f) => f.blocking)
   const rest = ordered.filter((f) => !f.blocking)
   const alsoFound = rest.filter((f) => fixOrderGroup(f) === 2)
@@ -83,7 +85,7 @@ function buildUserMarkdown(result: ScanResult, ctx: ReportContext): string {
 
   const out: string[] = [
     `# ShipGuard report: ${word} (run ${runId})`,
-    `verdict: ${word}   blocking: ${riskScore.blockingCount}   findings: ${riskScore.totalFindings}   incomplete: ${incomplete ? 'yes' : 'no'}   files: ${files}   rules: ${rulesLabel}   when: ${utcStamp(result.timestamp)}`,
+    `verdict: ${word}   blocking: ${riskScore.blockingCount}   findings: ${activeFindings.length}   incomplete: ${incomplete ? 'yes' : 'no'}   files: ${files}   rules: ${rulesLabel}   when: ${utcStamp(result.timestamp)}`,
     `rerun: ${rerun}`,
     '',
   ]
@@ -122,7 +124,11 @@ function buildUserMarkdown(result: ScanResult, ctx: ReportContext): string {
 
   const ignoredFiles = result.coverage?.ignoredByUser ?? 0
   const testValues = ctx.ignoredTestValues ?? 0
-  out.push(`## Ignored (${ignoredFiles + testValues})`)
+  out.push(`## Ignored (${ignoredFindings.length + ignoredFiles + testValues})`)
+  for (const f of ignoredFindings) {
+    const loc = f.line != null ? `${f.file}:${f.line}` : f.file
+    out.push(`- ${f.severity} ${loc}  ${fixGuidance(f, ctx.stacks).what}   id: ${f.id}   reason: ${f.suppressionReason ? oneLine(f.suppressionReason) : 'ignored in the code (shipguard-ignore comment)'}`)
+  }
   if (ignoredFiles > 0) out.push(`- ${ignoredFiles} file(s) matched ignore.paths in the policy`)
   if (testValues > 0) out.push(`- ${testValues} test value(s): placeholder and sample values, not reported`)
   out.push('')
