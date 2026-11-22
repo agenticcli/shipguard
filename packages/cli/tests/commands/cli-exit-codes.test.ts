@@ -237,11 +237,10 @@ describe('spawned-binary subcommand unknown-option exit codes ', () => {
 describe('spawned-binary runtime-error exit code 3 ', () => {
   // Coverage gap (mutation-probing): exit 3 was only ever asserted via the
   // in-process handler unit test — never through a SPAWNED binary on a real
-  // scan() throw. We force a genuine runtime error inside scan(): a policy whose
-  // `ignore.paths` is a non-iterable scalar. It is valid YAML and a valid object
-  // (so loadPolicy succeeds), but scanner.ts spreads `...policy.ignore.paths`,
-  // which throws `TypeError: … is not iterable` at runtime — caught by the
-  // scan-command try/catch that maps it to EXIT_CODES.RUNTIME_ERROR (3).
+  // A policy whose `ignore.paths` is a non-iterable scalar used to pass loadPolicy and then crash inside scan()
+  // (`TypeError: … is not iterable`, exit 3). Since the test-strategy judge fix (2026-11-22) the shape is checked up
+  // front: it is a CONFIG error (exit 2, INVALID_POLICY, with the cause), still a clean message and valid JSON, never a
+  // raw stack. The genuine runtime-error exit 3 stays covered by the corrupted-index `--changed` test below.
   const tmp: string[] = []
   function mkBadPolicyFixture(): string {
     const dir = mkdtempSync(join(tmpdir(), 'shipguard-exit3-'))
@@ -261,19 +260,21 @@ describe('spawned-binary runtime-error exit code 3 ', () => {
     }
   })
 
-  it('scan() runtime throw (human mode) → exit 3 with a clean error line', async () => {
+  it('wrongly shaped policy (human mode) → exit 2 with a clean INVALID_POLICY line', async () => {
     const { code, stdout, stderr } = await runCli(['scan', mkBadPolicyFixture(), '--quiet'])
-    expect(code).toBe(3)
+    expect(code).toBe(2)
     // A clean human error, never a raw V8 stack / core dump.
-    expect(`${stdout}${stderr}`.toLowerCase()).toMatch(/scan failed|not iterable|unexpected/)
+    expect(`${stdout}${stderr}`).toMatch(/shipguard\.policy\.yml could not be read/)
+    expect(`${stdout}${stderr}`).toContain('ignore.paths')
   })
 
-  it('scan() runtime throw (--json) → exit 3 AND stdout is still valid JSON', async () => {
+  it('wrongly shaped policy (--json) → exit 2 AND stdout is still valid JSON with the code', async () => {
     const { code, stdout } = await runCli(['scan', mkBadPolicyFixture(), '--json'])
-    expect(code).toBe(3)
-    // --json must stay parseable even on a runtime error.
+    expect(code).toBe(2)
+    // --json must stay parseable on a config error.
     expect(() => JSON.parse(stdout)).not.toThrow()
     expect(JSON.parse(stdout)).toHaveProperty('error')
+    expect(JSON.stringify(JSON.parse(stdout))).toContain('INVALID_POLICY')
   })
 
   // ---------------------------------------------------------------------------

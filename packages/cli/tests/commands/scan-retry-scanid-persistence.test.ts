@@ -199,6 +199,8 @@ describe('scanId reuse — a whole-process retry reuses the SAME scanId (closes 
     const blocker = join(dir, 'blocker-file')
     writeFileSync(blocker, 'i am a file', 'utf-8')
     stubPolicy.history = { path: join(blocker, 'nested', 'history.db') }
+    // The small fallback file (.shipguard/scan-id-reuse.json) must be impossible too, or nothing is "unavailable" any more.
+    writeFileSync(join(dir, '.shipguard'), 'i am a file too', 'utf-8')
 
     await expect(scanCommand().parseAsync(['node', 'scan', dir, '--json', '--pro'])).resolves.not.toThrow()
     await expect(scanCommand().parseAsync(['node', 'scan', dir, '--json', '--pro'])).resolves.not.toThrow()
