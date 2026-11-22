@@ -17,6 +17,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
+import { pathEscapeReason, refuseWrite } from '../utils/paths.js'
 import { logger } from '../utils/logger.js'
 import { occurrenceKey } from './gate-state.js'
 import { writeGateHandover } from './history/scan-id.js'
@@ -209,8 +210,9 @@ export function runScanChild(opts: { cliEntry: string; dir: string; budgetMs: nu
 /** Copy the reports the scan wrote in the extraction into the real repo, so the paths in the text are real. */
 export function copyReports(extracted: string, topLevel: string, runId: string | null): string | null {
   const from = join(extracted, '.shipguard', 'reports')
-  if (!existsSync(from)) return null
+  if (!existsSync(from) || pathEscapeReason(extracted, '.shipguard/reports') !== null) return null
   const to = join(topLevel, '.shipguard', 'reports')
+  if (refuseWrite(topLevel, '.shipguard/reports', 'the report')) return null
   try {
     mkdirSync(to, { recursive: true })
     for (const name of ['latest.md', 'latest.json']) {

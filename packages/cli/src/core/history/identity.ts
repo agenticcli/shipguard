@@ -6,6 +6,7 @@ import type { RepoIdKind } from '@agenticcli/shared'
 import { DEFAULT_REPO_ID_FALLBACK_PATH } from '@agenticcli/shared'
 import { logger } from '../../utils/logger.js'
 import { assertCwdAlive } from '../../utils/cwd-guard.js'
+import { ensureShipguardDirIgnored, pathEscapeReason } from '../../utils/paths.js'
 
 export interface RepoIdentity {
   repoId: string
@@ -19,22 +20,6 @@ function tryGit(cwd: string, args: string[]): string | undefined {
     return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
   } catch {
     return undefined
-  }
-}
-
-/**
- * Keep ShipGuard's own folder out of git WITHOUT touching the user's `.gitignore` (never edited, by spec):
- * `.shipguard/.gitignore` holding `*` ignores the folder, itself included (the same self-ignoring file `setup` writes).
- * Idempotent. Never throws: a failure only means the folder could get committed, and is warned about.
- */
-function ensureShipguardDirIgnored(cwd: string): void {
-  try {
-    const dir = join(cwd, '.shipguard')
-    mkdirSync(dir, { recursive: true })
-    const ignore = join(dir, '.gitignore')
-    if (!existsSync(ignore)) writeFileSync(ignore, '*\n', 'utf-8')
-  } catch (err) {
-    logger.warn(`Could not write .shipguard/.gitignore for the history store: ${err instanceof Error ? err.message : err}`)
   }
 }
 
@@ -65,6 +50,11 @@ export function resolveRepoIdentity(cwd: string): RepoIdentity {
   // Fallback: no root commit readable (shallow clone, zero commits, not a git repo at all).
   // Never blocks a scan — persist a UUID at .shipguard/repo-id (the folder ignores itself via .shipguard/.gitignore).
   const fallbackPath = join(cwd, DEFAULT_REPO_ID_FALLBACK_PATH)
+  const refused = pathEscapeReason(cwd, DEFAULT_REPO_ID_FALLBACK_PATH)
+  if (refused !== null) {
+    logger.warn(`Not saving the repo id in ${DEFAULT_REPO_ID_FALLBACK_PATH}: ${refused}. History cannot find an earlier run this time.`)
+    return { repoId: randomUUID(), repoIdKind: 'fallback-uuid', remoteLabel }
+  }
   try {
     if (existsSync(fallbackPath)) {
       const existing = readFileSync(fallbackPath, 'utf-8').trim()

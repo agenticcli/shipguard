@@ -1,5 +1,6 @@
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
-import { existsSync, lstatSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { logger } from './logger.js'
 import { DEFAULT_POLICY_PATH, DEFAULT_REPORT_DIR } from '@agenticcli/shared'
 
 export function resolveProjectRoot(startDir: string = process.cwd()): string {
@@ -46,7 +47,13 @@ export function pathEscapeReason(root: string, value: unknown): string | null {
     probe = up
   }
   try {
-    if (lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink()) return 'it is a symbolic link'
+    // No part of the way below the project folder may be a symbolic link, even one that points back inside.
+    const parts = lexical.split(/[\\/]/).filter(Boolean)
+    let walk = resolve(root)
+    for (const part of parts) {
+      walk = resolve(walk, part)
+      if (lstatSync(walk, { throwIfNoEntry: false })?.isSymbolicLink()) return walk === target ? 'it is a symbolic link' : 'it goes through a symbolic link'
+    }
     const rel = relative(realRoot, realpathSync(probe))
     if (rel === '..' || rel.startsWith('..' + '/') || rel.startsWith('..\\') || isAbsolute(rel)) {
       return 'it goes through a symbolic link that leaves the project folder'
@@ -55,4 +62,39 @@ export function pathEscapeReason(root: string, value: unknown): string | null {
     return `it cannot be checked (${error instanceof Error ? error.message : error})`
   }
   return null
+}
+
+const warnedWrites = new Set<string>()
+
+/**
+ * True (with one warning per run) when ShipGuard must NOT write `path` (relative to `root`, or inside it) because the way
+ * to it is a symbolic link or leaves the project: a cloned repo can commit `.shipguard -> /somewhere`. Nothing is created
+ * through it; the scan itself still runs and prints.
+ */
+export function refuseWrite(root: string, path: string, what: string): boolean {
+  const why = pathEscapeReason(root, path)
+  if (why === null) return false
+  const msg = `Not saving ${what}: ${why}. The scan still runs; nothing is written there.`
+  if (!warnedWrites.has(msg)) {
+    warnedWrites.add(msg)
+    logger.warn(msg)
+  }
+  return true
+}
+
+/**
+ * Keep ShipGuard's own folder out of git without touching the user's `.gitignore`: `.shipguard/.gitignore` holding `*`
+ * ignores the folder, itself included (the same file `setup` writes). Idempotent; never throws; writes nothing through a
+ * symbolic link. Call it wherever ShipGuard is about to put a file in `.shipguard/`.
+ */
+export function ensureShipguardDirIgnored(root: string): void {
+  try {
+    if (pathEscapeReason(root, '.shipguard/.gitignore') !== null) return
+    const dir = resolve(root, '.shipguard')
+    mkdirSync(dir, { recursive: true })
+    const ignore = resolve(dir, '.gitignore')
+    if (!existsSync(ignore)) writeFileSync(ignore, '*\n', 'utf-8')
+  } catch (err) {
+    logger.warn(`Could not write .shipguard/.gitignore: ${err instanceof Error ? err.message : err}`)
+  }
 }

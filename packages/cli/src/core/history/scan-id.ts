@@ -7,7 +7,7 @@ import type { Policy } from '@agenticcli/shared'
 import { DEFAULT_SCAN_ID_REUSE_WINDOW_MINUTES, SCAN_ID_REUSE_WINDOW_ENV_VAR } from '@agenticcli/shared'
 import { resolveHistoryPath } from './path.js'
 import { resolveRepoIdentity, resolveContentIdentity, resolveListingIdentity } from './identity.js'
-import { HistoryStore } from './store.js'
+import { openHistoryStore } from './store.js'
 import { logger } from '../../utils/logger.js'
 import { pathEscapeReason } from '../../utils/paths.js'
 
@@ -292,7 +292,7 @@ export async function resolveScanId(input: ResolveScanIdInput): Promise<ResolveS
       contentIdentity,
     })
     const reuseWindowMs = resolveScanIdReuseWindowMs(policy)
-    const openResult = await HistoryStore.open(historyPath, cliVersion)
+    const openResult = await openHistoryStore(gate ? gate.dir : cwd, policy, cliVersion)
 
     if (!openResult.ok) {
       // No history store (Node < 22.5, corrupt, locked): keep the reuse rule in a small file so a re-scan is not counted twice.

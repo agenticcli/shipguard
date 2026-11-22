@@ -18,6 +18,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { refuseWrite } from '../utils/paths.js'
 import { logger } from '../utils/logger.js'
 import {
   CLAUDE_HOOK_TIMEOUT_SECONDS,
@@ -106,6 +107,7 @@ export function readGateRecord(dir: string): GateRecord | null {
 /** Write the record atomically (temp file + rename). Returns false when it could not be written. */
 export function writeGateRecord(dir: string, record: GateRecord): boolean {
   const path = gateLastPath(dir)
+  if (refuseWrite(dir, GATE_LAST_RELATIVE, 'the gate record')) return false
   try {
     const shipguardDir = join(dir, '.shipguard')
     if (!existsSync(shipguardDir)) {

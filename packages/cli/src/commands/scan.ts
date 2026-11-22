@@ -1,6 +1,7 @@
 import { Command, Option } from 'commander'
 import { existsSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
+import { ensureShipguardDirIgnored, refuseWrite } from '../utils/paths.js'
 import { scan } from '../core/scanner.js'
 import { generateReport } from '../core/report.js'
 import { toSarif } from '../core/sarif.js'
@@ -990,7 +991,10 @@ async function runScan(ctx: {
   const plannedReport = shouldReport ? reportPathsFor(scanOptions.reportPath, scanId) : null
   const envelope = scanOptions.json || shouldReport ? buildEnvelope(Boolean(scanOptions.json), plannedReport) : null
   let reportPaths: Awaited<ReturnType<typeof generateReport>> | undefined
-  if (shouldReport) {
+  // A committed `.shipguard -> /elsewhere` must not receive the report: refused with a warning, the scan still prints.
+  const reportRefused = shouldReport && refuseWrite(cwd, scanOptions.reportPath, 'the report')
+  if (shouldReport && !reportRefused) {
+    if (relative(cwd, resolve(cwd, scanOptions.reportPath)).split(/[\\/]/)[0] === '.shipguard') ensureShipguardDirIgnored(cwd)
     const reportElapsedMs = Date.now() - startTime
     try {
       reportPaths = await generateReport(result, scanOptions.reportPath, reportElapsedMs, {
