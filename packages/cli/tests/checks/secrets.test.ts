@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { secretsCheck } from '../../src/checks/secrets.js'
+import { secretsCheck, checkSecretsWithStats } from '../../src/checks/secrets.js'
 import type { FileInfo, Policy } from '@agenticcli/shared'
 
 // ---------------------------------------------------------------------------
@@ -455,12 +455,10 @@ describe('secretsCheck — Firebase web config apiKey is public (B-07)', () => {
   const KEY = 'AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q'
   it('does not block an apiKey inside a Firebase web config', () => {
     const f = makeFile('src/firebase.ts', `const firebaseConfig = {\n  apiKey: "${KEY}",\n  authDomain: "x.firebaseapp.com",\n  projectId: "x",\n}\ninitializeApp(firebaseConfig)`)
-    const out = secretsCheck.run([f], DEFAULT_POLICY)
-    expect(out.some((x) => x.blocking)).toBe(false)
-    const g = out.find((x) => x.title === 'Google API Key')
-    expect(g?.severity).toBe('low')
-    expect(out.every((x) => x.severity === 'low' && !x.blocking)).toBe(true)
-    expect(g?.explanation).toContain('public identifier')
+    const r = checkSecretsWithStats([f], DEFAULT_POLICY)
+    // B-07/B-36: no finding at all (so SAFE TO SHIP); counted as a public identifier for the screen note.
+    expect(r.findings).toEqual([])
+    expect(r.publicIdentifiers).toBe(1)
   })
   it('still blocks an AIza key used server-side', () => {
     const f = makeFile('lib/maps.ts', `const url = "https://maps.googleapis.com/x?key=${KEY}"`)
