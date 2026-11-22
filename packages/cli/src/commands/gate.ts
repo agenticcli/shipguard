@@ -27,9 +27,11 @@ import {
   resolveCommit,
   runScanChild,
   scanErrorCode,
+  stagedTree,
   uncommittedFiles,
   type ParsedScan,
   type ScanRun,
+  type WorkingTreeOptions,
 } from '../core/gate-scan.js'
 import { parseGateCommand, type GateInvocation } from '../core/gate-target.js'
 import { gateGapFromCache } from '../core/plan-client.js'
@@ -83,7 +85,9 @@ export interface GateDeps {
   repoTopLevel: (dir: string) => string | null
   resolveCommit: (dir: string, name: string) => string | null
   headLabel: (dir: string) => string
-  uncommittedFiles: (dir: string) => string[] | null
+  uncommittedFiles: (dir: string, opts?: WorkingTreeOptions) => string[] | null
+  /** The tree the index holds (the merge result inside a pre-merge-commit hook); null when git fails. `indexFile` is absolute. */
+  stagedTree: (dir: string, indexFile?: string) => string | null
   /** The commits of every ref under the given ref prefixes; null when git fails or there are too many. */
   listRefCommits: (dir: string, prefixes: string[]) => Array<{ sha: string; label: string }> | null
   extractCommit: (topLevel: string, sha: string) => string
@@ -121,6 +125,7 @@ function defaultDeps(): GateDeps {
     resolveCommit,
     headLabel,
     uncommittedFiles,
+    stagedTree,
     listRefCommits,
     extractCommit,
     removeExtraction,
@@ -141,6 +146,8 @@ interface Job {
   hookCwd: string
   /** git host: commits named by git itself, in place of the refs in the command text. */
   shas?: Array<{ sha: string; label: string }>
+  /** git host, pre-merge-commit: git has not written MERGE_HEAD yet, so the staged merge result is what gets checked. */
+  mergeResult?: boolean
 }
 
 interface JobResult {
@@ -204,9 +211,10 @@ function buildJobs(host: GateHost, hook: string | undefined, raw: string, deps: 
     kind: merge ? 'merge' : 'push',
     command: merge ? 'git merge' : 'git push',
     dir: deps.cwd,
-    refs: merge ? ['MERGE_HEAD'] : [],
+    refs: [],
     deleteOnly: false,
   }
+  if (merge) return [{ inv: base, hookCwd: deps.cwd, mergeResult: true }]
   const top = deps.repoTopLevel(deps.cwd)
   if (!merge && (hook ?? HOOK_PUSH) === HOOK_PUSH && top && raw.trim()) {
     const shas = gitPushShas(raw, deps, top)
@@ -295,7 +303,7 @@ async function scanCommit(
   const shimVersion = Number(deps.env.SHIPGUARD_SHIM_VERSION)
   const staleHook = detectStaleHook(top) ?? (shimVersion > 0 && shimVersion < SHIM_VERSION ? { layer: 'claude' as const, text: STALE_TEXT } : null)
   const startedMs = deps.now()
-  const checkedBase: CheckedInfo = { dir: top, sha: target.sha, label: target.label, workingTree: deps.uncommittedFiles(top) }
+  const checkedBase: CheckedInfo = { dir: top, sha: target.sha, label: target.label, workingTree: deps.uncommittedFiles(top, { untracked: true, against: job.mergeResult ? 'index' : 'head' }), ...(job.mergeResult ? { mergeResult: true } : {}) }
   const previous = readGateRecord(top)
   const warnings = [...warningsBase]
   const unfinished = unfinishedGateWarning(top, startedMs, previous)
@@ -509,6 +517,20 @@ async function gateJob(job: Job, host: GateHost, deps: GateDeps): Promise<JobRes
       what: `${inv.dir} is not a git repository, so nothing was scanned.`,
       lines: ['Cause: the folder this command runs in does not exist or is not inside a git repository.', 'Fix: run the command from inside the repository (or fix the folder in cd or git -C), then run it again.'],
     })]
+  }
+
+  if (job.mergeResult) {
+    const indexFile = deps.env.GIT_INDEX_FILE ? resolve(deps.cwd, deps.env.GIT_INDEX_FILE) : undefined
+    const tree = deps.stagedTree(top, indexFile)
+    if (!tree) {
+      return [block(toCtx(job, host, null, [], top), {
+        code: 'INTERNAL_ERROR',
+        agentAction: 'stop',
+        what: 'The merge result could not be read from the index (git write-tree failed), so nothing was scanned.',
+        lines: ['Fix: run `git status` to see what is wrong with the repository, then run the merge again.'],
+      })]
+    }
+    return [await scanCommit(job, host, top, { sha: tree, label: 'merge result' }, deps, [])]
   }
 
   const picked = pickCommits(job, top, deps)

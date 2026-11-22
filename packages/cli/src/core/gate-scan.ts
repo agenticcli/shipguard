@@ -106,18 +106,52 @@ export function headLabel(dir: string): string {
   return branch ? `HEAD of ${branch}` : 'HEAD (detached)'
 }
 
+export interface WorkingTreeOptions {
+  /** Also list untracked files (not ignored ones). They are never pushed or scanned, so a clean pass must not call them "clean". */
+  untracked?: boolean
+  /** `head` (default): every difference from HEAD. `index`: only what is NOT staged (a merge in progress has its result staged by design). */
+  against?: 'head' | 'index'
+}
+
 /**
- * Tracked files that differ from HEAD (staged or not). Untracked files are not pushed, so they are
- * not listed. null = git could not say: the state is UNKNOWN, never "clean".
+ * Files that differ from HEAD (staged or not), plus untracked ones when asked. Paths under `.shipguard/`
+ * (ShipGuard's own state) are never listed. null = git could not say: the state is UNKNOWN, never "clean".
  */
-export function uncommittedFiles(dir: string): string[] | null {
-  const out = gitRaw(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=no'])
+export function uncommittedFiles(dir: string, opts: WorkingTreeOptions = {}): string[] | null {
+  const out = gitRaw(dir, ['status', '--porcelain=v1', '-z', `--untracked-files=${opts.untracked ? 'normal' : 'no'}`])
   if (out === null) return null
   if (!out) return []
-  return out
-    .split('\0')
-    .filter((r) => r.length > 3)
-    .map((r) => r.slice(3))
+  const entries = out.split('\0')
+  const files: string[] = []
+  for (let i = 0; i < entries.length; i++) {
+    const r = entries[i]
+    if (r.length <= 3) continue
+    const x = r[0]
+    const y = r[1]
+    // A rename or copy is followed by one extra entry holding the old path: not a separate file.
+    if (x === 'R' || x === 'C' || y === 'R' || y === 'C') i++
+    if (opts.against === 'index' && y === ' ') continue
+    const path = r.slice(3)
+    if (path === '.shipguard' || path.startsWith('.shipguard/')) continue
+    files.push(path)
+  }
+  return files
+}
+
+/**
+ * The tree the index holds right now (`git write-tree`), or null when git fails. In a pre-merge-commit hook
+ * this is the merge result about to be committed: git writes MERGE_HEAD only AFTER that hook runs, so the
+ * incoming commit cannot be read there. `indexFile` is the hook's own GIT_INDEX_FILE, as an absolute path.
+ */
+export function stagedTree(dir: string, indexFile?: string): string | null {
+  try {
+    const env = { ...GIT_ENV, ...(indexFile ? { GIT_INDEX_FILE: resolve(dir, indexFile) } : {}) }
+    const out = execFileSync('git', ['-C', dir, 'write-tree'], { env, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    return /^[0-9a-f]{40,64}$/.test(out) ? out : null
+  } catch (err) {
+    logger.debug(`gate: git write-tree failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`)
+    return null
+  }
 }
 
 /** Extract the tracked tree of one commit into a new private folder; returns its path. Caller removes it. */
