@@ -56,12 +56,12 @@ interface Run {
   ms: number
 }
 
-function runScript(sb: Sandbox, script: string, input: string, opts: { path?: string; env?: Record<string, string> } = {}): Promise<Run> {
+function runScript(sb: Sandbox, script: string, input: string, opts: { path?: string; env?: Record<string, string>; shell?: string } = {}): Promise<Run> {
   const file = join(sb.root, 'shim.sh')
   writeFileSync(file, script)
   return new Promise((resolve) => {
     const t0 = Date.now()
-    const child = spawn('/bin/sh', [file], {
+    const child = spawn(opts.shell ?? '/bin/sh', [file], {
       cwd: sb.work,
       env: { PATH: opts.path ?? `${sb.bin}:/usr/bin:/bin`, HOME: sb.root, CLAUDE_PROJECT_DIR: sb.work, ...opts.env },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -302,6 +302,50 @@ describe('claude shim: the clock', () => {
     const r = await runScript(sb, claudeShimScript(), push(), { env: { LOG: sb.log } })
     expect(r.code).toBe(0)
     expect(readFileSync(sb.log, 'utf-8')).toContain('path')
+  })
+
+  // E-06 / E-18: npx always sits next to node, so a stalled local binary used to fall through to `npx --yes ...@0.13 gate`,
+  // which offline ate the whole 150 s deadline (GATE_TIMEOUT with "raise timeoutSeconds") instead of GATE_STARTUP_STALLED in ~5 s.
+  for (const shell of ['/bin/sh', '/bin/dash']) {
+    it(`a stalled local binary with npx on PATH blocks with GATE_STARTUP_STALLED in about 5 s and never runs npx (${shell})`, async () => {
+      const sb = sandbox({ local: 'sleep 30', npx: 'echo npx >> "$LOG"; sleep 30' })
+      const r = await runScript(sb, claudeShimScript(), push('git push origin main'), { env: { LOG: sb.log }, shell })
+      expect(r.code).toBe(2)
+      expect(r.ms).toBeGreaterThanOrEqual(4_500)
+      expect(r.ms).toBeLessThan(9_000)
+      expect(r.stderr).toContain('did not answer its 5 s startup check')
+      expect(r.stderr).not.toContain('raise gate.timeoutSeconds')
+      expect(lastLine(r.stderr)).toBe('shipguard-gate: code=GATE_STARTUP_STALLED agentAction=ask_human run=none')
+      expect(existsSync(sb.log)).toBe(false)
+    })
+  }
+
+  it('the same without a timeout tool (plain-shell watchdog) and with dash', async () => {
+    const sb = sandbox({ local: 'sleep 30', npx: 'echo npx >> "$LOG"; sleep 30' })
+    const tools = join(sb.root, 'tools')
+    mkdirSync(tools)
+    for (const t of ['sh', 'dash', 'cat', 'sed', 'head', 'date', 'mktemp', 'rm', 'sleep', 'grep']) {
+      for (const dir of ['/usr/bin', '/bin']) {
+        if (existsSync(join(dir, t))) {
+          symlinkSync(join(dir, t), join(tools, t))
+          break
+        }
+      }
+    }
+    symlinkSync(join(sb.bin, 'npx'), join(tools, 'npx'))
+    const r = await runScript(sb, claudeShimScript(), push(), { path: tools, env: { LOG: sb.log }, shell: '/bin/dash' })
+    expect(r.code).toBe(2)
+    expect(r.ms).toBeLessThan(9_000)
+    expect(lastLine(r.stderr)).toContain('code=GATE_STARTUP_STALLED')
+    expect(existsSync(sb.log)).toBe(false)
+  })
+
+  it('a healthy local binary with npx on PATH never reaches the stalled text; npx is still the fallback when nothing stalled', async () => {
+    const sb = sandbox({ npx: 'echo npx >> "$LOG"; exit 0' })
+    rmSync(join(sb.work, 'node_modules'), { recursive: true, force: true })
+    const r = await runScript(sb, claudeShimScript(), push(), { env: { LOG: sb.log } })
+    expect(r.code).toBe(0)
+    expect(readFileSync(sb.log, 'utf-8')).toContain('npx')
   })
 
   it('without coreutils timeout the plain-shell watchdog still bounds the probe', async () => {
