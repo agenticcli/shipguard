@@ -20,6 +20,7 @@ import { quickstartHelp } from './core/render.js'
 import { CLI_VERSION, sendLifecycleEvent, setGateKind } from './core/telemetry.js'
 import { announceSafeMode } from './core/telemetry-config.js'
 import { installStreamErrorHandlers, exitWhenDrained, emitError } from './utils/exit.js'
+import { installCiStderrPrefix } from './utils/ci-prefix.js'
 import { buildErrorEnvelope, CORE_LINE } from './core/outcome.js'
 import { NEW_COMMAND_NAMES } from './core/command-names.js'
 import {
@@ -246,6 +247,8 @@ function closestCommand(input: string): string | undefined {
 // Parse — catch Commander errors for unknown commands / options
 // ---------------------------------------------------------------------------
 ;(async () => {
+  // With CI set every stderr line starts with `shipguard: ` (spec 01 rule 9); before any output.
+  installCiStderrPrefix()
   // Pre-parse check: if first non-flag token is not a known command name
   // and is not a flag, it's an unknown command — intercept before Commander
   // so we can emit a friendly message and exit 2 cleanly.

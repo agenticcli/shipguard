@@ -106,18 +106,45 @@ export function headLabel(dir: string): string {
   return branch ? `HEAD of ${branch}` : 'HEAD (detached)'
 }
 
-/**
- * Tracked files that differ from HEAD (staged or not). Untracked files are not pushed, so they are
- * not listed. null = git could not say: the state is UNKNOWN, never "clean".
- */
-export function uncommittedFiles(dir: string): string[] | null {
-  const out = gitRaw(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=no'])
+export interface WorkingTreeOptions {
+  /** Also list untracked files: never pushed or scanned, so a pass must not call the tree "clean". */
+  untracked?: boolean
+  /** `index`: only what is NOT staged (a merge in progress has its result staged). Default `head`. */
+  against?: 'head' | 'index'
+}
+
+/** Files that differ from HEAD (plus untracked ones when asked), never `.shipguard/`. null = git could not say: unknown, never "clean". */
+export function uncommittedFiles(dir: string, opts: WorkingTreeOptions = {}): string[] | null {
+  const out = gitRaw(dir, ['status', '--porcelain=v1', '-z', `--untracked-files=${opts.untracked ? 'normal' : 'no'}`])
   if (out === null) return null
   if (!out) return []
-  return out
-    .split('\0')
-    .filter((r) => r.length > 3)
-    .map((r) => r.slice(3))
+  const entries = out.split('\0')
+  const files: string[] = []
+  for (let i = 0; i < entries.length; i++) {
+    const r = entries[i]
+    if (r.length <= 3) continue
+    const x = r[0]
+    const y = r[1]
+    // a rename or copy is followed by an entry with the old path
+    if (x === 'R' || x === 'C' || y === 'R' || y === 'C') i++
+    if (opts.against === 'index' && y === ' ') continue
+    const path = r.slice(3)
+    if (path === '.shipguard' || path.startsWith('.shipguard/')) continue
+    files.push(path)
+  }
+  return files
+}
+
+/** The tree the index holds (`git write-tree`). In a pre-merge-commit hook that is the merge result: git writes MERGE_HEAD only AFTER the hook. `indexFile` = the hook's GIT_INDEX_FILE, absolute. */
+export function stagedTree(dir: string, indexFile?: string): string | null {
+  try {
+    const env = { ...GIT_ENV, ...(indexFile ? { GIT_INDEX_FILE: resolve(dir, indexFile) } : {}) }
+    const out = execFileSync('git', ['-C', dir, 'write-tree'], { env, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    return /^[0-9a-f]{40,64}$/.test(out) ? out : null
+  } catch (err) {
+    logger.debug(`gate: git write-tree failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`)
+    return null
+  }
 }
 
 /** Extract the tracked tree of one commit into a new private folder; returns its path. Caller removes it. */

@@ -30,6 +30,14 @@ export const SHIM_MARKER_PREFIX = '# shipguard-hook v'
 
 export type HookTarget = 'git' | 'claude' | 'ci'
 
+/**
+ * GitHub Actions the generated workflows use, pinned by full commit SHA (a tag can be moved; a SHA cannot). Each SHA was
+ * read from the GitHub API (repos/actions/<name>/git/ref/tags/<tag> -> commit, checked with repos/actions/<name>/commits/<sha>
+ * and the published release, 2026-11-22). Bump both together, by hand, from the API: never type a SHA from memory.
+ */
+export const ACTION_CHECKOUT = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0'
+export const ACTION_SETUP_NODE = 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0'
+
 /** The CI job invocation (the CI template keeps this exact command). */
 export const GATE_COMMAND = 'shipguard scan --json --strict'
 
@@ -113,7 +121,7 @@ function shimBody(opts: ShimOptions): string {
       : `run() { bounded "$(cap ${GATE_DEADLINE_SECONDS})" "$@"; rc=$?; [ "$rc" = 0 ] && exit 0; [ "$rc" = 1 ] && exit 1; case $rc in 124|137|143) TIMEDOUT=1;; esac; }   # no exec: we must see the code. 1 is always a gate block on a git host; a stopped gate is remembered`,
     `if   [ -n "$P" ] && [ -x "$P/node_modules/.bin/shipguard" ] && probe "$P/node_modules/.bin/shipguard"; then run "$P/node_modules/.bin/shipguard" ${hostArgs}`,
     `elif command -v shipguard >/dev/null 2>&1 && probe shipguard; then run shipguard ${hostArgs}`,
-    `elif command -v npx >/dev/null 2>&1; then run npx --yes ${NPX_SPEC} ${hostArgs}   # download and gate share what is left of the ${GATE_DEADLINE_SECONDS} s`,
+    `elif [ -z "$STALLED" ] && command -v npx >/dev/null 2>&1; then run npx --yes ${NPX_SPEC} ${hostArgs}   # download and gate share what is left of the ${GATE_DEADLINE_SECONDS} s; a binary that hung means a broken install: npx would only eat the deadline offline, so block now (GATE_STARTUP_STALLED)`,
     `fi`,
     `# nothing resolved (a ShipGuard older than 0.13 counts as nothing), or a code the gate does not use (127, a crash, 124 or 143 from a stalled or slow step): fail closed, with the text that says why`,
     `if [ "$(left)" -le 0 ] || [ -n "$TIMEDOUT" ]; then`,
@@ -207,8 +215,8 @@ jobs:
     name: ShipGuard verdict
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ${ACTION_CHECKOUT}
+      - uses: ${ACTION_SETUP_NODE}
         with:
           node-version: '20'
       - name: Run ShipGuard

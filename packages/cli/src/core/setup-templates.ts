@@ -3,7 +3,7 @@
  * core/hook-templates.ts): the CLAUDE.md / AGENTS.md managed block and the CI workflow (spec 07).
  * Pure strings, no filesystem. No plan facts and no prices here (the CLI holds none).
  */
-import { HOOK_MARKER_END, HOOK_MARKER_START } from './hook-templates.js'
+import { ACTION_CHECKOUT, ACTION_SETUP_NODE, HOOK_MARKER_END, HOOK_MARKER_START } from './hook-templates.js'
 
 /** Bumped when the instructions block text changes. */
 export const AGENT_BLOCK_VERSION = 1
@@ -89,8 +89,8 @@ jobs:
     name: ShipGuard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ${ACTION_CHECKOUT}
+      - uses: ${ACTION_SETUP_NODE}
         with:
           node-version: '22'
       - name: Run ShipGuard
