@@ -29,6 +29,19 @@ Or in one step: `bash scripts/rebuild-verify.sh 0.12.1` (does the same in a temp
 - What CI proves on every change (`.github/workflows/ci.yml`): two clean builds of the same commit are byte-identical, and every map resolves to a real file under `src/`. What it does not prove: a different machine or Node version gives the same bytes. Use Node 24 (what the release uses) and tell us if a `MISMATCH` shows up: https://github.com/agenticcli/shipguard/issues.
 - Maps are not part of the CLI's own integrity check (`dist/checksum-manifest.json` hashes the `.js` files only), so they can never make a scan fail.
 
+## Release candidate (RC) tarball for pre-release testing
+
+`npm pack` does not run any build (only `prepublishOnly` does, and only on publish), so a pack taken after a plain `pnpm run build` carries dev-build pings (`provenance: dev`). Build the RC the way the release does:
+
+```bash
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm run build
+pnpm --filter @agenticcli/shipguard run build:publish   # sets SHIPGUARD_PUBLISHED_BUILD=1
+(cd packages/cli && npm pack)                           # the RC tarball
+```
+
+`.github/workflows/release.yml` already runs `build:publish` before packing, so what it publishes is correct.
+
 ## 2. Every network call in the CLI
 
 Nothing is sent about your code. Only the usage ping (first row) is on by default; it can be turned off. This list is from the source at this tag (`grep -rn "fetch(" packages/cli/src`); a test fails the build if a new call appears without being listed here.

@@ -160,10 +160,10 @@ async function exchangeApiKeyForToken(apiKey: string, apiUrl: string): Promise<s
     );
   }
   if (res.status === 402) {
-    console.error('[shipguard] SHIPGUARD_API_KEY exchange rejected — monthly budget exhausted');
+    console.error('[shipguard] SHIPGUARD_API_KEY exchange rejected — monthly usage limit reached');
     throw new Error(
-      'SHIPGUARD_API_KEY has exhausted its monthly credit budget. ' +
-      `Buy more at ${goLink('billing')}`,
+      'SHIPGUARD_API_KEY has reached its monthly usage limit. ' +
+      `See your plan at ${goLink('billing')}`,
     );
   }
   if (!res.ok) {

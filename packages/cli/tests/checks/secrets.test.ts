@@ -450,3 +450,26 @@ describe('secretsCheck — .env content scanning gap (free-tier secret gaps)', (
     expect(findings.some((f) => f.title === 'Secret exposed via NEXT_PUBLIC_ prefix')).toBe(true)
   })
 })
+
+describe('secretsCheck — Firebase web config apiKey is public (B-07)', () => {
+  const KEY = 'AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q'
+  it('does not block an apiKey inside a Firebase web config', () => {
+    const f = makeFile('src/firebase.ts', `const firebaseConfig = {\n  apiKey: "${KEY}",\n  authDomain: "x.firebaseapp.com",\n  projectId: "x",\n}\ninitializeApp(firebaseConfig)`)
+    const out = secretsCheck.run([f], DEFAULT_POLICY)
+    expect(out.some((x) => x.blocking)).toBe(false)
+    const g = out.find((x) => x.title === 'Google API Key')
+    expect(g?.severity).toBe('low')
+    expect(out.every((x) => x.severity === 'low' && !x.blocking)).toBe(true)
+    expect(g?.explanation).toContain('public identifier')
+  })
+  it('still blocks an AIza key used server-side', () => {
+    const f = makeFile('lib/maps.ts', `const url = "https://maps.googleapis.com/x?key=${KEY}"`)
+    const out = secretsCheck.run([f], DEFAULT_POLICY)
+    expect(out.find((x) => x.title === 'Google API Key')?.blocking).toBe(true)
+  })
+  it('still blocks apiKey next to firebase-admin', () => {
+    const f = makeFile('server/a.ts', `import admin from 'firebase-admin'\nconst c = { apiKey: "${KEY}", projectId: "x" }`)
+    const out = secretsCheck.run([f], DEFAULT_POLICY)
+    expect(out.find((x) => x.title === 'Google API Key')?.blocking).toBe(true)
+  })
+})
