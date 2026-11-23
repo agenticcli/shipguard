@@ -4,7 +4,7 @@
 ShipGuard by AgenticCLI is the security scanner your coding agent runs before every commit. It checks your project for leaked secrets, unprotected routes, destructive migrations, unverified payment webhooks and risky deploy settings. Same code, same answer, and a real exit code your agent can read. It also runs in CI. It is not a code reviewer and not a full SAST tool.
 
 ## Does my code leave my machine?
-No. ShipGuard checks your code on your machine. Rules come down; your code never goes up. The only data sent is small product usage telemetry (no code, no file paths, no file contents) that help us understand how people use ShipGuard and make the next release better. You can switch them off any time: `shipguard telemetry disable` or `DO_NOT_TRACK=1`. See [privacy](privacy.md).
+No. ShipGuard checks your code on your machine. Rules come down; your code never goes up. No code, file paths or file contents are ever sent. The data it does send is small product usage telemetry, which helps us understand how people use ShipGuard and make the next release better. You can switch it off any time: `shipguard telemetry disable` or `DO_NOT_TRACK=1`. See [privacy](privacy.md).
 
 ## Do I need an account?
 No. Local scans need no account. Pro adds rulebook scans, which download the full current rulebook before checking on your machine.

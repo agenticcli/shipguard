@@ -13,7 +13,7 @@ Your agent already shipped it. Did it just re-break it? Long agent sessions quie
 
 **Who it is for:** SaaS founders with paying customers, shipping with Claude Code, Codex and Cursor, without a security team.
 
-**Open source CLI. Your code never leaves your machine.** ShipGuard sends only product usage telemetry (no code, no file paths, no file contents) to help us understand how people use it and make the next release better. You can switch it off any time: `shipguard telemetry disable` or `DO_NOT_TRACK=1`. [What is sent](docs/privacy.md)
+**Open source CLI. Your code never leaves your machine.** ShipGuard never sends code, file paths or file contents. It sends product usage telemetry to help us understand how people use it and make the next release better. You can switch it off any time: `shipguard telemetry disable` or `DO_NOT_TRACK=1`. [What is sent](docs/privacy.md)
 
 ## Quickstart
 
