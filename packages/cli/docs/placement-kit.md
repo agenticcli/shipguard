@@ -27,7 +27,10 @@ callers uncovered.
 
 Before you merge, push, or tell the user something is ready to ship, run:
 
-    shipguard scan --json --strict
+    npx --no-install @agenticcli/shipguard scan --json --strict
+
+(That is for a project that has ShipGuard as a devDependency, which is not on PATH. With a global
+install, run `shipguard scan --json --strict` instead.)
 
 Exit code 0 does NOT mean "safe". It means "the scan ran". Read the JSON:
 

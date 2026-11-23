@@ -61,10 +61,12 @@ These tools read an `AGENTS.md` file. Add this block so the agent runs ShipGuard
 ```markdown
 ## ShipGuard
 - ShipGuard is the security scanner for this repo. It runs on this machine; code never leaves it.
-- Before every push or merge, run: shipguard scan --json --strict
+- Before every push or merge, run: npx --no-install @agenticcli/shipguard scan --json --strict
 - Exit 0 means the scan completed: read "recommendation" in the JSON. Exit 1 means blocked: fix each finding with blocking:true, then scan again.
 - Do not skip the hooks with --no-verify.
 ```
+
+That command is for a project with ShipGuard as a devDependency (not on PATH). With a global install use `shipguard scan --json --strict`; `shipguard setup` writes the right one for you.
 
 Guides: [Codex](https://agenticcli.dev/guides/codex) and [Cursor](https://agenticcli.dev/guides/cursor). Use CI as well: an instruction file asks an agent, CI enforces.
 

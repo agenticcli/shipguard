@@ -39,6 +39,9 @@ import {
   mdBlockVersion,
   replaceMdBlock,
   MD_MARKER_PREFIX,
+  RUN_FETCH,
+  RUN_LOCAL,
+  RUN_PATH,
 } from '../core/setup-templates.js'
 import {
   INSTALL_AGENTS,
@@ -657,13 +660,23 @@ export async function runSetup(opts: SetupOptions, d: SetupDeps): Promise<number
   if (detected.length > 0) out(`Detected: ${detected.join('; ')}.`)
   else out(`Setting up: ${agents.map((a) => AGENT_NAMES[a]).join(', ')}.`)
 
+  // How the agent starts ShipGuard in CLAUDE.md / AGENTS.md follows the install the hook will use (E-41):
+  // local (found, or added by this setup) -> npx --no-install; global on PATH -> bare; neither -> npx --yes, pinned.
+  let cliProbe: CliBinary | null | undefined
+  const findCliOnce = (): CliBinary | null => (cliProbe === undefined ? (cliProbe = d.findCli(cwd)) : cliProbe)
+  const addsDependency = !opts.noInstall && existsSync(join(cwd, 'package.json')) && versionAtLeast(d.cliVersion, GATE_MIN_VERSION) && !('manual' in dependencyCommand(cwd, d.cliVersion))
+  const runCmd = (): string => {
+    const cli = findCliOnce()
+    if (cli ? cli.where === 'local' : addsDependency) return RUN_LOCAL
+    return cli ? RUN_PATH : RUN_FETCH
+  }
   if (wants('claude')) {
     const s = planClaudeSettings(cwd, claudeVersion)
-    actions.push(s.action, planShim(cwd, state), planMdBlock(cwd, CLAUDE_MD, claudeMdBlock(), ['claude'], 'tells the agent to run `shipguard scan --json --strict` before a push and what to do when blocked'))
+    actions.push(s.action, planShim(cwd, state), planMdBlock(cwd, CLAUDE_MD, claudeMdBlock(runCmd()), ['claude'], 'tells the agent to run `shipguard scan --json --strict` before a push and what to do when blocked'))
     notes.push(...s.notes)
   }
   if (wants('codex') || wants('cursor')) {
-    actions.push(planMdBlock(cwd, AGENTS_MD, agentsMdBlock(), ['codex', 'cursor'].filter((a): a is Agent => wants(a as Agent)), 'run `shipguard scan --json --strict` before a push, what to do when blocked, never use --no-verify'))
+    actions.push(planMdBlock(cwd, AGENTS_MD, agentsMdBlock(runCmd()), ['codex', 'cursor'].filter((a): a is Agent => wants(a as Agent)), 'run `shipguard scan --json --strict` before a push, what to do when blocked, never use --no-verify'))
   }
   let hooksLine: string | null = null
   if (needsGit) {
@@ -701,7 +714,7 @@ export async function runSetup(opts: SetupOptions, d: SetupDeps): Promise<number
   let cliLine: string | null = null
   let willInstall = false
   if (hooksPlanned) {
-    const cli = d.findCli(cwd)
+    const cli = findCliOnce()
     if (cli) cliLine = `ShipGuard CLI: found ${cli.where === 'local' ? `at ./node_modules/.bin/shipguard` : 'on PATH'} (${cli.version}). The hook uses it, so a push does not need the network.`
     else if (opts.noInstall) cliLine = `ShipGuard CLI: not installed in this project (--no-install). The gate then fetches ShipGuard with npx on every push, needs the network, and blocks when it cannot download within the 150 s deadline.`
     else if (existsSync(join(cwd, 'package.json')) && versionAtLeast(d.cliVersion, GATE_MIN_VERSION) && 'manual' in dependencyCommand(cwd, d.cliVersion)) {
