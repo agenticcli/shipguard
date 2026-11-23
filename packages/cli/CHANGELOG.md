@@ -14,6 +14,7 @@
 - Changed: the `jose` dependency is removed.
 - License: ShipGuard is now under the Apache License 2.0 (it was Elastic License 2.0 in 0.12 and earlier). The package ships `LICENSE` and `NOTICE`; the npm description, keywords and README say "open source CLI". The ShipGuard and AgenticCLI names stay ours: see `TRADEMARKS.md` in the repo.
 - Safer in a cloned repo: `report.output` and `history.path` in `shipguard.policy.yml` must stay inside the project (anything else is refused with a warning and the default is used); `shipguard uninstall` never follows a symbolic link or a foreign install record out of the project; the scan never edits your `.gitignore` (it writes `.shipguard/.gitignore` instead); a policy file of the wrong shape is refused as INVALID_POLICY (the gate blocks with that code) instead of crashing the scan; scan-id reuse (no double charge on a re-run) now also works on Node older than 22.5; a `.shipguard` that is a symbolic link is never written through (one warning, the scan still prints), and `.shipguard/` stays out of git through its own `.gitignore`.
+- Faster Pro scans: a rulebook rule is now skipped for a file that cannot match it, as a bundled rule already was (rulebook rules arrive as one joined pattern, which the skip check did not read per branch). Findings are identical. The first-Pro receipt now counts only the findings the screen shows, and each finding from a rulebook rule ends with `[Pro rule]` (`[rulebook rule]` when the server gives no plan name).
 
 ## 0.12.1 - unreleased
 

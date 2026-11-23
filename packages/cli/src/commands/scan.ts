@@ -876,7 +876,8 @@ async function runScan(ctx: {
     ? computeReceipt(
         proRules.map((r) => ({ id: r.id, category: r.category, area: step.areaByRuleId[r.id] ?? null })),
         generalIds,
-        result.findings.map((f) => f.id),
+        // Only findings the screen shows: a shipguard-ignore (or anti-pattern) suppressed finding is not a finding of this run.
+        result.findings.filter((f) => !f.suppressed).map((f) => f.id),
       )
     : null
 
@@ -1070,8 +1071,12 @@ async function runScan(ctx: {
     const receiptOut = receiptOpen && receipt ? receiptLines(receipt, plan) : []
     const setupDue = momentDue(nag, 'setupHint', rk, planEnv.now)
 
+    // The screen marks a finding from a downloaded rulebook rule with `[<plan> rule]` (spec 05): hand it the origin the JSON already carries.
+    const screenResult: typeof result = rulebookRuleIds.size > 0
+      ? { ...result, findings: result.findings.map((f) => (rulebookRuleIds.has(f.id) ? { ...f, origin: 'rulebook' } : f)) }
+      : result
     const screen = renderScanScreen({
-      result,
+      result: screenResult,
       elapsedMs,
       strict: scanOptions.strict,
       exitCode,
