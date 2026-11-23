@@ -221,8 +221,48 @@ function nameEnd(src: string, from: number): number {
   return close + 1
 }
 
+/**
+ * `(?:A|B|C)` as a WHOLE pattern is the same language as `A|B|C`. A signed rulebook rule carries its several patterns
+ * joined this way into one string, so without this the parser sees one group and keeps only ONE required run per
+ * member (a weak OR set) instead of each member's own runs, which is what the separate patterns of a bundled rule get.
+ * Returns the text inside when the pattern is exactly one non-capturing group with no quantifier; else the pattern.
+ */
+function unwrapWholeGroup(pattern: string): string {
+  if (!pattern.startsWith('(?:') || !pattern.endsWith(')')) return pattern
+  let depth = 1
+  let i = 3
+  try {
+    while (i < pattern.length) {
+      const c = pattern[i]
+      if (c === '\\') {
+        // Same escape forms skipClass refuses (\Q..\E, \p{..}, \x{..}) are not understood here either.
+        const n = pattern[i + 1]
+        if (n === undefined || n === 'Q' || n === 'E' || n === 'p' || n === 'P' || n === 'x') return pattern
+        i += 2
+      } else if (c === '[') {
+        i = skipClass(pattern, i)
+      } else if (c === '(') {
+        depth++
+        i++
+      } else if (c === ')') {
+        depth--
+        // The group closes before the end: `(?:A)(?:B)` or `(?:A)x`, not one whole group.
+        if (depth === 0) return i === pattern.length - 1 ? pattern.slice(3, -1) : pattern
+        i++
+      } else {
+        i++
+      }
+    }
+  } catch (err) {
+    if (err instanceof Unsure) return pattern
+    throw err
+  }
+  return pattern
+}
+
 /** The branches of one pattern; undefined when any branch has nothing usable to require. */
-function patternAlts(pattern: string, caseInsensitive: boolean): PrefilterBranch[] | undefined {
+function patternAlts(rawPattern: string, caseInsensitive: boolean): PrefilterBranch[] | undefined {
+  const pattern = unwrapWholeGroup(rawPattern)
   let parsed: { branches: Branch[]; pos: number }
   try {
     parsed = parseBranches(pattern, 0, false)
