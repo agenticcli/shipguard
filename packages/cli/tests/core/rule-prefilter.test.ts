@@ -223,3 +223,69 @@ describe('differential soundness against re2js', () => {
     expect(checkedMatches).toBeGreaterThan(5000)
   })
 })
+
+describe('a signed rule joins its patterns into one (?:A|B|C) group', () => {
+  // The server joins a rule's patterns this way (build-manifest.ts), so the CLI sees ONE string. Its prefilter must be
+  // as selective as the one built from the separate patterns, or the rule runs on far more files (2026-11-23, H-04).
+  const separate = [
+    'Buffer\\.alloc\\s*\\(\\s*(?:12|16)\\s*,\\s*0\\s*\\)',
+    'Buffer\\.from\\s*\\(\\s*[\'"]0{16,32}[\'"]\\s*,\\s*[\'"]hex[\'"]\\s*\\)',
+    'const\\s+iv\\s*=\\s*[\'"]0{16,32}[\'"]',
+  ]
+  const joined = `(?:${separate.join('|')})`
+
+  it('gives the same filter as the separate patterns', () => {
+    expect(pf([joined])).toEqual(pf(separate))
+    expect(pf([joined])!.alts).toHaveLength(3)
+  })
+
+  it('gives the same filter with flags and with one member that has nothing to require', () => {
+    expect(pf([`(?:${['alpha\\d', 'beta\\d'].join('|')})`], 'i')).toEqual(pf(['alpha\\d', 'beta\\d'], 'i'))
+    expect(pf(['(?:foo|[a-z]+)'])).toBeUndefined()
+  })
+
+  it('lets through exactly the files a member needs', () => {
+    const f = pf([joined])!
+    expect(passes(f, "const iv = '0000000000000000'")).toBe(true)
+    expect(passes(f, 'Buffer.alloc(16, 0)')).toBe(true)
+    // "Buffer" and "const" appear, but no member has all its required text
+    expect(passes(f, 'const x = Buffer.concat([])')).toBe(false)
+  })
+
+  it('only unwraps ONE group that spans the whole pattern', () => {
+    // These are not "one whole group": the old reading (group = one or-set) stays.
+    expect(pf(['(?:abc)+z'])!.alts[0].runs.sort()).toEqual(['abc', 'z'].sort())
+    expect(pf(['(?:exec|execSync)\\s*\\('])!.alts).toEqual([{ runs: ['('], ors: [['exec', 'execSync']] }])
+    expect(pf(['(?:foo|bar)(?:baz|qux)'])!.alts).toEqual([{ runs: [], ors: [['foo', 'bar'], ['baz', 'qux']] }])
+    expect(pf(['(?:foo|bar)*zzz'])!.alts[0].runs).toEqual(['zzz'])
+    expect(pf(['(?:foo|bar)+'])!.alts).toEqual([{ runs: [], ors: [['foo', 'bar']] }])
+    // An escaped or class paren does not close the group early or late.
+    expect(pf(['(?:a\\)b|c[)]d)'])!.alts).toEqual([{ runs: ['a)b'], ors: [] }, { runs: ['c', 'd'], ors: [] }])
+  })
+
+  it('never filters out a string that re2js matches, for joined patterns', () => {
+    const r = rng(20261123)
+    let checked = 0
+    for (let i = 0; i < 1500; i++) {
+      const top = [genSeq(r, 0), genSeq(r, 0), genSeq(r, 0)]
+      const pattern = `(?:${top.map((t) => t.src).join('|')})`
+      const ci = r() < 0.5
+      let compiled: RE2JS
+      try {
+        compiled = RE2JS.compile(pattern, ci ? RE2JS.CASE_INSENSITIVE : 0)
+      } catch {
+        continue
+      }
+      const f = buildPrefilter([pattern], ci ? 'i' : '')
+      if (f === undefined) continue
+      for (let k = 0; k < 6; k++) {
+        const pre = Array.from({ length: Math.floor(r() * 4) }, () => ALPHA[Math.floor(r() * ALPHA.length)]).join('')
+        const s = pre + top[Math.floor(r() * top.length)].sample(r, ci)
+        if (!compiled.matcher(s).find()) continue
+        checked++
+        expect(mayMatch(f, new FileProbe(s)), `pattern ${JSON.stringify(pattern)} matched ${JSON.stringify(s)} but the prefilter dropped it`).toBe(true)
+      }
+    }
+    expect(checked).toBeGreaterThan(1000)
+  })
+})
