@@ -31,6 +31,12 @@ shipguard schema --json — the machine-readable contract: verdicts, exit codes,
 ## Target Users
 SaaS founders shipping with Claude Code, Codex and Cursor
 
+## Privacy
+Your code never leaves your machine. ShipGuard never sends code, file paths or file contents. It sends product usage telemetry to help improve the product. Switch it off: `shipguard telemetry disable` or DO_NOT_TRACK=1. Details: https://github.com/agenticcli/shipguard/blob/main/docs/privacy.md
+
+## Plans
+Free: the general rules, unlimited, no account. Pro: the full rulebook (rulebook scans); prices at https://agenticcli.dev/pricing
+
 ## License
 Apache License 2.0 (open source CLI; free to use, change and share, including commercially). The ShipGuard and AgenticCLI names are not part of the license.
 

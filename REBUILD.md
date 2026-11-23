@@ -31,7 +31,7 @@ Or in one step: `bash scripts/rebuild-verify.sh 0.13.0` (does the same in a temp
 
 ## Release candidate (RC) tarball for pre-release testing
 
-`npm pack` does not run any build (only `prepublishOnly` does, and only on publish), so a pack taken after a plain `pnpm run build` carries dev-build pings (`provenance: dev`). Build the RC the way the release does:
+`npm pack` does not run any build (only `prepublishOnly` does, and only on publish), so a pack taken after a plain `pnpm run build` carries dev-build telemetry (`provenance: dev`). Build the RC the way the release does:
 
 ```bash
 pnpm install --frozen-lockfile --ignore-scripts
@@ -44,11 +44,11 @@ pnpm --filter @agenticcli/shipguard run build:publish   # sets SHIPGUARD_PUBLISH
 
 ## 2. Every network call in the CLI
 
-Nothing is sent about your code. Only the usage ping (first row) is on by default; it can be turned off. This list is from the source at this tag (`grep -rn "fetch(" packages/cli/src`); a test fails the build if a new call appears without being listed here.
+Nothing is sent about your code. Only product usage telemetry (first row) is on by default; it can be turned off. This list is from the source at this tag (`grep -rn "fetch(" packages/cli/src`); a test fails the build if a new call appears without being listed here.
 
 | File | Call | When |
 | --- | --- | --- |
-| `src/core/telemetry.ts` | `POST https://agenticcli.dev/api/cli-telemetry` | after a scan, once on first run, after `login`; usage ping, no code or paths; off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in the policy file; never from a source checkout |
+| `src/core/telemetry.ts` | `POST https://agenticcli.dev/api/cli-telemetry` | after a scan, once on first run, after `login`; product usage telemetry, no code or paths; off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in the policy file; never from a source checkout |
 | `src/core/jwks.ts` | `GET https://agenticcli.dev/.well-known/jwks.json` | `scan --pro`: public keys to verify signed rules |
 | `src/core/pro-scanner.ts` | `POST <api>/api/rules/fetch` | `scan --pro`: download the signed rules; sends your login token and a scan id, no files |
 | `src/core/auth.ts` | `POST <api>/api/agent/exchange`, `POST <api>/api/auth/device/refresh` | `scan --pro` with an API key or an expired login: get or refresh a token |

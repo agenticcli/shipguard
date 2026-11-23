@@ -13,7 +13,7 @@ Your agent already shipped it. Did it just re-break it? Long agent sessions quie
 
 **Who it is for:** SaaS founders with paying customers, shipping with Claude Code, Codex and Cursor, without a security team.
 
-**Open source CLI. Your code never leaves your machine.** ShipGuard sends only product usage telemetry (no code, no file paths, no file contents) to help us understand how people use it and make the next release better. You can switch it off any time: `shipguard telemetry disable` or `DO_NOT_TRACK=1`. [What is sent](docs/privacy.md)
+**Open source CLI. Your code never leaves your machine.** ShipGuard never sends code, file paths or file contents. It sends product usage telemetry to help us understand how people use it and make the next release better. You can switch it off any time: `shipguard telemetry disable` or `DO_NOT_TRACK=1`. [What is sent](docs/privacy.md)
 
 ## Quickstart
 
@@ -120,7 +120,7 @@ The hook runs `npx -y @agenticcli/shipguard scan --strict` on the whole project 
 
 **Does my code leave my machine?** No. Rules come down; your code never goes up. See [Privacy](#privacy).
 
-**Do I need an account?** No. Local scans need no account and are free and unlimited. Signing in adds rulebook scans; what your account includes is on the [pricing page](https://agenticcli.dev/pricing).
+**Do I need an account?** No. Local scans need no account and are free and unlimited. Pro adds rulebook scans with the full rulebook; what Pro includes is on the [pricing page](https://agenticcli.dev/pricing).
 
 **Which AI coding tools does it work with?** It is a normal command, so it works with Claude Code, Codex and Cursor, and in any CI. See [CI and agent setup](docs/ci-setup.md).
 
@@ -130,11 +130,11 @@ More answers: [docs/faq.md](docs/faq.md). Questions and ideas: [GitHub Discussio
 
 ## Plans
 
-Local scans are free and unlimited, with no account, and `--strict` needs no account. Signing in (`shipguard login`, then `shipguard scan --pro`) adds rulebook scans with the full current rulebook. What your account includes, and what it costs, is shown by `shipguard status` and on the [plans and pricing](https://agenticcli.dev/pricing) page; this repository does not list prices or counts.
+Local scans are free and unlimited, with no account, and `--strict` needs no account. Pro (sign in with `shipguard login`, then `shipguard scan --pro`) adds rulebook scans with the full current rulebook. What Pro includes, and what it costs, is shown by `shipguard status` and on the [plans and pricing](https://agenticcli.dev/pricing) page; this repository does not list prices or counts.
 
 ## Privacy
 
-ShipGuard checks your code on your machine. A local scan uses the rules built into the CLI. A rulebook scan (after `shipguard login`) first downloads the full current rulebook, then checks your code the same way, on your machine. Rules come down; your code never goes up: file contents, paths and secrets are never uploaded. The only data sent is small product usage telemetry pings, plus two small requests that carry no code: a signed-out terminal scan may ask once a week for the public rule counts of your detected stack names (nothing else), and `shipguard status` reads your account and plan. Hooks, CI, `--quiet` and safe mode (`--safe-mode`) make no offer request. The full list of calls, with file names, is in [REBUILD.md](REBUILD.md). Published builds send a small pseudonymous ping after a scan, once on first run, and after `shipguard login`. The first-run and login pings carry 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`. The scan ping carries 12: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket`, `ci`, `agent` (which coding agent ran it, as a label), `interactive`, `output` and `gateKind` (`claude`, `git`, `ci` or `none`: which gate ran the scan). An optional `traffic` label is added only if you set `SHIPGUARD_TRAFFIC`. Turn all pings off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
+ShipGuard checks your code on your machine. A local scan uses the rules built into the CLI. A rulebook scan (after `shipguard login`) first downloads the full current rulebook, then checks your code the same way, on your machine. Rules come down; your code never goes up: file contents, paths and secrets are never uploaded. The only data sent is small product usage telemetry, plus two small requests that carry no code: a signed-out terminal scan may ask once a week for the public rule counts of your detected stack names (nothing else), and `shipguard status` reads your account and plan. Hooks, CI, `--quiet` and safe mode (`--safe-mode`) make no offer request. The full list of calls, with file names, is in [REBUILD.md](REBUILD.md). Published builds send a small pseudonymous message after a scan, once on first run, and after `shipguard login`. The first-run and login messages carry 7 keys: `schema`, `event`, `eventId`, `installId` (random), `cliVersion`, `provenance` and `ci`. The scan message carries 12: `schema`, `eventId`, `installId`, `cliVersion`, `provenance`, `verdict`, `durationBucket`, `ci`, `agent` (which coding agent ran it, as a label), `interactive`, `output` and `gateKind` (`claude`, `git`, `ci` or `none`: which gate ran the scan). An optional `traffic` label is added only if you set `SHIPGUARD_TRAFFIC`. Turn all telemetry off with `shipguard telemetry disable`, `SHIPGUARD_TELEMETRY=0`, `DO_NOT_TRACK=1` or `telemetry: { enabled: false }` in your policy file. Details: [docs/privacy.md](docs/privacy.md).
 
 ---
 
