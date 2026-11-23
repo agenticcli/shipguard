@@ -3,7 +3,7 @@
  * core/hook-templates.ts): the CLAUDE.md / AGENTS.md managed block and the CI workflow (spec 07).
  * Pure strings, no filesystem. No plan facts and no prices here (the CLI holds none).
  */
-import { ACTION_CHECKOUT, ACTION_SETUP_NODE, HOOK_MARKER_END, HOOK_MARKER_START } from './hook-templates.js'
+import { ACTION_CHECKOUT, ACTION_SETUP_NODE, HOOK_MARKER_END, HOOK_MARKER_START, NPX_SPEC } from './hook-templates.js'
 
 /** Bumped when the instructions block text changes. */
 export const AGENT_BLOCK_VERSION = 1
@@ -12,25 +12,39 @@ export const MD_MARKER_PREFIX = '<!-- >>> shipguard managed block'
 export const MD_MARKER_START = `${MD_MARKER_PREFIX} v${AGENT_BLOCK_VERSION} >>> -->`
 export const MD_MARKER_END = '<!-- <<< shipguard managed block <<< -->'
 
-const COMMON = [
-  '## ShipGuard',
-  '- Before every `git push` or merge, run `shipguard scan --json --strict`. It runs on this machine; code never leaves it.',
-  '- Exit 0 means the scan completed: read `recommendation` in the JSON. Exit 1 means blocked: fix each finding with `blocking: true`, commit, then scan again.',
-  '- If the ShipGuard hook blocks a push or merge, read its message and the last `shipguard-gate:` line. Do not re-run the same command unchanged; fix, commit, retry. After 3 blocks on the same finding, ask the user.',
-  '- Never use `--no-verify` and never edit or remove the hook to get past ShipGuard. Ask the user before running `shipguard ignore`.',
-  '- `shipguard status` shows what is installed here and when the gate last ran.',
-]
+/**
+ * How the agent starts ShipGuard, by where the install is (E-41: a project-local install is not on PATH, so a bare
+ * `shipguard` gave exit 127 or an approval prompt and the agent never pushed). `npx --no-install` finds a local
+ * devDependency from any folder of the project and never downloads; the scoped name avoids the unrelated
+ * unscoped `shipguard` package on npm.
+ */
+export const RUN_LOCAL = 'npx --no-install @agenticcli/shipguard'
+/** A global install is on PATH; `npx --no-install` does not look there. */
+export const RUN_PATH = 'shipguard'
+/** No install and none added: fetch the same exact version the hook fetches. */
+export const RUN_FETCH = `npx --yes ${NPX_SPEC}`
 
-/** The managed block for CLAUDE.md (6 lines with its two markers). */
-export function claudeMdBlock(): string {
-  return [MD_MARKER_START, ...COMMON, MD_MARKER_END].join('\n')
+function common(run: string): string[] {
+  return [
+    '## ShipGuard',
+    `- Before every \`git push\` or merge, run \`${run} scan --json --strict\`. It runs on this machine; code never leaves it.`,
+    '- Exit 0 means the scan completed: read `recommendation` in the JSON. Exit 1 means blocked: fix each finding with `blocking: true`, commit, then scan again.',
+    '- If the ShipGuard hook blocks a push or merge, read its message and the last `shipguard-gate:` line. Do not re-run the same command unchanged; fix, commit, retry. After 3 blocks on the same finding, ask the user.',
+    `- Never use \`--no-verify\` and never edit or remove the hook to get past ShipGuard. Ask the user before running \`${run} ignore\`.`,
+    `- \`${run} status\` shows what is installed here and when the gate last ran.`,
+  ]
+}
+
+/** The managed block for CLAUDE.md (6 lines with its two markers); `run` is how the agent starts ShipGuard here. */
+export function claudeMdBlock(run: string): string {
+  return [MD_MARKER_START, ...common(run), MD_MARKER_END].join('\n')
 }
 
 /** The managed block for AGENTS.md, read by Codex and Cursor (7 lines with its two markers: one more bullet). */
-export function agentsMdBlock(): string {
+export function agentsMdBlock(run: string): string {
   return [
     MD_MARKER_START,
-    ...COMMON,
+    ...common(run),
     '- The git hooks (`pre-push`, `pre-merge-commit`) run the same check; they are skipped by `--no-verify` and do not cover `gh pr merge`, so keep the CI check.',
     MD_MARKER_END,
   ].join('\n')

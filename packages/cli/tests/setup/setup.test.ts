@@ -12,7 +12,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { runSetup, versionAtLeast, type SetupDeps, type SetupOptions } from '../../src/commands/setup.js'
 import { readInstallState, sha256 } from '../../src/core/install-state.js'
 import { CLAUDE_HOOK_COMMAND, SHIM_RELATIVE_PATH, claudeShimScript } from '../../src/core/hook-templates.js'
-import { agentsMdBlock, claudeMdBlock, extractMdBlock } from '../../src/core/setup-templates.js'
+import { RUN_LOCAL, agentsMdBlock, claudeMdBlock, extractMdBlock } from '../../src/core/setup-templates.js'
 import { primeOfferCache } from '../../src/core/offer-cache.js'
 import { probeGate } from '../../src/core/screen-context.js'
 
@@ -117,7 +117,7 @@ describe('setup --agent claude', () => {
     expect(ours.hooks[0]).toEqual({ type: 'command', command: CLAUDE_HOOK_COMMAND, timeout: 180, onFailure: 'block' })
     expect(readFileSync(join(dir, SHIM_RELATIVE_PATH), 'utf-8')).toBe(claudeShimScript())
     expect(lstatSync(join(dir, SHIM_RELATIVE_PATH)).mode & 0o111).not.toBe(0)
-    expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf-8')).toContain(claudeMdBlock())
+    expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf-8')).toContain(claudeMdBlock(RUN_LOCAL))
     expect(readFileSync(join(dir, '.shipguard', '.gitignore'), 'utf-8')).toBe('*\n')
     expect(changed(before, snapshot(dir))).toEqual(['.claude/hooks/shipguard-gate.sh', '.claude/settings.json', '.shipguard/.gitignore', '.shipguard/installed.json', 'CLAUDE.md'])
     expect(text(h)).toContain('with the ShipGuard binary hidden, a test `git push` was blocked (exit 2)')
@@ -228,7 +228,7 @@ describe('setup --agent claude', () => {
     await run({ agent: 'claude' }, harness(d))
     const t = readFileSync(join(d, 'CLAUDE.md'), 'utf-8')
     expect(t.startsWith('# My rules\n\n- be nice\n\n')).toBe(true)
-    expect(t).toContain(claudeMdBlock())
+    expect(t).toContain(claudeMdBlock(RUN_LOCAL))
   })
 })
 
@@ -276,7 +276,7 @@ describe('setup --agent codex | cursor | git', () => {
     const h = harness(d)
     const before = snapshot(d)
     expect(await run({ agent: 'codex' }, h)).toBe(0)
-    expect(readFileSync(join(d, 'AGENTS.md'), 'utf-8')).toContain(agentsMdBlock())
+    expect(readFileSync(join(d, 'AGENTS.md'), 'utf-8')).toContain(agentsMdBlock(RUN_LOCAL))
     for (const n of ['pre-push', 'pre-merge-commit']) {
       expect(lstatSync(join(d, '.git', 'hooks', n)).mode & 0o111).not.toBe(0)
       expect(readFileSync(join(d, '.git', 'hooks', n), 'utf-8')).toContain('shipguard managed block >>> v2')
@@ -468,5 +468,65 @@ describe('no plugin text and no disabled file (0.14, not built)', () => {
     expect(all).not.toContain('shipguard/disabled')
     expect(all).not.toMatch(/release gate|our servers|cloud/i)
     expect(existsSync(join(dir, '.shipguard', 'disabled'))).toBe(false)
+  })
+})
+
+// E-41: the agent instruction must be a command that runs where the install is. A project-local
+// install (devDependency) is not on PATH, so a bare `shipguard scan` gave exit 127 or an approval prompt.
+describe('the command the CLAUDE.md / AGENTS.md block tells the agent to run', () => {
+  const LOCAL = 'npx --no-install @agenticcli/shipguard'
+  const FETCH = 'npx --yes @agenticcli/shipguard@0.13'
+  const blockOf = (d: string, f: string): string => extractMdBlock(readFileSync(join(d, f), 'utf-8')) as string
+  /** Every `shipguard <subcommand>` the block tells the agent to run (backticked), as the full command. */
+  const commands = (block: string): string[] => [...block.matchAll(/`((?:npx [^`]*?)?shipguard (?:scan|status|ignore)[^`]*)`/g)].map((m) => m[1])
+
+  it('local install found: npx --no-install, for every command in the block (CLAUDE.md and AGENTS.md)', async () => {
+    const d = repo({ files: { 'package.json': '{}' } })
+    expect(await run({ agent: 'claude' }, harness(d))).toBe(0)
+    const c = blockOf(d, 'CLAUDE.md')
+    expect(c).toContain(`run \`${LOCAL} scan --json --strict\``)
+    expect(commands(c).every((x) => x.startsWith(LOCAL + ' '))).toBe(true)
+    expect(commands(c)).toHaveLength(3)
+    const d2 = repo({ files: { 'AGENTS.md': '# a\n' } })
+    expect(await run({ agent: 'codex' }, harness(d2))).toBe(0)
+    const a = blockOf(d2, 'AGENTS.md')
+    expect(a).toContain(`run \`${LOCAL} scan --json --strict\``)
+    expect(commands(a).every((x) => x.startsWith(LOCAL + ' '))).toBe(true)
+  })
+
+  it('global install on PATH only: the bare command', async () => {
+    const d = repo({ files: { 'package.json': '{}' } })
+    const h = harness(d, { findCli: () => ({ where: 'PATH', version: '0.13.0', path: 'shipguard' }) })
+    expect(await run({ agent: 'claude' }, h)).toBe(0)
+    const c = blockOf(d, 'CLAUDE.md')
+    expect(c).toContain('run `shipguard scan --json --strict`')
+    expect(c).not.toContain('npx')
+  })
+
+  it('no install yet and setup adds the devDependency: the local form (the install is what makes it work)', async () => {
+    const d = repo({ files: { 'package.json': '{}' } })
+    const h = harness(d, { findCli: () => null })
+    expect(await run({ agent: 'claude' }, h)).toBe(0)
+    expect(h.installs).toEqual(['0.13.0'])
+    expect(blockOf(d, 'CLAUDE.md')).toContain(`run \`${LOCAL} scan --json --strict\``)
+  })
+
+  it('no install and none added (--no-install, or no package.json): npx fetches the pinned version', async () => {
+    const d = repo({ files: { 'package.json': '{}' } })
+    expect(await run({ agent: 'claude', noInstall: true }, harness(d, { findCli: () => null }))).toBe(0)
+    expect(blockOf(d, 'CLAUDE.md')).toContain(`run \`${FETCH} scan --json --strict\``)
+    const d2 = repo()
+    expect(await run({ agent: 'claude' }, harness(d2, { findCli: () => null }))).toBe(0)
+    const c = blockOf(d2, 'CLAUDE.md')
+    expect(c).toContain(`run \`${FETCH} scan --json --strict\``)
+    expect(commands(c).every((x) => x.startsWith(FETCH + ' '))).toBe(true)
+  })
+
+  it('an earlier block written with the bare command is updated, not kept', async () => {
+    const d = repo({ files: { 'package.json': '{}' } })
+    await run({ agent: 'claude' }, harness(d, { findCli: () => ({ where: 'PATH', version: '0.13.0', path: 'shipguard' }) }))
+    expect(blockOf(d, 'CLAUDE.md')).toContain('run `shipguard scan --json --strict`')
+    expect(await run({ agent: 'claude' }, harness(d))).toBe(0)
+    expect(blockOf(d, 'CLAUDE.md')).toContain(`run \`${LOCAL} scan --json --strict\``)
   })
 })
