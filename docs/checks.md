@@ -20,7 +20,7 @@ Rules are matched with RE2JS, a linear-time engine, so a bad pattern cannot hang
 
 ## Rulebook scans
 
-After `shipguard login`, `shipguard scan --pro` downloads the full current rulebook, then checks your code on your machine. Rules come down; your code never goes up. Every signed-in plan gets the same rulebook. See the [FAQ](faq.md) for plan limits.
+On a Pro plan, after `shipguard login`, `shipguard scan --pro` downloads the full current rulebook, then checks your code on your machine. Rules come down; your code never goes up. Free runs the general rules only. See the [FAQ](faq.md) for plan limits.
 
 ## Full list
 
