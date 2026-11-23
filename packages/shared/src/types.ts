@@ -28,6 +28,8 @@ export interface Finding {
   confidence?: Confidence
   aiCodeTarget?: boolean
   suppressed?: boolean
+  /** The reason saved with a `shipguard ignore` entry that suppressed this finding (screen and report "Ignored"). Not in the JSON. */
+  suppressionReason?: string
   cwe?: string[]
   /**
    * Per-occurrence suppression state from the contract's CanonicalFinding.
@@ -279,6 +281,13 @@ export interface ScanCoverage {
   selfArtifacts: number
   mode: 'full' | 'changed'
   /**
+   * Matches skipped because the value is a documented test or placeholder value (a `sk_test_` key, an example
+   * key). Counted so the skip is auditable; never a finding. Optional: absent on a result built before it was counted.
+   */
+  ignoredTestValues?: number
+  /** Firebase web config apiKeys seen (public identifiers by design). Noted on the screen, never a finding, never in the verdict. */
+  publicIdentifiers?: number
+  /**
    * `--changed` only. `listed` = every path git reported; `outsideScope` = those outside the scan folder.
    * `nothingToCheck` is present (always `true`) only when git ran fine and nothing but ShipGuard's own
    * files changed: nothing was scanned because there was nothing to scan. That scan is still degraded (NO_FILES_SCANNED) and never SAFE_TO_SHIP.
@@ -293,6 +302,9 @@ export interface ScanCoverage {
     special: string[]
     nulSubstituted: string[]
     selfArtifacts: string[]
+    /** Degrading skips by name (screen and JSON name every file). Optional: absent on a result built before 0.13.1. */
+    invalidUtf8?: string[]
+    unreadable?: string[]
   }
 }
 
@@ -394,7 +406,8 @@ export interface QualityGateRule {
   framework: string[]
   frameworkVersion?: string
   category: CheckCategory
-  tier: 'free' | 'pro' | 'enterprise'
+  /** Open token: the server decides which tiers exist; the CLI never enumerates them (spec 02). */
+  tier: string
   severity: Severity
   subcategory?: 'vuln' | 'audit' | 'secure-default'
   confidence?: Confidence

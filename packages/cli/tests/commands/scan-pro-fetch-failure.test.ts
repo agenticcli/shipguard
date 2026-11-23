@@ -83,6 +83,7 @@ vi.mock('../../src/core/policy.js', () => ({
 }))
 
 vi.mock('../../src/core/git.js', () => ({
+  listGitIgnored: vi.fn(() => null),
   isGitRepo: vi.fn(() => false),
   getChangedFiles: vi.fn(() => []),
 }))
@@ -96,6 +97,7 @@ vi.mock('../../src/utils/logger.js', () => ({
     finding: vi.fn(),
     score: vi.fn(),
     divider: vi.fn(),
+    debug: vi.fn(),
   },
 }))
 
@@ -109,7 +111,9 @@ vi.mock('../../src/core/config-generator.js', () => ({
 }))
 
 const mockFetchProRules = vi.fn()
-vi.mock('../../src/core/pro-scanner.js', () => ({
+// Keep the real module's other exports: the bundled-rules loader (used by the --json envelope) needs them.
+vi.mock('../../src/core/pro-scanner.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/core/pro-scanner.js')>()),
   fetchProRules: mockFetchProRules,
 }))
 
@@ -170,31 +174,32 @@ async function runProScan(extraArgs: string[]): Promise<{ exitCode: number | und
 }
 
 describe('explicit --pro fetch-failure behavior matrix', () => {
-  const FAILURE_CLASSES: Array<{ code: string; message: string; retryAfterSeconds?: number }> = [
-    { code: 'AUTH_FAILED', message: 'Auth expired. Run `shipguard login` again.' },
-    { code: 'INSUFFICIENT_CREDITS', message: 'No credits. Buy at https://agenticcli.dev/dashboard/billing' },
-    { code: 'RATE_LIMITED', message: 'Rate limited (429): too many pro rule fetches.', retryAfterSeconds: 30 },
-    { code: 'SERVER_ERROR', message: 'Rule fetch failed (503): Service Unavailable' },
-    { code: 'BUNDLE_INVALID', message: 'legacy-bundle-rejected: attestation required' },
+  // `code` = what pro-scanner.ts raises; `publicCode` = the 0.13 error-code table entry the CLI reports (spec 02).
+  const FAILURE_CLASSES: Array<{ code: string; publicCode: string; message: string; retryAfterSeconds?: number }> = [
+    { code: 'AUTH_FAILED', publicCode: 'TOKEN_EXPIRED', message: 'Auth expired. Run `shipguard login` again.' },
+    { code: 'INSUFFICIENT_CREDITS', publicCode: 'RULEBOOK_WITHHELD', message: 'No credits. Buy at https://agenticcli.dev/dashboard/billing' },
+    { code: 'RATE_LIMITED', publicCode: 'RATE_LIMITED', message: 'Rate limited (429): too many pro rule fetches.', retryAfterSeconds: 30 },
+    { code: 'SERVER_ERROR', publicCode: 'RULEBOOK_UNREACHABLE', message: 'Rule fetch failed (503): Service Unavailable' },
+    { code: 'BUNDLE_INVALID', publicCode: 'RULEBOOK_UNREACHABLE', message: 'legacy-bundle-rejected: attestation required' },
     // platform-unavailable-20261018 — the platform's "over plan limits / deployment disabled" 503.
-    { code: 'PLATFORM_UNAVAILABLE', message: 'Service temporarily unavailable. Please try again later.', retryAfterSeconds: 300 },
+    { code: 'PLATFORM_UNAVAILABLE', publicCode: 'RULEBOOK_UNREACHABLE', message: 'Service temporarily unavailable. Please try again later.', retryAfterSeconds: 300 },
   ]
 
-  for (const { code, message, retryAfterSeconds } of FAILURE_CLASSES) {
+  for (const { code, publicCode, message, retryAfterSeconds } of FAILURE_CLASSES) {
     it(`FAIL-BEFORE/PASS-AFTER: ${code} WITHOUT --allow-degraded → exit 3, structured JSON, degraded:false`, async () => {
       mockFetchProRules.mockRejectedValue(new FakeProFetchError(code, message, retryAfterSeconds))
 
       const { exitCode, stdoutJson } = await runProScan([])
 
       expect(exitCode).toBe(3)
-      expect(stdoutJson).toMatchObject({
-        code,
-        degraded: false,
-      })
-      expect(typeof (stdoutJson as { error?: unknown }).error).toBe('string')
-      expect(typeof (stdoutJson as { action?: unknown }).action).toBe('string')
+      expect(stdoutJson).toMatchObject({ schemaVersion: '7', ok: false, error: { code: publicCode }, exit: { code: 3 } })
+      const err = (stdoutJson as { error: { message: unknown; cause: unknown; fix: unknown; retryAfterSeconds?: number } }).error
+      expect(typeof err.message).toBe('string')
+      expect(typeof err.cause).toBe('string')
+      expect(typeof err.fix).toBe('string')
+      expect(['retry', 'ask_human']).toContain((stdoutJson as { agentAction: string }).agentAction)
       if (retryAfterSeconds !== undefined) {
-        expect((stdoutJson as { retryAfterSeconds?: number }).retryAfterSeconds).toBe(retryAfterSeconds)
+        expect(err.retryAfterSeconds).toBe(retryAfterSeconds)
       }
 
       // every catch logs loudly (to stderr via logger.error).
@@ -224,7 +229,7 @@ describe('explicit --pro fetch-failure behavior matrix', () => {
     const { exitCode, stdoutJson } = await runProScan([])
 
     expect(exitCode).toBe(3)
-    expect(stdoutJson).toMatchObject({ code: 'SERVER_ERROR', degraded: false })
+    expect(stdoutJson).toMatchObject({ ok: false, error: { code: 'RULEBOOK_UNREACHABLE' } })
   })
 
   it('NoRulesAppliedError is NEVER affected by --allow-degraded — always exit 3', async () => {
@@ -236,7 +241,7 @@ describe('explicit --pro fetch-failure behavior matrix', () => {
     const { exitCode, stdoutJson } = await runProScan(['--allow-degraded'])
 
     expect(exitCode).toBe(3)
-    expect(stdoutJson).toMatchObject({ code: 'NO_RULES_APPLIED' })
+    expect(stdoutJson).toMatchObject({ ok: false, error: { code: 'NO_RULES_APPLIED' }, agentAction: 'retry' })
   })
 })
 
@@ -303,10 +308,11 @@ describe('platform-unavailable-20261018 — PLATFORM_UNAVAILABLE human + JSON ou
     const { exitCode, stdoutJson } = await runProScan([])
 
     expect(exitCode).toBe(3)
-    expect(stdoutJson).toMatchObject({ code: 'PLATFORM_UNAVAILABLE', degraded: false, retryAfterSeconds: 300 })
-    expect((stdoutJson as { action: string }).action).toMatch(/not a problem with your project/)
-    // review 2026-10-18 finding 3: the JSON action carries the --allow-degraded hint like every other class
-    expect((stdoutJson as { action: string }).action).toMatch(/--allow-degraded/)
+    expect(stdoutJson).toMatchObject({ ok: false, error: { code: 'RULEBOOK_UNREACHABLE', retryAfterSeconds: 300 } })
+    const err = (stdoutJson as { error: { message: string; fix: string } }).error
+    expect(err.message).toMatch(/not a problem with your project/)
+    // review 2026-10-18 finding 3: the JSON carries the --allow-degraded hint like every other class
+    expect(err.fix).toMatch(/--allow-degraded/)
   })
 
   it('--json without Retry-After: no retryAfterSeconds key at all', async () => {
@@ -314,8 +320,8 @@ describe('platform-unavailable-20261018 — PLATFORM_UNAVAILABLE human + JSON ou
 
     const { stdoutJson } = await runProScan([])
 
-    expect(stdoutJson).toMatchObject({ code: 'PLATFORM_UNAVAILABLE' })
-    expect(stdoutJson).not.toHaveProperty('retryAfterSeconds')
+    expect(stdoutJson).toMatchObject({ error: { code: 'RULEBOOK_UNREACHABLE' } })
+    expect((stdoutJson as { error: object }).error).not.toHaveProperty('retryAfterSeconds')
   })
 
   it('other 503s (SERVER_ERROR) keep the old wording, not the platform message', async () => {
@@ -324,7 +330,48 @@ describe('platform-unavailable-20261018 — PLATFORM_UNAVAILABLE human + JSON ou
     const exitCode = await runHumanProScan()
 
     expect(exitCode).toBe(3)
-    expect(errorLines()).toMatch(/Pro rules request failed \[SERVER_ERROR\]/)
+    expect(errorLines()).toMatch(/RULEBOOK_UNREACHABLE: Rule fetch failed \(503\)/)
     expect(errorLines()).not.toMatch(/on our side/)
+  })
+})
+
+describe('freshness token expired — FRESHNESS_EXPIRED message, exit 3', () => {
+  const MESSAGE = 'Pro rules are temporarily unavailable. Retry later, or run with --allow-degraded to scan with local rules only.'
+
+  it('human mode: prints exactly the plain message once, exit 3 (no raw bundle text)', async () => {
+    mockFetchProRules.mockRejectedValue(new FakeProFetchError('FRESHNESS_EXPIRED', `${MESSAGE} (freshness token expired (expiresAt=1))`))
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+      throw new Error(`__EXIT_${code}__`)
+    })
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    let exitCode: number | undefined
+    try {
+      await scanCommand().parseAsync(['node', 'scan', '--pro'])
+      exitCode = takeExitCode()
+    } catch (err) {
+      const m = (err instanceof Error ? err.message : String(err)).match(/__EXIT_(\d+)__/)
+      if (m) exitCode = Number(m[1])
+      else throw err
+    } finally {
+      exitSpy.mockRestore()
+      logSpy.mockRestore()
+    }
+    expect(exitCode).toBe(3)
+    const lines = vi.mocked(logger.error).mock.calls.map((c) => String(c[0]))
+    expect(lines).toEqual([`RULEBOOK_UNREACHABLE: ${MESSAGE}`])
+  })
+
+  it('--json: code RULEBOOK_UNREACHABLE, message is the plain message, exit 3', async () => {
+    mockFetchProRules.mockRejectedValue(new FakeProFetchError('FRESHNESS_EXPIRED', MESSAGE))
+    const { exitCode, stdoutJson } = await runProScan([])
+    expect(exitCode).toBe(3)
+    expect(stdoutJson).toMatchObject({ ok: false, error: { code: 'RULEBOOK_UNREACHABLE', message: MESSAGE } })
+  })
+
+  it('--allow-degraded: falls back to a degraded free scan', async () => {
+    mockFetchProRules.mockRejectedValue(new FakeProFetchError('FRESHNESS_EXPIRED', MESSAGE))
+    const { exitCode, stdoutJson } = await runProScan(['--allow-degraded'])
+    expect(exitCode).toBeUndefined()
+    expect(stdoutJson).toMatchObject({ degraded: true })
   })
 })

@@ -42,3 +42,7 @@ export function isPlatformUnavailable(res: Response, body: { code?: unknown } | 
 }
 
 export const PLATFORM_UNAVAILABLE_DEFAULT_MESSAGE = 'Service temporarily unavailable. Please try again later.'
+
+/** Shown when the signed freshness token for the Pro rules has expired: Pro rules cannot be used right now. */
+export const PRO_RULES_UNAVAILABLE_MESSAGE =
+  'Pro rules are temporarily unavailable. Retry later, or run with --allow-degraded to scan with local rules only.'

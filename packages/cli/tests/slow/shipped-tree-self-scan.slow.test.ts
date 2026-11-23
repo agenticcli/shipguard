@@ -51,8 +51,14 @@ describe('shipped tree self-scan (slow lane)', () => {
     expect(shipped).toContain('rules/free-bundle.json')
 
     stage = mkdtempSync(join(tmpdir(), 'shipguard-shipped-'))
+    // Source maps (dist/*.js.map, shipped since 0.12.1) are left out of the staged trees: they hold only the
+    // repo's own src/ files, which are already in git, and the big one is over the scanner's file-size limit.
+    // scripts/check-sourcemaps.mjs (release gate G5b) proves every embedded source equals the file on disk,
+    // so nothing can hide in a map. Scanning them would only repeat the dist/ baseline findings.
+    const scannable = shipped.filter((p) => !p.endsWith('.js.map'))
+    expect(shipped.length - scannable.length, 'source maps are expected in the pack').toBeGreaterThan(0)
     const stageCopy = (root: string, mapRel: (rel: string) => string) => {
-      for (const rel of shipped) {
+      for (const rel of scannable) {
         const dest = join(root, mapRel(rel))
         mkdirSync(dirname(dest), { recursive: true })
         cpSync(join(pkgRoot, rel), dest)
@@ -83,8 +89,12 @@ describe('shipped tree self-scan (slow lane)', () => {
     // assertion. Everything else must be clean, and nothing may be silently skipped.
     const everything = join(stage, 'everything')
     stageCopy(everything, (rel) => (rel.startsWith('dist/') ? `shipped-${rel}` : rel))
+    // integrate: dist/cli.js passed the 512 KiB default file-size limit when the plan modules were wired (563 KB),
+    // so scan B raises the limit with a root policy file; nothing may be skipped. The policy file is not a source
+    // file the scanner reads as content: it adds one to the scanned count (see below).
+    writeFileSync(join(everything, 'shipguard.policy.yml'), 'limits:\n  maxFileSizeBytes: 4194304\n')
     const b = await run(everything, [])
-    expect(b.json.filesScanned, 'a packed file was skipped by the scanner').toBe(shipped.length)
+    expect(b.json.filesScanned, 'a packed file was skipped by the scanner').toBe(scannable.length + 1) // +1: the root policy file above
     const nonDistBlockers = blockersOf(b.json).filter((f) => !f.file.startsWith('shipped-dist/'))
     expect(nonDistBlockers, `non-dist shipped file blocks: ${JSON.stringify(nonDistBlockers)}`).toEqual([])
 
@@ -108,6 +118,7 @@ describe('shipped tree self-scan (slow lane)', () => {
     // (Assembled at runtime so this test file never contains a scannable key literal.)
     const planted = join(stage, 'planted')
     stageCopy(planted, (rel) => (rel.startsWith('dist/') ? `shipped-${rel}` : rel))
+    writeFileSync(join(planted, 'shipguard.policy.yml'), 'limits:\n  maxFileSizeBytes: 4194304\n') // same raised limit as scan B
     appendFileSync(
       join(planted, 'shipped-dist/cli.js'),
       `\nconst leaked = "${['sk', 'live', 'PLANTEDabcdefghijklmnopqrstuvwx'].join('_')}";\nconst aws = "${'AKIA' + 'IOSFODNN7REALKEY'}";\n`,

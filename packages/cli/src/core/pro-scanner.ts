@@ -2,7 +2,9 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 
 import { getAuthToken, RefreshUnavailableError } from './auth.js'
-import { goLink } from './links.js'
+import { clientHelloHeaders, newNonce, acctFromAccessToken, readAccountReply, type PlanRead } from './plan.js'
+import { safeServerText, TEXT_CAPS } from './safe-text.js'
+import { CLI_VERSION } from './telemetry.js'
 // The verifyAndDecryptBundle and verifyRuleBundle imports were removed (retired paths).
 // Both functions are permanently disabled tombstones. Any call to them throws
 // 'legacy-bundle-rejected: attestation required'. The import is removed so any
@@ -23,6 +25,7 @@ import { re2jsV1Executor, nativeV1Executor, parseFlags } from '@agenticcli/match
 import { installRe2jsCompileCache, compileCached } from './re2js-compile-cache.js'
 import type { PatternMatcher, FilePresenceMatcher, FileRelationshipMatcher, ExecCtx, AntiPatternScope } from '@agenticcli/matcher-contract'
 import { RE2JS } from 're2js'
+import { buildPrefilter, FileProbe, mayMatch, prefilterControl, type RulePrefilter } from './rule-prefilter.js'
 
 // The active executor for pro-rule evaluation. re2js-v1 provides linear-time
 // ReDoS-immune matching on all RE2-compatible patterns (222/222 corpus rules pass
@@ -82,6 +85,9 @@ export class NoRulesAppliedError extends Error {
  * disabled. That is temporary and entirely on the server's side. Unmapped it fell into the generic
  * SERVER_ERROR bucket, so the user saw "Pro rules request failed [SERVER_ERROR]" and could not
  * tell it from their own network trouble.
+ *
+ * FRESHNESS_EXPIRED: the signed freshness token that comes with the Pro rules has run out. Pro rules
+ * cannot be trusted right now; the user sees one plain "temporarily unavailable" message (exit 3).
  */
 export type ProFetchErrorCode =
   | 'AUTH_FAILED'
@@ -91,16 +97,35 @@ export type ProFetchErrorCode =
   | 'BUNDLE_INVALID'
   | 'NO_ACTIVE_RELEASE'
   | 'PLATFORM_UNAVAILABLE'
+  | 'FRESHNESS_EXPIRED'
+  /** 0.13: the server's own refusal codes (402). The allowance is used up / the account has no active plan. */
+  | 'ALLOWANCE_USED'
+  | 'PLAN_INACTIVE'
+
+/** What a failed rulebook request still tells the caller: the verified plan read, the account, the server's own words. */
+export interface ProFetchContext {
+  /** The plan document that arrived with the refusal (verified against THIS request), or null. */
+  plan: PlanRead | null
+  /** `acct` hash of the signed-in account (for the account cache), or null. */
+  acct: string | null
+  /** The server's own error code (unsigned: it can only make an explicit --pro stricter). */
+  serverCode: string | null
+  /** The server's wording, already through safe-text. */
+  serverText: string | null
+}
 
 export class ProFetchError extends Error {
   readonly code: ProFetchErrorCode
   /** Only populated for RATE_LIMITED and PLATFORM_UNAVAILABLE, when the server sends a usable `Retry-After` header. */
   readonly retryAfterSeconds?: number
-  constructor(code: ProFetchErrorCode, message: string, opts?: { retryAfterSeconds?: number }) {
+  /** 0.13 plan data that came with the failure (the 402 refusals carry a signed account document). */
+  context?: ProFetchContext
+  constructor(code: ProFetchErrorCode, message: string, opts?: { retryAfterSeconds?: number; context?: ProFetchContext }) {
     super(message)
     this.name = 'ProFetchError'
     this.code = code
     this.retryAfterSeconds = opts?.retryAfterSeconds
+    this.context = opts?.context
   }
 }
 
@@ -109,6 +134,7 @@ import {
   isPlatformUnavailable,
   parseRetryAfterSeconds,
   PLATFORM_UNAVAILABLE_DEFAULT_MESSAGE,
+  PRO_RULES_UNAVAILABLE_MESSAGE,
 } from './platform-status.js'
 
 /**
@@ -123,13 +149,32 @@ function parseCreditsRemaining(headers: Headers): number | undefined {
   return Number.isFinite(credits) ? credits : undefined
 }
 
+/** What a served rulebook request returns (0.13 additions beside the rules: the plan read and the partial flag). */
+export interface ProFetchResult {
+  rules: QualityGateRule[]
+  creditsRemaining: number | undefined
+  rulesVersion?: string
+  /** The signed plan document that arrived with this reply (verified against this request's nonce and scan id). */
+  plan: PlanRead | null
+  /** `acct` hash of the signed-in account, or null. */
+  acct: string | null
+  /** Envelope v2: the served tiers are narrower than the rulebook this request should get (RULEBOOK_PARTIAL). */
+  partial: boolean
+  /** Envelope v2: the tiers that were served (open tokens). Null for an envelope v1 reply. */
+  tiersApplied: string[] | null
+  /** Per-rule area names (`area` in the signed rule list), for the first-Pro receipt. */
+  areaByRuleId: Record<string, string>
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
 export async function fetchProRules(
   frameworks: string[],
   categories: string[] | undefined,
   apiUrl: string,
   scanId?: string,
   floorPath?: string,
-): Promise<{ rules: QualityGateRule[]; creditsRemaining: number | undefined; rulesVersion?: string }> {
+): Promise<ProFetchResult> {
   assertTrustedApiUrl(apiUrl)
   // pass apiUrl through so a raw SHIPGUARD_API_KEY is exchanged for an
   // access token against the SAME configured API base this call targets.
@@ -150,6 +195,10 @@ export async function fetchProRules(
     throw err
   }
   if (!token) throw new ProFetchError('AUTH_FAILED', 'Not authenticated. Run `shipguard login` first.')
+  // 0.13 client hello: asks for envelope v2 and a signed plan document bound to this request (a nonce nobody can replay).
+  // A server that ignores the hello answers as before (legacy reply), which this function handles as well.
+  const acct = acctFromAccessToken(token)
+  const nonce = newNonce()
 
   // ScanId idempotency (scanId idempotency): send the CLI's stable scanId BOTH in the body AND as the
   // HTTP-idiomatic Idempotency-Key header, on EVERY attempt (a retry of the same scan reuses
@@ -164,6 +213,7 @@ export async function fetchProRules(
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
+        ...clientHelloHeaders(CLI_VERSION, nonce),
         ...(scanId ? { 'Idempotency-Key': scanId } : {}),
       },
       body: JSON.stringify({ frameworks, categories, ...(scanId ? { scanId } : {}) }),
@@ -185,9 +235,9 @@ export async function fetchProRules(
     // recognized code is present. A non-JSON/unparsable body is a normal case for some failure
     // classes (e.g. a bare 5xx from an upstream proxy) — errorBody stays undefined and
     // status-based classification below proceeds exactly as before.
-    let errorBody: { code?: string; error?: string } | undefined
+    let errorBody: { code?: string; error?: string; account?: unknown } | undefined
     try {
-      errorBody = await res.json() as { code?: string; error?: string }
+      errorBody = await res.json() as { code?: string; error?: string; account?: unknown }
     } catch (parseErr: unknown) {
       const msg = parseErr instanceof Error ? parseErr.message : String(parseErr)
       console.error(
@@ -222,7 +272,25 @@ export async function fetchProRules(
     }
 
     if (res.status === 401) throw new ProFetchError('AUTH_FAILED', 'Auth expired. Run `shipguard login` again.')
-    if (res.status === 402) throw new ProFetchError('INSUFFICIENT_CREDITS', `No credits. Buy at ${goLink('billing')}`)
+    // 503 TOKEN_CHECK_UNAVAILABLE: the server cannot read its token revocation list. That is "the server is
+    // unavailable" (retry later), never "sign in again" (that is 401).
+    if (res.status === 503 && errorBody?.code === 'TOKEN_CHECK_UNAVAILABLE') {
+      throw new ProFetchError('SERVER_ERROR', 'The rulebook service could not check your sign-in right now. Retry in a minute.', {
+        retryAfterSeconds: parseRetryAfterSeconds(res.headers),
+      })
+    }
+    if (res.status === 402) {
+      // The server refused the rulebook and said why. With the hello the reply also carries a signed account
+      // document: verified against THIS request (nonce and scan id), it is the only thing that can soften an
+      // explicit --pro (decision v21-prolimit). Unsigned or unverified data can only make a run stricter.
+      const plan = errorBody?.account === undefined ? null : await readAccountReply(errorBody.account, { acct, nonce, scanId: scanId ?? null, now: Date.now() })
+      const serverCode = typeof errorBody?.code === 'string' && /^[A-Z_]{1,40}$/.test(errorBody.code) ? errorBody.code : null
+      const serverText = safeServerText(errorBody?.error, TEXT_CAPS.limit)
+      const code: ProFetchErrorCode = serverCode === 'ALLOWANCE_USED' ? 'ALLOWANCE_USED' : serverCode === 'PLAN_INACTIVE' ? 'PLAN_INACTIVE' : 'INSUFFICIENT_CREDITS'
+      throw new ProFetchError(code, serverText ?? 'The server did not provide the rulebook for this scan.', {
+        context: { plan, acct, serverCode, serverText },
+      })
+    }
     if (res.status === 429) {
       throw new ProFetchError(
         'RATE_LIMITED',
@@ -280,23 +348,43 @@ export async function fetchProRules(
       freshnessTok: unknown
       selectedRules: unknown
       bundleEnvelope: unknown
+      account?: unknown
     }
 
     const effectiveFloorPath = floorPath ?? DEFAULT_FLOOR_PATH
     const effectiveScanId = scanId ?? ''
+
+    // The signed plan document (top-level sibling `account`): verified FIRST against this request's nonce and scan id.
+    // Not verified or absent = no plan data (plain Free display); the bundle is judged on its own signatures below.
+    const planRead = await readAccountReply(bundleResponse.account, { acct, nonce, scanId: effectiveScanId === '' ? null : effectiveScanId, now: Date.now() })
+
+    // Envelope v2 (the server answered the hello): the request digest covers the categories THIS CLI sent, in the
+    // order sent (`{}` with none), and the signed selection must equal them. Envelope v1: digest over `{}`, as ever.
+    const rawEnvelope = bundleResponse.bundleEnvelope
+    const isV2 = isRecord(rawEnvelope) && rawEnvelope['protocolVersion'] === '2'
+    const sentCategories = categories !== undefined && categories.length > 0 ? categories : null
 
     const verifyResult = await verifyBundleResponse(
       bundleResponse,
       {
         scanId: effectiveScanId,
         frameworks,
-        options: {},
+        options: isV2 && sentCategories !== null ? { categories: sentCategories } : {},
         isPro: true,
+        categories: sentCategories,
+        // A verified LIVE plan document's tiers: a served selection narrower than these is RULEBOOK_PARTIAL.
+        verifiedRulebookTiers: planRead.live ? (planRead.block.server?.capabilities?.rulebookTiers ?? null) : null,
       },
       effectiveFloorPath,
     )
 
     if (!verifyResult.ok) {
+      if (verifyResult.freshnessExpired) {
+        throw new ProFetchError(
+          'FRESHNESS_EXPIRED',
+          `${PRO_RULES_UNAVAILABLE_MESSAGE} (${verifyResult.reason})`,
+        )
+      }
       throw new ProFetchError(
         'BUNDLE_INVALID',
         `Attested bundle verification failed: ${verifyResult.reason}` +
@@ -378,7 +466,23 @@ export async function fetchProRules(
       }
     }) as unknown as QualityGateRule[]
 
-    return { rules, creditsRemaining: credits, rulesVersion }
+    // Per-rule area names (the server's own words) for the receipt: read from the signed rule list when it carries one.
+    const areaByRuleId: Record<string, string> = {}
+    for (const r of verifyResult.selectedRules) {
+      const area = safeServerText((r as unknown as Record<string, unknown>)['area'], TEXT_CAPS.item)
+      if (area !== null) areaByRuleId[r.id] = area
+    }
+
+    return {
+      rules,
+      creditsRemaining: credits,
+      rulesVersion,
+      plan: planRead,
+      acct,
+      partial: verifyResult.partial === true,
+      tiersApplied: verifyResult.selection ? verifyResult.selection.tiers : null,
+      areaByRuleId,
+    }
   }
 
   // If we reach here, the response lacked 'fullManifest'.
@@ -589,7 +693,6 @@ export function runProRules(
     }
   }
 
-  const findings: Finding[] = []
   const allRelativePaths = files.map((f) => f.relativePath)
 
   // Pre-attestation releaseId placeholder — replaced by Phase C with the real
@@ -599,116 +702,46 @@ export function runProRules(
     releaseId: 'pre-attestation',
   }
 
-  for (const rule of rules) {
-    // Build the correct Matcher shape for the native-v1 executor based on type.
-    // Finding 3: ALL signed matcher types are dispatched — no silent skips.
-    let matcherForExecutor: PatternMatcher | FilePresenceMatcher | FileRelationshipMatcher
+  // Everything that depends only on the rule (not on the file) is prepared ONCE, in rule order.
+  const prepared = rules.map((rule) => prepareRule(rule))
 
-    if (rule.matcher.type === 'pattern') {
-      // read antiPatternScope and boundary from the delivered rule.
-      // In contract 0.5.0, these fields are part of the hash preimage and
-      // delivered in the wire ExecutableRule. Read them dynamically — QualityGateRule
-      // doesn't have typed accessors for these contract-level fields.
-      const ruleAny = rule.matcher as unknown as Record<string, unknown>
-      const antiPatternScope = ruleAny['antiPatternScope'] as AntiPatternScope | undefined
-      const boundary = ruleAny['boundary'] as 'none' | 'word' | 'token' | undefined
-      matcherForExecutor = {
-        type: 'pattern',
-        fileGlob: rule.matcher.fileGlob,
-        patterns: rule.matcher.patterns,
-        antiPatterns: rule.matcher.antiPatterns,
-        flags: rule.matcher.flags ?? '',
-        // pass through delivered values; executor defaults to 'none'/'statement'.
-        ...(boundary !== undefined && { boundary }),
-        ...(antiPatternScope !== undefined && { antiPatternScope }),
-      } satisfies PatternMatcher
-    } else if (rule.matcher.type === 'file-presence') {
-      // file-presence: the fileGlob is the dangerous-file glob; presenceRule defaults
-      // to 'must-not-exist' (standard corpus semantic: "this file must not be committed").
-      // WHY 'as any': QualityGateRule.matcher does not carry presenceRule (it is an
-      // ExecutableRule field); we default to must-not-exist which is the only corpus use.
-      const presenceRule = (rule.matcher as unknown as { presenceRule?: string }).presenceRule
-        ?? 'must-not-exist'
-      matcherForExecutor = {
-        type: 'file-presence',
-        fileGlob: rule.matcher.fileGlob,
-        presenceRule: presenceRule as 'must-exist' | 'must-not-exist',
-      } satisfies FilePresenceMatcher
-    } else if (rule.matcher.type === 'file-relationship') {
-      // For requiresPattern-only (no requiresFile) rules, the executor evaluates
-      // requiresPattern as a self-referential prerequisite on the primary file, then
-      // runs primary patterns + antiPatterns. Forward those fields so the executor
-      // can perform the content-based evaluation (FIX: requiresPattern self-referential).
-      const frAny = rule.matcher as unknown as Record<string, unknown>
-      const frFlags = (frAny['flags'] as string | undefined) ?? ''
-      const frPatterns = (rule.matcher.patterns as string[] | undefined) ?? []
-      const frAntiPatterns = (rule.matcher.antiPatterns as string[] | undefined) ?? []
-      // Build the matcher with extended optional fields (read by evaluateFileRelationship
-      // when performing the self-referential pattern evaluation).
-      // WHY 'as unknown as FileRelationshipMatcher': FileRelationshipMatcher contract type
-      // does not carry patterns/antiPatterns/flags — these are extra fields the executor
-      // reads dynamically via Record cast to implement the self-referential semantics.
-      matcherForExecutor = {
-        type: 'file-relationship',
-        fileGlob: rule.matcher.fileGlob,
-        context: {
-          requiresFile: rule.matcher.context?.requiresFile,
-          requiresPattern: rule.matcher.context?.requiresPattern,
-        },
-        // Extended fields for self-referential requiresPattern evaluation:
-        patterns: frPatterns,
-        antiPatterns: frAntiPatterns,
-        flags: frFlags,
-      } as unknown as FileRelationshipMatcher
-    } else {
-      // Should be unreachable — pre-check above guards this.
-      throw new RunProRulesFatalError(
-        `Unreachable: unsupported matcher type "${(rule.matcher as { type: string }).type}" ` +
-        `on rule "${rule.id}"`,
-      )
-    }
+  // Files are the OUTER loop so per-file work (the prefilter's text probe, line split for
+  // suppression) is done at most once per file, not once per rule. Findings are collected per rule
+  // and joined in rule order at the end, so the output order is the same as the old
+  // rules-outer / files-inner loop (rule, then file, then occurrence).
+  for (const file of files) {
+    const probe = new FileProbe(file.content)
+    let lines: string[] | undefined
 
-    // Glob pre-filter: skip files that don't match the rule's fileGlob
-    let matched = files.filter((f) => minimatch(f.relativePath, rule.matcher.fileGlob))
-    let requiresFailClosed: string | undefined
+    for (const p of prepared) {
+      const { rule } = p
+      // Glob pre-filter: skip files that don't match the rule's fileGlob
+      if (!minimatch(file.relativePath, rule.matcher.fileGlob)) continue
 
-    // A `pattern` rule may carry context.requiresPattern ("only files that contain X", e.g. "use server").
-    // The pattern executor ignores it, so the rule fired on every file the glob matched (the 2026-11-09
-    // clean-control noise). Apply it here as a per-file prerequisite; fail closed on a bad pattern.
-    if (rule.matcher.type === 'pattern') {
-      const reqPattern = (rule.matcher.context as { requiresPattern?: string } | undefined)?.requiresPattern
-      if (reqPattern !== undefined) {
-        try {
-          const reqRe = compileCached(reqPattern, 0)
-          matched = matched.filter((f) => reqRe.matcher(f.content).find())
-        } catch (reqErr: unknown) {
-          // A malformed prerequisite is a corpus error. Fail closed exactly like the executor does for
-          // file-relationship rules: keep every glob-matched file and report one finding per file, so the
-          // error is visible and the scan is never silently clean (and never a crash).
-          console.error(
-            `[shipguard] requiresPattern compile error for rule ${rule.id}: ` +
-            `${reqErr instanceof Error ? reqErr.message : String(reqErr)} — fail closed`,
-          )
-          requiresFailClosed = reqPattern
-        }
+      // Cheap required-text check: skip the regex engine when this rule provably cannot match the
+      // file (see rule-prefilter.ts). Never applied to the fail-closed requiresPattern path, which
+      // reports every glob-matched file whatever its content.
+      if (p.prefilter !== undefined && p.requiresFailClosed === undefined && prefilterControl.enabled) {
+        if (!mayMatch(p.prefilter, probe)) continue
       }
-    }
 
-    for (const file of matched) {
+      // A `pattern` rule may carry context.requiresPattern ("only files that contain X", e.g. "use server").
+      if (p.requiresRe !== undefined && !p.requiresRe.matcher(file.content).find()) continue
+
       // Run the re2js-v1 executor against this file (linear-time, ReDoS-immune).
       // The executor returns CanonicalFinding[] — one entry per match occurrence.
       let canonicalFindings
       try {
-        canonicalFindings = requiresFailClosed !== undefined
+        canonicalFindings = p.requiresFailClosed !== undefined
           ? ([{
               line: 1,
               column: 1,
-              evidence: `requiresPattern "${requiresFailClosed}" (compile error — fail closed)`,
+              evidence: `requiresPattern "${p.requiresFailClosed}" (compile error — fail closed)`,
               suppressionState: 'active',
               matcherType: 'pattern',
             }] as unknown as ReturnType<typeof activeExecutor.evaluate>)
           : activeExecutor.evaluate(
-          matcherForExecutor,
+          p.matcher,
           { relativePath: file.relativePath, content: file.content },
           ctx,
         )
@@ -732,7 +765,7 @@ export function runProRules(
       for (const cf of canonicalFindings) {
         // Per-occurrence suppression: check the shipguard-ignore comment mechanism
         // (isLineSuppressed) on top of the adapter's per-line anti-pattern suppression.
-        const lines = file.content.split('\n')
+        lines ??= file.content.split('\n')
         const lineIndex = cf.line - 1
         const commentSuppressed = lineIndex >= 0
           ? isLineSuppressed(lines, lineIndex, rule.id)
@@ -742,7 +775,7 @@ export function runProRules(
         // matched the occurrence's line. We also check the comment suppression.
         const isSuppressed = cf.suppressionState === 'suppressed' || commentSuppressed
 
-        findings.push({
+        p.findings.push({
           id: rule.id,
           title: rule.explanation.split('.')[0],
           severity: rule.severity,
@@ -770,7 +803,118 @@ export function runProRules(
     }
   }
 
-  return findings
+  return prepared.flatMap((p) => p.findings)
+}
+
+interface PreparedRule {
+  rule: QualityGateRule
+  matcher: PatternMatcher | FilePresenceMatcher | FileRelationshipMatcher
+  /** Compiled context.requiresPattern of a `pattern` rule (a per-file prerequisite). */
+  requiresRe?: RE2JS
+  /** Set when requiresPattern did not compile: the rule then fails closed on every glob-matched file. */
+  requiresFailClosed?: string
+  /** Required-text check for `pattern` rules; undefined = always run the rule. */
+  prefilter?: RulePrefilter
+  findings: Finding[]
+}
+
+function prepareRule(rule: QualityGateRule): PreparedRule {
+  // Build the correct Matcher shape for the native-v1 executor based on type.
+  // Finding 3: ALL signed matcher types are dispatched — no silent skips.
+  let matcherForExecutor: PatternMatcher | FilePresenceMatcher | FileRelationshipMatcher
+
+  if (rule.matcher.type === 'pattern') {
+    // read antiPatternScope and boundary from the delivered rule.
+    // In contract 0.5.0, these fields are part of the hash preimage and
+    // delivered in the wire ExecutableRule. Read them dynamically — QualityGateRule
+    // doesn't have typed accessors for these contract-level fields.
+    const ruleAny = rule.matcher as unknown as Record<string, unknown>
+    const antiPatternScope = ruleAny['antiPatternScope'] as AntiPatternScope | undefined
+    const boundary = ruleAny['boundary'] as 'none' | 'word' | 'token' | undefined
+    matcherForExecutor = {
+      type: 'pattern',
+      fileGlob: rule.matcher.fileGlob,
+      patterns: rule.matcher.patterns,
+      antiPatterns: rule.matcher.antiPatterns,
+      flags: rule.matcher.flags ?? '',
+      // pass through delivered values; executor defaults to 'none'/'statement'.
+      ...(boundary !== undefined && { boundary }),
+      ...(antiPatternScope !== undefined && { antiPatternScope }),
+    } satisfies PatternMatcher
+  } else if (rule.matcher.type === 'file-presence') {
+    // file-presence: the fileGlob is the dangerous-file glob; presenceRule defaults
+    // to 'must-not-exist' (standard corpus semantic: "this file must not be committed").
+    // WHY 'as any': QualityGateRule.matcher does not carry presenceRule (it is an
+    // ExecutableRule field); we default to must-not-exist which is the only corpus use.
+    const presenceRule = (rule.matcher as unknown as { presenceRule?: string }).presenceRule
+      ?? 'must-not-exist'
+    matcherForExecutor = {
+      type: 'file-presence',
+      fileGlob: rule.matcher.fileGlob,
+      presenceRule: presenceRule as 'must-exist' | 'must-not-exist',
+    } satisfies FilePresenceMatcher
+  } else if (rule.matcher.type === 'file-relationship') {
+    // For requiresPattern-only (no requiresFile) rules, the executor evaluates
+    // requiresPattern as a self-referential prerequisite on the primary file, then
+    // runs primary patterns + antiPatterns. Forward those fields so the executor
+    // can perform the content-based evaluation (FIX: requiresPattern self-referential).
+    const frAny = rule.matcher as unknown as Record<string, unknown>
+    const frFlags = (frAny['flags'] as string | undefined) ?? ''
+    const frPatterns = (rule.matcher.patterns as string[] | undefined) ?? []
+    const frAntiPatterns = (rule.matcher.antiPatterns as string[] | undefined) ?? []
+    // Build the matcher with extended optional fields (read by evaluateFileRelationship
+    // when performing the self-referential pattern evaluation).
+    // WHY 'as unknown as FileRelationshipMatcher': FileRelationshipMatcher contract type
+    // does not carry patterns/antiPatterns/flags — these are extra fields the executor
+    // reads dynamically via Record cast to implement the self-referential semantics.
+    matcherForExecutor = {
+      type: 'file-relationship',
+      fileGlob: rule.matcher.fileGlob,
+      context: {
+        requiresFile: rule.matcher.context?.requiresFile,
+        requiresPattern: rule.matcher.context?.requiresPattern,
+      },
+      // Extended fields for self-referential requiresPattern evaluation:
+      patterns: frPatterns,
+      antiPatterns: frAntiPatterns,
+      flags: frFlags,
+    } as unknown as FileRelationshipMatcher
+  } else {
+    // Should be unreachable — pre-check above guards this.
+    throw new RunProRulesFatalError(
+      `Unreachable: unsupported matcher type "${(rule.matcher as { type: string }).type}" ` +
+      `on rule "${rule.id}"`,
+    )
+  }
+
+  // A `pattern` rule may carry context.requiresPattern ("only files that contain X", e.g. "use server").
+  // The pattern executor ignores it, so the rule fired on every file the glob matched (the 2026-11-09
+  // clean-control noise). It is applied per file in runProRules; fail closed on a bad pattern.
+  let requiresRe: RE2JS | undefined
+  let requiresFailClosed: string | undefined
+  if (rule.matcher.type === 'pattern') {
+    const reqPattern = (rule.matcher.context as { requiresPattern?: string } | undefined)?.requiresPattern
+    if (reqPattern !== undefined) {
+      try {
+        requiresRe = compileCached(reqPattern, 0)
+      } catch (reqErr: unknown) {
+        // A malformed prerequisite is a corpus error. Fail closed exactly like the executor does for
+        // file-relationship rules: keep every glob-matched file and report one finding per file, so the
+        // error is visible and the scan is never silently clean (and never a crash).
+        console.error(
+          `[shipguard] requiresPattern compile error for rule ${rule.id}: ` +
+          `${reqErr instanceof Error ? reqErr.message : String(reqErr)} — fail closed`,
+        )
+        requiresFailClosed = reqPattern
+      }
+    }
+  }
+
+  const prefilter = rule.matcher.type === 'pattern'
+    ? buildPrefilter(rule.matcher.patterns, rule.matcher.flags ?? '')
+    : undefined
+
+  return { rule, matcher: matcherForExecutor, requiresRe, requiresFailClosed, prefilter, findings: [] }
 }
 
 // ---------------------------------------------------------------------------

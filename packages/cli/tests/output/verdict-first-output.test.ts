@@ -18,7 +18,7 @@
  * the real rendered screen.
  */
 import { spawnSync, execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -87,52 +87,58 @@ beforeAll(() => {
   }
 }, 180_000)
 
-describe('#4 — the verdict is the last thing you see', () => {
-  it('tips print ABOVE the verdict panel', () => {
+describe('verdict first (spec 01)', () => {
+  it('line 1 of stdout is the verdict line; nothing is printed before it', () => {
+    const { stdout } = runCli(['scan', mkFindingFixture()])
+    expect(stripAnsi(stdout).split('\n')[0]).toMatch(/^DO NOT SHIP · \d+ blocking of \d+ findings · \d+ files?, \d+ general rules, [\d.]+s$/)
+  })
+
+  it('the whole screen is at most 25 lines and has no box art, emoji, tips or links box', () => {
     const out = stripAnsi(runCli(['scan', mkFindingFixture()]).stdout)
-    const tipsIdx = out.indexOf('What now?')
-    const verdictIdx = out.lastIndexOf('DO NOT SHIP')
-    expect(tipsIdx).toBeGreaterThan(-1)
-    expect(verdictIdx).toBeGreaterThan(-1)
-    expect(tipsIdx).toBeLessThan(verdictIdx)
-  })
-
-  it('the verdict is in the LAST quarter of the screen, not buried mid-scroll', () => {
-    const out = stripAnsi(runCli(['scan', mkFindingFixture()]).stdout)
-    const verdictIdx = out.lastIndexOf('DO NOT SHIP')
-    expect(verdictIdx / out.length).toBeGreaterThan(0.75)
-  })
-
-  it('the report path is INSIDE the panel, not printed after it', () => {
-    const { stdout, stderr } = runCli(['scan', mkFindingFixture(), '--report'])
-    const out = stripAnsi(stdout)
-    expect(out).toContain('Report written')
-    // The old trailing `logger.success('Report: …')` line (green ✓, stderr) is gone.
-    expect(stripAnsi(stderr)).not.toContain('Report:')
-  })
-
-  it('the final glyph on screen matches the verdict — never a green ✓ after DO NOT SHIP', () => {
-    const out = stripAnsi(runCli(['scan', mkFindingFixture(), '--report']).stdout)
-    const tail = out.slice(out.lastIndexOf('DO NOT SHIP'))
-    // Nothing that reads as "all good" may follow the negative verdict.
-    expect(tail).not.toContain('✅')
-    expect(tail).not.toContain('SHIP IT')
-    // The verdict's own glyph is the last glyph rendered in the panel.
-    expect(out.lastIndexOf('🛑')).toBeGreaterThan(out.lastIndexOf('What now?'))
-  })
-
-  it('a clean run still ends on its own positive verdict', () => {
-    const out = stripAnsi(runCli(['scan', mkCleanFixture()]).stdout)
-    const tipsIdx = out.indexOf('What now?')
-    const verdictIdx = out.lastIndexOf('SAFE TO SHIP')
-    expect(tipsIdx).toBeLessThan(verdictIdx)
-    expect(out.slice(verdictIdx)).toContain('SHIP IT')
-  })
-
-  it('the panel still renders every context section it did before', () => {
-    const out = stripAnsi(runCli(['scan', mkFindingFixture()]).stdout)
-    for (const section of ['Severity breakdown', 'Run summary', 'How ShipGuard helped', 'Learn more']) {
-      expect(out).toContain(section)
+    expect(out.trimEnd().split('\n').length).toBeLessThanOrEqual(25)
+    expect(out).not.toMatch(/[╭╮╰╯│├┤█🛑⛔🐛✅]/u)
+    for (const gone of ['What now?', 'Learn more', 'Severity breakdown', 'Confidence legend', 'shipguard feedback']) {
+      expect(out).not.toContain(gone)
     }
+  })
+
+  it('the report path is a plain Report: line, and nothing positive follows a negative verdict', () => {
+    const { stdout, stderr } = runCli(['scan', mkFindingFixture()])
+    const out = stripAnsi(stdout)
+    expect(out).toMatch(/^Report: \S+latest\.md/m)
+    expect(out).not.toContain('SHIP IT')
+    expect(stripAnsi(stderr)).not.toContain('Report:')
+    expect(out.trimEnd().split('\n').pop()).toMatch(/^Rules ran: /)
+  })
+
+  it('a clean run starts with SAFE TO SHIP and states what "safe" means on line 2', () => {
+    const lines = stripAnsi(runCli(['scan', mkCleanFixture()]).stdout).split('\n')
+    expect(lines[0]).toMatch(/^SAFE TO SHIP · 0 findings · /)
+    expect(lines[1]).toBe('"Safe" here means no rule matched. It is not a security audit.')
+  })
+
+  it('--strict ends with the one Exit 1 line and exits 1; --quiet and --json print none', () => {
+    const strict = runCli(['scan', mkFindingFixture(), '--strict'])
+    expect(strict.code).toBe(1)
+    expect(stripAnsi(strict.stdout).trimEnd().split('\n').pop()).toMatch(/^Exit 1: --strict stops on DO NOT SHIP\./)
+    const quiet = runCli(['scan', mkFindingFixture(), '--strict', '--quiet'])
+    expect(quiet.code).toBe(1)
+    expect(quiet.stdout.trimEnd().split('\n')).toHaveLength(1)
+    expect(quiet.stdout).toMatch(/^shipguard: verdict=DO_NOT_SHIP blocking=\d+ findings=\d+ incomplete=no agentAction=\S+ run=[0-9a-f]{8}/)
+    expect(quiet.stdout).not.toContain('Exit 1')
+    const json = runCli(['scan', mkFindingFixture(), '--strict', '--json'])
+    expect(json.stdout).not.toContain('Exit 1:')
+    expect(() => JSON.parse(json.stdout)).not.toThrow()
+  })
+
+  it('no secret text reaches the screen or the report', () => {
+    const dir = mkFindingFixture()
+    const { stdout } = runCli(['scan', dir])
+    expect(stdout).not.toContain('sk_live_51H8xQw')
+    expect(stdout).not.toContain('AKIAIOSFOD')
+    const report = readFileSync(join(dir, '.shipguard', 'reports', 'latest.md'), 'utf-8')
+    expect(report).not.toContain('sk_live_51H8xQw')
+    expect(report).not.toContain('AKIAIOSFOD')
+    expect(report).toContain('value hidden')
   })
 })

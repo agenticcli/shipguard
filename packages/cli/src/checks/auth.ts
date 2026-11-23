@@ -55,6 +55,11 @@ const SENSITIVE_EXPRESS_PATHS =
 // Webhook paths — user auth is not expected here (path classifier, not content).
 const WEBHOOK_PATH_PATTERN = /\/webhooks?\//
 
+// Sign-in style paths are public by design: a login page or login endpoint under /admin or /account
+// is how a visitor gets in, so it must not be reported as "unprotected" (path classifier, not content).
+const PUBLIC_AUTH_PATH_PATTERN =
+  /(?:^|\/)(?:\(auth\)|sign-?in|sign-?up|sign-?out|log-?in|log-?out|register|forgot-password|reset-password|verify-email|callback)(?:\/|\.|$)/i
+
 /* eslint-enable no-restricted-syntax */
 
 // ─── Content-scanning patterns — re2js engine (ReDoS-immune) ──────────────────
@@ -703,6 +708,20 @@ function hasActiveAuthCall(content: string): boolean {
   return RE2_AUTH_CALL_PATTERN.test(execText)
 }
 
+// An API route that checks the caller's credential itself and turns the request away with 401/403
+// is guarded even without a named auth helper. Needs BOTH a credential read and a deny response,
+// so a route that only mentions 401 in one unrelated branch is still reported.
+const RE2_INLINE_DENY = compileDetectorRegex(
+  `status\\s*:\\s*40[13]\\b|\\.status\\s*\\(\\s*40[13]\\s*\\)|\\b(?:unauthorized|forbidden)\\s*\\(`,
+)
+const RE2_CREDENTIAL_READ = compileDetectorRegex(
+  `authorization|cookies\\s*\\(|\\.cookies\\b|bearer|x-api-key|\\bsession\\b|\\btoken\\b`,
+  'i',
+)
+function hasInlineCredentialGate(content: string): boolean {
+  return RE2_INLINE_DENY.test(extractExecutableText(content)) && RE2_CREDENTIAL_READ.test(stripComments(content))
+}
+
 // eslint-disable-next-line no-restricted-syntax -- path classifier, not content
 const PAGE_FILE_PATTERN = /(?:^|\/)page\.[tj]sx?$/
 function isPageFile(rp: string): boolean {
@@ -977,6 +996,11 @@ export const authCheck: CheckModule = {
         continue
       }
 
+      // Sign-in / sign-up / callback routes are public by design (not a missing guard).
+      if (PUBLIC_AUTH_PATH_PATTERN.test(rp) && (SENSITIVE_NEXTJS_PAGE_PATTERN.test(rp) || SENSITIVE_API_ROUTE_PATTERN.test(rp))) {
+        continue
+      }
+
       // ── 2a. Next.js App Router page / layout files ──────────────────────────
       if (SENSITIVE_NEXTJS_PAGE_PATTERN.test(rp)) {
         // Only the page itself is judged (helpers, styles and components in the folder are not routes), and
@@ -1011,7 +1035,7 @@ export const authCheck: CheckModule = {
 
       // ── 2b. Next.js API Route Handlers for sensitive endpoints ──────────────
       if (SENSITIVE_API_ROUTE_PATTERN.test(rp)) {
-        if (!hasActiveAuthCall(content)) {
+        if (!hasActiveAuthCall(content) && !hasInlineCredentialGate(content)) {
           const wasRemoved = hasCommentedAuthCall(content)
           findings.push({
             id: 'auth_route_without_guard',

@@ -31,11 +31,11 @@ describe('computeRiskScore', () => {
     expect(result.totalFindings).toBe(0)
   })
 
-  it('1 info finding → score 1, SAFE_TO_SHIP', () => {
+  it('1 info finding → score 1, REVIEW_BEFORE_SHIP (a rule matched: never "safe", spec 02 row 5)', () => {
     const findings = makeFindings([{ severity: 'info' }])
     const result = computeRiskScore(findings)
     expect(result.score).toBe(1)
-    expect(result.recommendation).toBe('SAFE_TO_SHIP')
+    expect(result.recommendation).toBe('REVIEW_BEFORE_SHIP')
   })
 
   it('2 medium findings → score 30, REVIEW_BEFORE_SHIP', () => {
@@ -45,8 +45,8 @@ describe('computeRiskScore', () => {
     expect(result.recommendation).toBe('REVIEW_BEFORE_SHIP')
   })
 
-  it('1 critical + 1 high → score 80, DO_NOT_SHIP', () => {
-    const findings = makeFindings([{ severity: 'critical' }, { severity: 'high' }])
+  it('1 critical + 1 high, both blocking → score 80, DO_NOT_SHIP', () => {
+    const findings = makeFindings([{ severity: 'critical', blocking: true }, { severity: 'high', blocking: true }])
     const result = computeRiskScore(findings)
     expect(result.score).toBe(80)
     expect(result.recommendation).toBe('DO_NOT_SHIP')
@@ -55,16 +55,16 @@ describe('computeRiskScore', () => {
   it('caps at 100 when many critical findings', () => {
     // 3 critical = 150 raw → capped at 100
     const findings = makeFindings([
-      { severity: 'critical' },
-      { severity: 'critical' },
-      { severity: 'critical' },
+      { severity: 'critical', blocking: true },
+      { severity: 'critical', blocking: true },
+      { severity: 'critical', blocking: true },
     ])
     const result = computeRiskScore(findings)
     expect(result.score).toBe(100)
     expect(result.recommendation).toBe('DO_NOT_SHIP')
   })
 
-  it('boundary: score 20 → SAFE_TO_SHIP', () => {
+  it('score 20 from non-blocking findings → REVIEW_BEFORE_SHIP', () => {
     // 4 low = 20
     const findings = makeFindings([
       { severity: 'low' },
@@ -74,7 +74,7 @@ describe('computeRiskScore', () => {
     ])
     const result = computeRiskScore(findings)
     expect(result.score).toBe(20)
-    expect(result.recommendation).toBe('SAFE_TO_SHIP')
+    expect(result.recommendation).toBe('REVIEW_BEFORE_SHIP')
   })
 
   it('boundary: score 21 → REVIEW_BEFORE_SHIP', () => {
@@ -102,15 +102,14 @@ describe('computeRiskScore', () => {
     expect(result.recommendation).toBe('REVIEW_BEFORE_SHIP')
   })
 
-  it('boundary: score 50 → DO_NOT_SHIP (one critical finding must block)', () => {
-    // 1 critical = 50 — must block; threshold is >= 50
-    const findings = makeFindings([{ severity: 'critical' }])
+  it('a blocking critical finding → DO_NOT_SHIP', () => {
+    const findings = makeFindings([{ severity: 'critical', blocking: true }])
     const result = computeRiskScore(findings)
     expect(result.score).toBe(50)
     expect(result.recommendation).toBe('DO_NOT_SHIP')
   })
 
-  it('boundary: score 51 → DO_NOT_SHIP', () => {
+  it('score 51 from non-blocking findings alone → REVIEW_BEFORE_SHIP, never DO_NOT_SHIP (E2E B-29)', () => {
     // 1 high + 21 info = 51
     const findings = makeFindings([
       { severity: 'high' },
@@ -118,7 +117,7 @@ describe('computeRiskScore', () => {
     ])
     const result = computeRiskScore(findings)
     expect(result.score).toBe(51)
-    expect(result.recommendation).toBe('DO_NOT_SHIP')
+    expect(result.recommendation).toBe('REVIEW_BEFORE_SHIP')
   })
 
   it('correct counts per severity', () => {

@@ -1,12 +1,14 @@
-# @agenticcli/shipguard
+# ShipGuard by AgenticCLI (`@agenticcli/shipguard`)
 
 **The security scanner your coding agent runs before every commit. On your machine. Flat price, no seats.**
 
-Same code, same answer: same diff, same verdict, a real exit code your agent can read.
+Review code with a rulebook to build secure code. Same code, same answer: same diff, same verdict, a real exit code your agent can read.
 
 Checks for leaked secrets, auth gaps, payment webhook risks, destructive migrations, and deployment misconfigurations — before your code ships.
 
-## 30-second quickstart
+**Open source CLI. Your code never leaves your machine.** ShipGuard never sends code, file paths or file contents. It sends product usage telemetry to help us understand how people use it and make the next release better. You can switch it off any time: `shipguard telemetry disable` or `DO_NOT_TRACK=1`. [What is sent](https://github.com/agenticcli/shipguard/blob/main/docs/privacy.md)
+
+## Quickstart
 
 ```bash
 # Zero install — scan right now
@@ -22,7 +24,7 @@ shipguard scan
 > **PATH gotcha:** `npm install` (without `-g`) does NOT put `shipguard` on your PATH.
 > Use `npx @agenticcli/shipguard scan` or install with `npm install -g @agenticcli/shipguard`.
 
-ShipGuard is the deterministic check that runs inside your agent loop (it also works as a release gate in CI), not a code reviewer and not a general security scanner. It runs on your machine, uses plain pattern rules (no AI model), and your code never leaves your computer. Source: [github.com/agenticcli/shipguard](https://github.com/agenticcli/shipguard).
+ShipGuard is a security scanner, not a code reviewer and not a full SAST tool. It runs on your machine and uses plain pattern rules (no AI model). Rules come down; your code never goes up. Source: [github.com/agenticcli/shipguard](https://github.com/agenticcli/shipguard).
 
 ## Usage
 
@@ -31,14 +33,16 @@ shipguard scan            # Scan current project (rich output; verdict in JSON `
 shipguard scan --strict   # CI hard gate: exit 1 on blocking findings (opt-in)
 shipguard scan --json     # Machine-readable output for agents/CI
 shipguard scan --quiet    # One-line verdict only
-shipguard scan --pro      # Pro rules — requires login
-shipguard login           # Authenticate for Pro rules
+shipguard scan --pro      # Download the full current rulebook for this scan (needs login)
+shipguard login           # Sign in (Pro accounts run rulebook scans)
 shipguard init            # Generate .shipguard.yml policy file
-shipguard hook            # Install the gate at the merge boundary (git / claude / ci)
+shipguard hook            # Install the hook at the merge boundary (git / claude / ci)
+shipguard setup           # Set up the gate for your agent (--dry-run lists every file first)
+shipguard uninstall       # Remove what setup wrote and name what stays
 shipguard schema --json   # The machine-readable contract: verdict values, exit codes, limits
 ```
 
-### Put the gate where merges happen
+### Run it where merges happen
 
 ShipGuard never blocks on its own. Installing a hook is the deliberate act that turns the
 hard stop on:
@@ -51,7 +55,7 @@ shipguard hook --target ci        # GitHub Actions verdict job
 
 Copy-paste snippets for `AGENTS.md`, `CLAUDE.md` and CI: [docs/placement-kit.md](docs/placement-kit.md).
 
-The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below).
+The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below), plus a signed-out terminal scan may ask once a week for public rule counts for your stack names (names only, no code; never in hooks, CI, quiet or safe mode). Prices and plan details are not listed here: see `shipguard status` and [agenticcli.dev/pricing](https://agenticcli.dev/pricing?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen).
 
 ## Exit codes
 
@@ -70,7 +74,7 @@ and `degraded`/`degradedReasons` fields for that.
 
 So that a `0` is never read as "passed": when blocking findings exist and `--strict` is off, the terminal output ends with `exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.`, and `--json` carries the same sentence in `exitMeaning`. `shipguard --help` lists the codes too.
 
-A degraded/partial scan (e.g. pro rules unavailable, an oversized file skipped)
+A degraded/partial scan (e.g. rulebook unavailable, an oversized file skipped)
 is exit `0` with `degraded: true` and a `degradedReasons[]` array in `--json`
 output — it never hijacks exit `2`, which is reserved for genuine config errors.
 
@@ -80,7 +84,7 @@ when you want that truthful verdict to actually stop something.
 
 ### What was actually scanned
 
-Every `--json` result (schemaVersion 6) has a `coverage` object: files discovered, scanned,
+Every `--json` result (schemaVersion 7) has a `coverage` object: files discovered, scanned,
 and skipped, with the reason for each skip (real binary, too large, symlink, unknown binary,
 invalid text, unreadable, special file), plus text read as UTF-16 or with stray NUL bytes
 turned into spaces. Real binaries (images, fonts, archives) are counted and are not a
@@ -94,9 +98,9 @@ outside the ASCII reading, compressed archives, and string tables inside ELF, PE
 
 ## Telemetry
 
-**The CLI downloads rules from the rulebook; your code never leaves your machine; only usage telemetry is sent (off with the opt-outs below).** Published ShipGuard builds send one pseudonymous usage ping after each scan, plus a one-off ping on the first run on an install and one after a successful `shipguard login` (7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run ping is never sent in CI). A scan ping carries 11 keys: `schema` (`4`), `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket`, `ci`, and three about how ShipGuard was run: `agent` (`claude_code`, `codex`, `cursor`, `gemini_cli`, `copilot`, `opencode`, `other_agent` or `none`, from the variables the agent itself sets in your environment; only the label is sent, never a value), `interactive` (is the output a terminal) and `output` (`json`, `human` or `sarif`). Pings go to `agenticcli.dev/api/cli-telemetry` (host agenticcli.dev). Every `--json` result shows `"telemetry": "on"` or `"off"`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier pings can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
+**The CLI downloads rules from the rulebook; your code never leaves your machine; only product usage telemetry is sent (off with the opt-outs below).** Published ShipGuard builds send one pseudonymous product usage telemetry message after each scan, plus a one-off message on the first run on an install and one after a successful `shipguard login` (7 keys: `schema`, `event`, `eventId`, `installId`, `cliVersion`, `provenance`, `ci`; the first-run message is never sent in CI). A scan message carries 12 keys: `schema` (`5`), `eventId`, `installId` (random pseudonym), `cliVersion`, `provenance` (build type), `verdict` (safe / review / blocked / error), `durationBucket`, `ci`, and four about how ShipGuard was run: `agent` (`claude_code`, `codex`, `cursor`, `gemini_cli`, `copilot`, `opencode`, `other_agent` or `none`, from the variables the agent itself sets in your environment; only the label is sent, never a value), `interactive` (is the output a terminal) `output` (`json`, `human` or `sarif`) and `gateKind` (`claude`, `git`, `ci` or `none`: which gate ran the scan). Telemetry goes to `agenticcli.dev/api/cli-telemetry` (host agenticcli.dev). Every `--json` result shows `"telemetry": "on"` or `"off"`. An optional `traffic` key (`test` or `internal`) is added only if you set `SHIPGUARD_TRAFFIC`; any other value is ignored. The install id is a pseudonym stored in `~/.config/shipguard/telemetry.json`; not created or sent in CI, never linked to an account. Never file contents, paths, repo names, branches or commits, or user identity. `shipguard telemetry status` shows what is set, `shipguard telemetry reset` forgets the id (earlier messages can be deleted on request), `SHIPGUARD_TELEMETRY_DEBUG=1` prints the exact payload without sending. Builds from a source checkout never send anything.
 
-Before the first ping on a machine, ShipGuard prints a one-line notice to stderr (in every mode, including `--json` and CI, so stdout stays clean). Turn pings off any of these ways:
+Before the first telemetry message on a machine, ShipGuard prints a one-line notice to stderr (in every mode, including `--json` and CI, so stdout stays clean). Turn telemetry off any of these ways:
 
 - `SHIPGUARD_TELEMETRY=0` or `DO_NOT_TRACK=1` in the environment (wins over everything)
 - `shipguard telemetry disable` (saved per user; `enable` turns it back on, `status` shows the state and why)
@@ -105,6 +109,10 @@ Before the first ping on a machine, ShipGuard prints a one-line notice to stderr
 To see exactly what would be sent without sending it: `SHIPGUARD_TELEMETRY_DEBUG=1 shipguard scan`.
 
 Details: [docs/privacy.md](https://github.com/agenticcli/shipguard/blob/main/docs/privacy.md) and [agenticcli.dev/privacy](https://agenticcli.dev/privacy?utm_source=npm_readme&utm_medium=package&utm_campaign=shipguard_evergreen).
+
+## Verify this package
+
+The package ships source maps (`dist/*.js.map`) that point to the public source at the tagged commit. To rebuild it from its tag and compare hashes, and for the list of every network call in the CLI, see [REBUILD.md](https://github.com/agenticcli/shipguard/blob/main/REBUILD.md).
 
 ## Documentation
 
@@ -118,4 +126,4 @@ See the [ShipGuard docs](https://agenticcli.dev/shipguard/docs?utm_source=npm_re
 
 ## License
 
-[Elastic License 2.0](LICENSE). Source-available, free to use commercially; you may not offer it as a hosted service or resell it.
+[Apache License 2.0](LICENSE). Use it, change it and share it, including commercially. See [NOTICE](NOTICE). The ShipGuard and AgenticCLI names are not part of the license.

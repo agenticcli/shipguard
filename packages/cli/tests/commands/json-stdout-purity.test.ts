@@ -83,7 +83,7 @@ describe('--json stdout purity under --pro degrade ', () => {
   // exhaustively and deterministically (mocked) in pro-scanner-error-codes.test.ts and
   // scan-pro-fetch-failure.test.ts — this file's job is ONLY to prove the stdout/stderr
   // purity invariant holds for the real spawned binary, so it accepts either class.
-  const KNOWN_PRO_FETCH_ERROR_CODES = ['AUTH_FAILED', 'INSUFFICIENT_CREDITS', 'RATE_LIMITED', 'SERVER_ERROR', 'BUNDLE_INVALID']
+  const KNOWN_PUBLIC_ERROR_CODES = ['LOGIN_REQUIRED', 'TOKEN_EXPIRED', 'RATE_LIMITED', 'RULEBOOK_UNREACHABLE', 'RULEBOOK_WITHHELD']
 
   it('FAIL-BEFORE/PASS-AFTER : default --pro fetch failure ' +
      '→ exit 3, structured JSON error on stdout, human warning on stderr', () => {
@@ -107,15 +107,16 @@ describe('--json stdout purity under --pro degrade ', () => {
     // STDOUT must be exactly one JSON document — no warning lines prepended.
     expect(() => JSON.parse(stdout)).not.toThrow()
     const parsed = JSON.parse(stdout)
-    expect(parsed.degraded).toBe(false)
-    expect(KNOWN_PRO_FETCH_ERROR_CODES).toContain(parsed.code)
-    expect(typeof parsed.error).toBe('string')
-    expect(typeof parsed.action).toBe('string')
+    expect(parsed.ok).toBe(false)
+    expect(KNOWN_PUBLIC_ERROR_CODES).toContain(parsed.error.code)
+    expect(typeof parsed.error.message).toBe('string')
+    expect(typeof parsed.error.fix).toBe('string')
+    expect(['retry', 'ask_human', 'fix_and_rerun', 'stop']).toContain(parsed.agentAction)
 
     // The warning must STILL be emitted — to STDERR, where it belongs.
-    expect(stderr).toMatch(/pro rules request failed/i)
+    expect(stderr).toMatch(/✗ (LOGIN_REQUIRED|TOKEN_EXPIRED|RATE_LIMITED|RULEBOOK_UNREACHABLE|RULEBOOK_WITHHELD):/)
     // And it must NOT be on stdout.
-    expect(stdout).not.toMatch(/pro rules request failed/i)
+    expect(stdout).not.toMatch(/✗/)
     expect(stdout.trimStart().startsWith('{')).toBe(true)
   })
 
@@ -137,11 +138,11 @@ describe('--json stdout purity under --pro degrade ', () => {
     expect(() => JSON.parse(stdout)).not.toThrow()
     const parsed = JSON.parse(stdout)
     expect(parsed).toHaveProperty('findings')
-    expect(parsed).toHaveProperty('schemaVersion', '6')
+    expect(parsed).toHaveProperty('schemaVersion', '7')
     expect(parsed.degraded).toBe(true)
 
-    expect(stderr).toMatch(/degrading to free scan/i)
-    expect(stdout).not.toMatch(/degrading to free scan/i)
+    expect(stderr).toMatch(/degrading to a local scan/i)
+    expect(stdout).not.toMatch(/degrading to a local scan/i)
     expect(stdout.trimStart().startsWith('{')).toBe(true)
   })
 
@@ -165,8 +166,8 @@ describe('--json stdout purity under --pro degrade ', () => {
     expect(code).toBe(3)
     expect(() => JSON.parse(stdout)).not.toThrow()
     const parsed = JSON.parse(stdout)
-    expect(parsed.degraded).toBe(false)
-    expect(KNOWN_PRO_FETCH_ERROR_CODES).toContain(parsed.code)
+    expect(parsed.ok).toBe(false)
+    expect(KNOWN_PUBLIC_ERROR_CODES).toContain(parsed.error.code)
   })
 
   it('--sarif + --allow-degraded stdout still parses as a valid SARIF document under degrade', () => {

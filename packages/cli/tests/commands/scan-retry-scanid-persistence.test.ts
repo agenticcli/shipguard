@@ -69,6 +69,7 @@ vi.mock('../../src/core/policy.js', () => ({
 }))
 
 vi.mock('../../src/core/git.js', () => ({
+  listGitIgnored: vi.fn(() => null),
   isGitRepo: vi.fn(() => true),
   getChangedFiles: vi.fn(() => []),
 }))
@@ -82,6 +83,7 @@ vi.mock('../../src/utils/logger.js', () => ({
     finding: vi.fn(),
     score: vi.fn(),
     divider: vi.fn(),
+    debug: vi.fn(),
   },
 }))
 
@@ -94,7 +96,8 @@ vi.mock('../../src/core/config-generator.js', () => ({
   generateConfig: vi.fn(() => '.shipguard.yml'),
 }))
 
-vi.mock('../../src/core/pro-scanner.js', () => ({
+vi.mock('../../src/core/pro-scanner.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/core/pro-scanner.js')>()),
   fetchProRules: vi.fn().mockImplementation(async () => ({
     rules: [],
     creditsRemaining: 42,
@@ -102,7 +105,8 @@ vi.mock('../../src/core/pro-scanner.js', () => ({
   })),
 }))
 
-vi.mock('../../src/core/telemetry.js', () => ({
+vi.mock('../../src/core/telemetry.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/core/telemetry.js')>()),
   sendTelemetry: vi.fn(),
   telemetryState: () => 'on',
 }))
@@ -195,6 +199,8 @@ describe('scanId reuse — a whole-process retry reuses the SAME scanId (closes 
     const blocker = join(dir, 'blocker-file')
     writeFileSync(blocker, 'i am a file', 'utf-8')
     stubPolicy.history = { path: join(blocker, 'nested', 'history.db') }
+    // The small fallback file (.shipguard/scan-id-reuse.json) must be impossible too, or nothing is "unavailable" any more.
+    writeFileSync(join(dir, '.shipguard'), 'i am a file too', 'utf-8')
 
     await expect(scanCommand().parseAsync(['node', 'scan', dir, '--json', '--pro'])).resolves.not.toThrow()
     await expect(scanCommand().parseAsync(['node', 'scan', dir, '--json', '--pro'])).resolves.not.toThrow()

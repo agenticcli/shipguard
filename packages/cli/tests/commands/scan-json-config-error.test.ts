@@ -42,9 +42,10 @@ describe('scan config error in machine mode', () => {
     const r = await spawnNode(distCli, ['scan', '--json', dir], { cwd: tmpdir(), env })
     expect(r.code).toBe(2)
     const parsed = JSON.parse(r.stdout)
-    expect(parsed.code).toBe('INVALID_POLICY')
-    expect(parsed.error).toMatch(/Invalid policy file/)
-    expect(r.stderr).toMatch(/Config error/)
+    expect(parsed.error.code).toBe('INVALID_POLICY')
+    expect(parsed.error.cause).toMatch(/^line \d+ /) // our words with the line, never the parser's sentence
+    expect(parsed.agentAction).toBe('fix_and_rerun')
+    expect(r.stderr).toMatch(/INVALID_POLICY/)
   })
 
   it('without --json stdout stays empty (human text only on stderr)', async () => {
@@ -59,6 +60,6 @@ describe('scan config error in machine mode', () => {
     tempDirs.push(d)
     const r = await spawnNode(distCli, ['scan', '--json'], { cwd: d, env })
     expect(r.code).toBe(2)
-    expect(JSON.parse(r.stdout).code).toBe('NOT_A_PROJECT')
+    expect(JSON.parse(r.stdout).error.code).toBe('NOT_A_PROJECT')
   })
 })

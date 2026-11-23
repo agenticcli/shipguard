@@ -1,5 +1,5 @@
 /**
- * B7: the JSON always carries `coverage`, schemaVersion is 6, internal fields never leak, SARIF has
+ * B7: the JSON always carries `coverage`, schemaVersion is 7, internal fields never leak, SARIF has
  * no `coverage`, and the human output prints the Coverage line on a clean scan too.
  */
 import { afterAll, describe, expect, it, vi } from 'vitest'
@@ -12,7 +12,7 @@ describe('coverage in --json', () => {
   it('a clean scan has coverage, the invariant, schemaVersion 6 and no _skipped* keys', async () => {
     const run = await scanJson(mkTree({ 'a.js': 'const a = 1\n', 'b.js': 'const b = 2\n' }))
     const json = run.json!
-    expect(json.schemaVersion).toBe('6')
+    expect(json.schemaVersion).toBe('7')
     expect(json.coverage).toMatchObject({ discovered: 2, scanned: 2, mode: 'full', truncated: false })
     expect(json.coverage.skipped).toEqual({
       binary: 0, tooLarge: 0, symlink: 0, unknownBinary: 0, invalidUtf8: 0, unreadable: 0, special: 0, binaryHeadOnly: 0,
@@ -49,9 +49,9 @@ describe('coverage in --json', () => {
     expect(JSON.parse(run.stdout).version).toBeDefined()
   })
 
-  it('human output prints the Coverage line on a CLEAN scan and names each skip category', async () => {
+  it('human output states the file count on a CLEAN scan and names each unscanned file with its reason', async () => {
     const clean = await runCli(['scan', mkTree({ 'a.js': 'x\n' })])
-    expect(clean.stdout + clean.stderr).toMatch(/Coverage: scanned 1 of 1 files/)
+    expect(clean.stdout.split('\n')[0]).toMatch(/^SAFE TO SHIP · 0 findings · 1 file, \d+ general rules, /)
     const b = noise(200, 5)
     b[0] = 0x41
     b[1] = 0
@@ -59,8 +59,8 @@ describe('coverage in --json', () => {
     b[3] = 0
     const mixed = await runCli(['scan', mkTree({ 'a.js': 'x\n', 'k.dat': b })])
     const text = mixed.stdout + mixed.stderr
-    expect(text).toMatch(/Coverage: scanned 1 of 2 files/)
-    expect(text).toMatch(/unknown/i)
+    expect(mixed.stdout.split('\n')[0]).toMatch(/^DO NOT SHIP · cannot clear this repo: 1 of 2 files were not scanned/)
+    expect(text).toMatch(/unknown format/i)
     expect(text).toContain('k.dat')
   })
 })

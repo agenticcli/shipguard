@@ -1,0 +1,35 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/agenticcli/shipguard/blob/main/docs/security/shipguard.openvex.json",
+  "author": "AgenticCLI",
+  "role": "Document Creator",
+  "timestamp": "2026-11-21T21:00:00Z",
+  "last_updated": "2026-11-21T22:00:00Z",
+  "version": 2,
+  "tooling": "hand-written; checked by packages/cli/tests/release/gates-files.test.ts",
+  "statements": [
+    {
+      "vulnerability": {
+        "@id": "https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+        "name": "GHSA-fc5q-39xc-vjpf",
+        "description": "picomatch: ReDoS through single-branch repeated extglobs (original range: all versions up to 4.0.7). GitHub WITHDREW this advisory on 2026-11-18 as 'not a security issue' (the upstream view: a glob pattern is trusted input)."
+      },
+      "products": [
+        {
+          "@id": "pkg:npm/%40agenticcli/shipguard@0.13.0",
+          "identifiers": {
+            "purl": "pkg:npm/%40agenticcli/shipguard@0.13.0"
+          },
+          "subcomponents": [
+            {
+              "@id": "pkg:npm/picomatch@2.3.2"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "Checked 2026-11-21 (plan W0, closed by W3). Advisory state: withdrawn by GitHub on 2026-11-18 (https://github.com/advisories/GHSA-fc5q-39xc-vjpf), and `npm audit` on the packed CLI reports 0 vulnerabilities; scanners that have not caught up may still list it. picomatch reaches the CLI only through fast-glob -> micromatch (packages/cli/src/utils/fs.ts calls fast-glob; ShipGuard never calls picomatch itself). The scan patterns are the constant '**/*' and the built-in default ignore list. The one policy-controlled route, src/core/ignore.ts selfArtifactIgnorePatterns() (policy values report.output and history.path), now escapes glob characters (fast-glob escapePath) before the pattern reaches fast-glob, so a repository cannot inject an extglob such as +(*a). ignore.paths from the policy do not reach picomatch (they go through minimatch 11, literal entries escaped). Evidence: packages/cli/tests/gate/ignore-escape.test.ts; packages/cli/tests/release/gates-files.test.ts keeps this status and the code in step. Pinned: picomatch 2.3.2 (runtime, via micromatch; the newest 2.x) and 4.0.4 (dev tooling only) in pnpm overrides.",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary"
+    }
+  ]
+}

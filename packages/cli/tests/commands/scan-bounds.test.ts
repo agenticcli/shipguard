@@ -68,6 +68,7 @@ vi.mock('../../src/core/policy.js', () => ({
 }))
 
 vi.mock('../../src/core/git.js', () => ({
+  listGitIgnored: vi.fn(() => null),
   isGitRepo: vi.fn(() => false),
   getChangedFiles: vi.fn(() => []),
 }))
@@ -81,6 +82,7 @@ vi.mock('../../src/utils/logger.js', () => ({
     finding: vi.fn(),
     score: vi.fn(),
     divider: vi.fn(),
+    debug: vi.fn(),
   },
 }))
 
@@ -148,6 +150,7 @@ describe('scan scope guard', () => {
       const errorCalls = vi.mocked(logger.error).mock.calls
       const hasRefusalMessage = errorCalls.some(
         args => typeof args[0] === 'string' && (
+          args[0].includes('NOT_A_PROJECT') ||
           args[0].includes('Refusing') ||
           args[0].includes('non-project') ||
           args[0].includes('--all') ||
@@ -249,7 +252,7 @@ describe('scan scope guard', () => {
 // ---------------------------------------------------------------------------
 
 describe('scan human output enrichment', () => {
-  it('includes "Tips" section in non-machine output', async () => {
+  it('non-machine output is the verdict-first screen: verdict on line 1, no tips or links box', async () => {
     const dir = mkTemp()
     writeFileSync(join(dir, 'package.json'), '{"name":"test"}', 'utf-8')
 
@@ -267,7 +270,9 @@ describe('scan human output enrichment', () => {
       await cmd.parseAsync(['node', 'scan']).catch(() => {})
 
       const allOutput = consoleLogSpy.mock.calls.map(args => String(args[0])).join('\n')
-      expect(allOutput).toContain('agenticcli.dev')
+      expect(allOutput.split('\n')[0]).toMatch(/^(SAFE TO SHIP|REVIEW BEFORE SHIP|DO NOT SHIP) · /)
+      expect(allOutput).not.toContain('What now')
+      expect(allOutput).not.toContain('Learn more')
     } finally {
       process.chdir(originalCwd)
       consoleLogSpy.mockRestore()

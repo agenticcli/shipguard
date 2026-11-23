@@ -60,7 +60,7 @@ describe('QA: stdout/stderr error handlers exist from startup, not only at exit'
       const m = run.stderr.match(/STDOUT_ERROR_LISTENERS=(\d+)/)
       expect(m, `probe line missing; stderr: ${run.stderr.slice(0, 300)}`).not.toBeNull()
       expect(Number(m![1])).toBeGreaterThanOrEqual(1)
-      expect(JSON.parse(run.stdout).schemaVersion).toBe('6')
+      expect(JSON.parse(run.stdout).schemaVersion).toBe('7')
       expect(run.code).toBe(1)
     } finally {
       server.closeAllConnections()

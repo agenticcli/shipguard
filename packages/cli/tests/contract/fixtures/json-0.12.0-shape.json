@@ -1,0 +1,14 @@
+{
+  "_note": "Top-level keys and types of the real 0.12.0 `shipguard scan --json` (spec 02, section 'Current (0.12.0)', sample A1/A3d). Keys that schema 7 deliberately changes are listed in changedFindingKeys.",
+  "topLevel": {
+    "findings": "array", "riskScore": "object", "filesScanned": "number", "timestamp": "string", "policyUsed": "string",
+    "treeDigest": "string", "degraded": "boolean", "coverage": "object", "recommendation": "string",
+    "schemaVersion": "string", "scanIdReused": "boolean", "creditsWarning": "boolean", "runId": "string",
+    "cliVersion": "string", "stateStatus": "string", "regressionCheckSkipped": "boolean", "regressions": "array",
+    "coverageChanged": "array", "telemetry": "string", "exitMeaning": "string"
+  },
+  "riskScoreKeys": ["score", "recommendation", "totalFindings", "criticalCount", "highCount", "mediumCount", "lowCount", "infoCount", "blockingCount"],
+  "coverageKeys": ["discovered", "scanned", "skipped", "decoded", "truncated", "ignoredByDefault", "ignoredByUser", "selfArtifacts", "mode", "files"],
+  "findingKeys": ["id", "title", "severity", "category", "file", "blocking", "line", "confidence", "recommendation"],
+  "changedFindingKeys": { "fix": "string -> object", "explanation": "string -> why (short string)", "evidence": "string -> object" }
+}

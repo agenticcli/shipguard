@@ -2,155 +2,139 @@ import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { dirname, basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Finding, ScanResult } from '@agenticcli/shared'
-import { effectiveRecommendation } from './verdict.js'
+import { effectiveRecommendation, VERDICT_WORDS } from './verdict.js'
+import { fixGuidance, orderFindings, fixOrderGroup } from './fix-guidance.js'
+import { rulesRanLines } from './rules-ran.js'
+import type { RulesRan } from './rules-ran.js'
+import type { NotScannedSummary } from './not-scanned.js'
 import { assertCwdAlive } from '../utils/cwd-guard.js'
 
 // ---------------------------------------------------------------------------
-// Internal helpers — user-view markdown
+// USER VIEW: .shipguard/reports/latest.md (spec 01 "report layout", spec 04 record)
+//
+// Same field names and order as the screen; the same one-line fix text as the screen, word for
+// word. Secrets are never printed: the evidence line for a secret says `value hidden`.
 // ---------------------------------------------------------------------------
 
-function severitySection(title: string, findings: Finding[]): string {
-  if (findings.length === 0) {
-    return `## ${title}\n\nNone\n`
+/** Facts the report needs beyond the ScanResult. All optional: defaults give a plain Free report. */
+export interface ReportContext {
+  stacks?: readonly string[]
+  rerunCommand?: string
+  generalRuleCount?: number | null
+  rulesRan?: RulesRan
+  notScanned?: NotScannedSummary
+  ignoredTestValues?: number
+  /** W5 masking seam: `<type>, <n> characters, value hidden` for a secret finding. */
+  secretEvidence?: (f: Finding) => string | null
+  /** The schema-7 result object (the same one `--json` prints): written as the run's JSON record. Absent: the bare result. */
+  agentJson?: unknown
+}
+
+function utcStamp(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC`
+}
+
+function oneLine(s: string): string {
+  return s.replace(/\s+/g, ' ').trim()
+}
+
+function findingRecord(f: Finding, n: number, ctx: ReportContext, rerun: string): string[] {
+  const g = fixGuidance(f, ctx.stacks)
+  const loc = f.line != null ? `${f.file}:${f.line}` : f.file
+  const lines: string[] = [`${n}. ${f.severity.toUpperCase()} ${loc}  ${g.what}   id: ${f.id}`]
+  if (g.why) lines.push(`   why: ${g.why}`)
+  const head = [g.fixLabel, g.effort ? `effort: ${g.effort}` : null].filter((x): x is string => x !== null).join(', ')
+  lines.push(`   fix${head ? ` (${head})` : ''}: ${g.summary}`)
+  for (const step of g.steps) lines.push(`     ${step}`)
+  const manual = g.manual ? ` Manual: ${g.manual}` : ''
+  lines.push(`   verify: ${rerun}   (this finding no longer appears; exit 0 only when nothing else blocks.${manual})`)
+  if (f.category === 'secrets') {
+    lines.push(`   evidence: ${ctx.secretEvidence?.(f) ?? 'value hidden'}`)
+  } else if (f.evidence) {
+    lines.push(`   evidence: ${oneLine(f.evidence)}`)
   }
-
-  const entries = findings.map((f) => {
-    const lines: string[] = [`### ${f.title}`]
-    lines.push(`- **File:** ${f.file}${f.line != null ? `:${f.line}` : ''}`)
-    lines.push(`- **Severity:** ${f.severity}`)
-    if (f.evidence != null) lines.push(`- **Evidence:** \`${f.evidence}\``)
-    lines.push(`- **Explanation:** ${f.explanation}`)
-    lines.push(`- **Recommendation:** ${f.recommendation}`)
-    return lines.join('\n')
-  })
-
-  return `## ${title}\n\n${entries.join('\n\n')}\n`
+  if (g.notAVulnerabilityIf) lines.push(`   not a vulnerability if: ${g.notAVulnerabilityIf}`)
+  if (g.note) lines.push(`   ${g.note}`)
+  return lines
 }
 
-function buildFixOrder(findings: Finding[]): string {
-  const blocking = findings.filter((f) => f.blocking)
-  const nonBlocking = findings.filter((f) => !f.blocking)
-
-  const severityOrder = ['critical', 'high', 'medium', 'low', 'info']
-  const sorted = [
-    ...blocking.sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity)),
-    ...nonBlocking.sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity)),
-  ]
-
-  if (sorted.length === 0) return 'No findings to address.\n'
-
-  return sorted
-    .map((f, i) => `${i + 1}. **${f.title}** (${f.severity}) — ${f.file}${f.line != null ? `:${f.line}` : ''}${f.blocking ? ' 🛑 blocking' : ''}`)
-    .join('\n')
-}
-
-/**
- * Verdict attitude line — deterministic by recommendation.
- *
- * `degraded` gets its own wording: when the verdict is DO_NOT_SHIP because the scan was
- * INCOMPLETE (rec #1), telling the reader to "fix the criticals first" is simply false —
- * there may be no criticals; the problem is that parts of the scan never ran.
- */
-function attitudeLine(recommendation: string, degraded?: boolean): string {
-  if (degraded) return 'INCOMPLETE — parts of this scan did not run, so it cannot say this is safe.'
-  if (recommendation === 'SAFE_TO_SHIP') return 'SHIP IT — nothing blocking. Go make something people want.'
-  if (recommendation === 'DO_NOT_SHIP') return 'BLOCKED — shipping this would hurt. Fix the criticals first.'
-  return `HOLD UP — findings need eyes before this ships.`
-}
-
-/** Top-3 findings to fix (blocking first, then by severity) */
-function topThreeFindings(findings: Finding[]): string {
-  const severityOrder = ['critical', 'high', 'medium', 'low', 'info']
-  const sorted = [...findings].sort((a, b) => {
-    if (a.blocking !== b.blocking) return a.blocking ? -1 : 1
-    return severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity)
-  })
-  const top = sorted.slice(0, 3)
-  if (top.length === 0) return 'None — clean scan.\n'
-  return top
-    .map((f, i) => `${i + 1}. **${f.title}** (${f.severity}) — ${f.file}${f.line != null ? `:${f.line}` : ''}`)
-    .join('\n')
-}
-
-/** Severity breakdown table for human report */
-function severityBreakdownTable(riskScore: ScanResult['riskScore']): string {
-  const rows: Array<[string, number]> = [
-    ['Critical', riskScore.criticalCount],
-    ['High', riskScore.highCount],
-    ['Medium', riskScore.mediumCount],
-    ['Low', riskScore.lowCount],
-    ['Info', riskScore.infoCount],
-  ]
-  const lines = ['| Severity | Count |', '|----------|-------|']
-  for (const [label, count] of rows) {
-    lines.push(`| ${label} | ${count} |`)
-  }
-  return lines.join('\n')
-}
-
-// ---------------------------------------------------------------------------
-// USER VIEW — .shipguard/reports/latest.md
-// ---------------------------------------------------------------------------
-
-function buildUserMarkdown(result: ScanResult, elapsedMs?: number): string {
-  const { riskScore, findings, filesScanned, timestamp } = result
+function buildUserMarkdown(result: ScanResult, ctx: ReportContext): string {
+  const { riskScore, findings } = result
   const rec = effectiveRecommendation(result)
-  const degraded = result.degraded === true
-  const elapsedStr = elapsedMs != null
-    ? (elapsedMs < 1000 ? `${elapsedMs}ms` : `${(elapsedMs / 1000).toFixed(1)}s`)
-    : 'N/A'
+  const word = VERDICT_WORDS[rec]
+  const incomplete = result.degraded === true
+  const rerun = ctx.rerunCommand ?? 'shipguard scan --strict'
+  const n = ctx.generalRuleCount ?? null
+  const rr = rulesRanLines(ctx.rulesRan, n)
+  const rulesLabel =
+    ctx.rulesRan && (ctx.rulesRan.kind === 'rulebook' || ctx.rulesRan.kind === 'partial')
+      ? `rulebook:${ctx.rulesRan.count}`
+      : n === null ? 'general' : `general:${n}`
+  const runId = result.runId ? result.runId.replace(/[^A-Za-z0-9]/g, '').slice(0, 8) : 'unknown'
+  const files = result.coverage ? result.coverage.scanned : result.filesScanned
 
-  const critical = findings.filter((f) => f.severity === 'critical')
-  const high = findings.filter((f) => f.severity === 'high')
-  const medium = findings.filter((f) => f.severity === 'medium')
-  const low = findings.filter((f) => f.severity === 'low')
+  const activeFindings = findings.filter((f) => !f.suppressed)
+  const ignoredFindings = findings.filter((f) => f.suppressed)
+  const ordered = orderFindings(activeFindings)
+  const blockers = ordered.filter((f) => f.blocking)
+  const rest = ordered.filter((f) => !f.blocking)
+  const alsoFound = rest.filter((f) => fixOrderGroup(f) === 2)
+  const byHand = rest.filter((f) => fixOrderGroup(f) === 3)
 
-  const sections: string[] = [
-    '# ShipGuard Release Report',
-    '',
-    '## SUMMARY',
-    '',
-    `**Verdict:** ${rec} — ${attitudeLine(rec, degraded)}`,
-    '',
-    `**Files scanned:** ${filesScanned}  |  **Elapsed:** ${elapsedStr}  |  **Generated:** ${timestamp}`,
-    '',
-    ...(degraded
-      ? [
-          '### Why this scan is incomplete',
-          '',
-          ...((result.degradedReasons ?? []).length > 0
-            ? (result.degradedReasons ?? []).map((r) => `- \`${r.code}\`${r.detail ? ` — ${r.detail}` : ''}`)
-            : ['- Reason not recorded — see `degraded` in the JSON report.']),
-          '',
-        ]
-      : []),
-    '### Severity Breakdown',
-    '',
-    severityBreakdownTable(riskScore),
-    '',
-    `**Risk Score:** ${riskScore.score}/100  |  **Total Findings:** ${riskScore.totalFindings}`,
-    '',
-    '### Top 3 Things to Fix',
-    '',
-    topThreeFindings(findings),
-    '',
-    '---',
-    '',
-    severitySection('Critical Findings', critical),
-    severitySection('High Findings', high),
-    severitySection('Medium Findings', medium),
-    severitySection('Low Findings', low),
-    '## Suggested Fix Order',
-    '',
-    buildFixOrder(findings),
-    '',
-    '## Final Recommendation',
-    '',
-    `**${rec}**`,
+  const out: string[] = [
+    `# ShipGuard report: ${word} (run ${runId})`,
+    `verdict: ${word}   blocking: ${riskScore.blockingCount}   findings: ${activeFindings.length}   incomplete: ${incomplete ? 'yes' : 'no'}   files: ${files}   rules: ${rulesLabel}   when: ${utcStamp(result.timestamp)}`,
+    `rerun: ${rerun}`,
     '',
   ]
+  if (rr.runSentence) out.push(rr.runSentence, '')
+  if (rec === 'SAFE_TO_SHIP' && !incomplete) {
+    out.push('"Safe" here means no rule matched. It is not a security audit.', '')
+  }
 
-  return sections.join('\n')
+  let i = 0
+  if (blockers.length > 0) {
+    out.push(`## Fix in this order (${blockers.length} blocking)`)
+    for (const f of blockers) out.push(...findingRecord(f, ++i, ctx, rerun))
+    out.push('')
+  }
+  if (alsoFound.length > 0) {
+    out.push(`## Also found (${alsoFound.length}, not blocking)`)
+    for (const f of alsoFound) out.push(...findingRecord(f, ++i, ctx, rerun))
+    out.push('')
+  }
+  if (byHand.length > 0) {
+    out.push(`## Check by hand (${byHand.length}, not blocking)`)
+    for (const f of byHand) out.push(...findingRecord(f, ++i, ctx, rerun))
+    out.push('')
+  }
+
+  const ns = ctx.notScanned
+  const entries = ns?.entries ?? []
+  const nsCount = entries.reduce((c, e) => c + (e.path ? 1 : (e.count ?? 1)), 0)
+  out.push(`## Not scanned (${nsCount})`)
+  for (const e of entries) {
+    out.push(`- ${e.path ?? '(names in the JSON degradedReasons)'}  ${e.reason}   code: ${e.code}`)
+    e.fix.forEach((l, k) => out.push(k === 0 ? `  fix: ${l}` : `       ${l}`))
+  }
+  for (const r of ns?.otherReasons ?? []) out.push(`- did not run: ${r.text}   code: ${r.code}`)
+  out.push('')
+
+  const ignoredFiles = result.coverage?.ignoredByUser ?? 0
+  const testValues = ctx.ignoredTestValues ?? 0
+  out.push(`## Ignored (${ignoredFindings.length + ignoredFiles + testValues})`)
+  for (const f of ignoredFindings) {
+    const loc = f.line != null ? `${f.file}:${f.line}` : f.file
+    out.push(`- ${f.severity} ${loc}  ${fixGuidance(f, ctx.stacks).what}   id: ${f.id}   reason: ${f.suppressionReason ? oneLine(f.suppressionReason) : 'ignored in the code (shipguard-ignore comment)'}`)
+  }
+  if (ignoredFiles > 0) out.push(`- ${ignoredFiles} file(s) matched ignore.paths in the policy`)
+  if (testValues > 0) out.push(`- ${testValues} test value(s): placeholder and sample values, not reported`)
+  out.push('')
+
+  out.push(rr.line)
+  return out.join('\n') + '\n'
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +144,8 @@ function buildUserMarkdown(result: ScanResult, elapsedMs?: number): string {
 // Internal _ fields must NOT appear here.
 // ---------------------------------------------------------------------------
 
-function buildAgentJson(result: ScanResult): string {
+function buildAgentJson(result: ScanResult, agentJson?: unknown): string {
+  if (agentJson !== undefined) return JSON.stringify(agentJson, null, 2)
   // Strip internal metadata fields (same logic as scan.ts publicResult)
   const publicResult = { ...result }
   delete (publicResult as Record<string, unknown>)._skippedTooLarge
@@ -218,6 +203,12 @@ export interface LatestPointer {
   runMarkdown: string
 }
 
+/** Where `generateReport` will write the run's files (pure): lets a caller put the paths in the result before it is written. */
+export function reportPathsFor(outputPath: string, runId: string | undefined): { mdPath: string; runJsonPath: string } {
+  const id = sanitizeRunId(runId) ?? `run-${Date.now()}`
+  return { mdPath: outputPath, runJsonPath: join(dirname(outputPath), RUNS_SUBDIR, `${id}.json`) }
+}
+
 /**
  * Write a file atomically: temp file in the same directory, then rename.
  *
@@ -238,13 +229,15 @@ async function writeAtomic(path: string, content: string): Promise<void> {
  *
  * @param result      ScanResult to report on
  * @param outputPath  Path for the .md file (e.g. .shipguard/reports/latest.md)
- * @param elapsedMs   Optional elapsed scan time for summary header
+ * @param _elapsedMs  Unused (the report header no longer carries a timing; kept for call-site compatibility)
+ * @param ctx         Stack, rerun command, rules that ran, not-scanned files (all optional)
  * @returns paths to both files written
  */
 export async function generateReport(
   result: ScanResult,
   outputPath: string,
-  elapsedMs?: number,
+  _elapsedMs?: number,
+  ctx: ReportContext = {},
 ): Promise<ReportPaths> {
   // Derive JSON path: same dir, same basename, .json extension
   const dir = dirname(outputPath)
@@ -266,8 +259,8 @@ export async function generateReport(
   const runMdPath = join(dir, runMdName)
   const runJsonPath = join(dir, runJsonName)
 
-  const mdContent = buildUserMarkdown(result, elapsedMs)
-  const jsonContent = buildAgentJson(result)
+  const mdContent = buildUserMarkdown(result, ctx)
+  const jsonContent = buildAgentJson(result, ctx.agentJson)
 
   const pointer: LatestPointer = {
     pointer: true,

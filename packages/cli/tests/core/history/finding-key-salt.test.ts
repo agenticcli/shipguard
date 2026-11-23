@@ -228,9 +228,9 @@ describe('migration to schema v3 re-keys existing rows and leaves no old value i
     db.close()
   }
 
-  it('current schema is v3 and the migration list ends with a v3 step', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(3)
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3])
+  it('current schema is v4 and the migration list ends with the v4 history-columns step', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(4)
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4])
   })
 
   it('every old key becomes HMAC(salt, old key); the old plain digests are gone from the file', async () => {
@@ -253,7 +253,7 @@ describe('migration to schema v3 re-keys existing rows and leaves no old value i
     const keys = (db.prepare('SELECT finding_key FROM findings ORDER BY rowid').all() as Array<{ finding_key: string }>).map((r) => r.finding_key)
     const version = (db.prepare('SELECT MAX(schema_version) AS v FROM schema_meta').get() as { v: number }).v
     db.close()
-    expect(version).toBe(3)
+    expect(version).toBe(4)
     expect(keys).toEqual(olds.map((o) => keyFindingIdentity(salt.salt, o)))
     for (const o of olds) expect(allBytes(dbPath).includes(Buffer.from(o)), `old key ${o} still in file`).toBe(false)
   })

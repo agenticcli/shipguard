@@ -64,6 +64,20 @@ const REQUIRED_TOP_LEVEL = [
   'coverage',
   // 0.12: what this run's exit code means, always present. Additive (no schemaVersion bump).
   'exitMeaning',
+  // 7 (0.13, spec 02): the agent contract, all additive beside the 0.12 keys above.
+  'ok',
+  'verdict',
+  'exit',
+  'agentAction',
+  'report',
+  'stack',
+  'rules',
+  'plan',
+  'warnings',
+  'nextSteps',
+  'sinceLastRun',
+  'elapsedMs',
+  'scanIdReusedReason',
 ] as const
 
 /** Additional OPTIONAL top-level keys allowed (present only with --pro or on degraded scans). */
@@ -124,6 +138,15 @@ const ALLOWED_FINDING_KEYS = new Set<string>([
   'column',
   'suppressionState',
   'matcherType',
+  // 7 (0.13): every finding carries the SAME keys (nullable, never absent). ADDITIVE: `fix` and
+  // `evidence` stay the 0.12 strings; the object forms are the new keys `fixInfo` and `evidenceInfo`.
+  'fixInfo',
+  'evidenceInfo',
+  'occurrence',
+  'endLine',
+  'why',
+  'notAVulnerabilityIf',
+  'origin',
 ])
 
 /** Internal metadata that must NEVER appear in the frozen --json schema. */
@@ -169,9 +192,9 @@ beforeAll(() => {
 }, 120_000)
 
 describe('--json ScanResult schema freeze ', () => {
-  it('schemaVersion is exactly "6" (5 → 6: additive top-level `coverage`; 4 → 5 was CLI recommendations #1/#2/#8)', async () => {
+  it('schemaVersion is exactly "7" (6 → 7: the 0.13 agent contract; no switch back to the 0.12 shape)', async () => {
     const result = (await scanJson(mkFixtureWithFinding()))
-    expect(result.schemaVersion).toBe('6')
+    expect(result.schemaVersion).toBe('7')
   })
 
   it('coverage has the exact frozen key set (including decoded.multiReading)', async () => {
@@ -179,14 +202,14 @@ describe('--json ScanResult schema freeze ', () => {
     const cov = result.coverage as Record<string, Record<string, unknown>>
     // `changed` is present only with --changed; every other key is always there on a full scan.
     expect(Object.keys(cov).sort()).toEqual(
-      ['decoded', 'discovered', 'files', 'ignoredByDefault', 'ignoredByUser', 'mode', 'scanned', 'selfArtifacts', 'skipped', 'truncated'].sort(),
+      ['complete', 'decoded', 'discovered', 'files', 'ignoredByDefault', 'ignoredByUser', 'ignoredTestValues', 'mode', 'notScanned', 'scanned', 'selfArtifacts', 'skipped', 'truncated'].sort(),
     )
     expect(Object.keys(cov.skipped).sort()).toEqual(
       ['binary', 'binaryHeadOnly', 'invalidUtf8', 'special', 'symlink', 'tooLarge', 'unknownBinary', 'unreadable'].sort(),
     )
     expect(Object.keys(cov.decoded).sort()).toEqual(['asciiStrings', 'binaryStringsScanned', 'multiReading', 'nulSubstituted', 'utf16'])
     expect(Object.keys(cov.files).sort()).toEqual(
-      ['binary', 'nulSubstituted', 'selfArtifacts', 'special', 'symlink', 'tooLarge', 'unknownBinary'].sort(),
+      ['binary', 'invalidUtf8', 'nulSubstituted', 'selfArtifacts', 'special', 'symlink', 'tooLarge', 'unknownBinary', 'unreadable'].sort(),
     )
     expect(cov.mode).toBe('full')
   })

@@ -11,6 +11,8 @@ overrides:
   esbuild: '>=0.28.1 <0.29'
   vite: ^7.3.7
   minimatch: '>=11.0.1 <12'
+  picomatch@^2: 2.3.2
+  picomatch@^4: 4.0.4
 
 importers:
 
@@ -30,9 +32,6 @@ importers:
       fast-glob:
         specifier: ^3.3.0
         version: 3.3.3
-      jose:
-        specifier: ^6.2.13
-        version: 6.2.15
       minimatch:
         specifier: '>=11.0.1 <12'
         version: 11.0.4
@@ -842,9 +841,6 @@ packages:
 
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
-
-  jose@6.2.15:
-    resolution: {integrity: sha512-qdF6ewcZARtef63fJ9AKKZPgxw+t7USH6HLXYcD4CrdmSvDp79rpJSPFEKc90QBeGS63u1KQtN2MZQHC0yDIzA==}
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -1970,8 +1966,6 @@ snapshots:
   is-path-inside@3.0.3: {}
 
   isexe@2.0.0: {}
-
-  jose@6.2.15: {}
 
   joycon@3.1.1: {}
 

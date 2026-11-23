@@ -87,7 +87,7 @@ describe('generateReport', () => {
 
     expect(existsSync(outputPath)).toBe(true)
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('# ShipGuard Release Report')
+    expect(content.split('\n')[0]).toMatch(/^# ShipGuard report: DO NOT SHIP \(run /)
   })
 
   it('creates parent directories automatically', async () => {
@@ -108,12 +108,9 @@ describe('generateReport', () => {
     await generateReport(result, outputPath)
 
     const content = readFileSync(outputPath, 'utf-8')
-    // New format: ## SUMMARY at top with verdict + attitude
-    expect(content).toContain('## SUMMARY')
-    expect(content).toContain('65/100')
-    expect(content).toContain('DO_NOT_SHIP')
-    expect(content).toContain('42')        // Files scanned
-    expect(content).toContain('2026-05-27')  // Generated timestamp
+    // Header line (spec 01): same field names and order as the screen; no score on the report
+    expect(content.split('\n')[1]).toMatch(/^verdict: DO NOT SHIP {3}blocking: 1 {3}findings: 2 {3}incomplete: no {3}files: 42 {3}rules: \S+ {3}when: 2026-05-27 12:00 UTC$/)
+    expect(content).not.toContain('65/100')
   })
 
   it('lists findings by severity', async () => {
@@ -124,25 +121,21 @@ describe('generateReport', () => {
     await generateReport(result, outputPath)
 
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('## Critical Findings')
-    expect(content).toContain('Hardcoded API Key')
-    expect(content).toContain('## Medium Findings')
+    expect(content).toContain('## Fix in this order (1 blocking)')
+    expect(content).toContain('CRITICAL lib/api.ts:5  Hardcoded API Key')
+    expect(content).toContain('## Also found (1, not blocking)')
     expect(content).toContain('.env tracked in git')
   })
 
-  it('shows "None" for severity sections with no findings', async () => {
+  it('always has the Not scanned and Ignored sections, empty ones shown with a zero count', async () => {
     const dir = mkTemp()
     const outputPath = join(dir, 'report.md')
-    const result = makeResult()
 
-    await generateReport(result, outputPath)
+    await generateReport(makeResult(), outputPath)
 
     const content = readFileSync(outputPath, 'utf-8')
-    // High and Low should show None since result has no high/low findings
-    const highSection = content.split('## High Findings')[1]?.split('##')[0] ?? ''
-    expect(highSection).toContain('None')
-    const lowSection = content.split('## Low Findings')[1]?.split('##')[0] ?? ''
-    expect(lowSection).toContain('None')
+    expect(content).toContain('## Not scanned (0)')
+    expect(content).toContain('## Ignored (0)')
   })
 
   it('includes file and line number in finding entry', async () => {
@@ -152,28 +145,29 @@ describe('generateReport', () => {
     await generateReport(makeResult(), outputPath)
 
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('**File:** lib/api.ts:5')
+    expect(content).toContain('lib/api.ts:5')
   })
 
-  it('includes evidence in finding entry', async () => {
+  it('a secret finding never prints its evidence (value hidden)', async () => {
     const dir = mkTemp()
     const outputPath = join(dir, 'report.md')
 
     await generateReport(makeResult(), outputPath)
 
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('**Evidence:** `sk-proj-abc***`')
+    expect(content).not.toContain('sk-proj')
+    expect(content).toContain('evidence: value hidden')
   })
 
-  it('includes final recommendation', async () => {
+  it('names the verdict in the title and the header', async () => {
     const dir = mkTemp()
     const outputPath = join(dir, 'report.md')
 
     await generateReport(makeResult(), outputPath)
 
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('## Final Recommendation')
-    expect(content).toContain('**DO_NOT_SHIP**')
+    expect(content).toContain('# ShipGuard report: DO NOT SHIP')
+    expect(content).toContain('verdict: DO NOT SHIP')
   })
 
   it('handles zero findings gracefully', async () => {
@@ -197,7 +191,7 @@ describe('generateReport', () => {
     await generateReport(result, outputPath)
 
     const content = readFileSync(outputPath, 'utf-8')
-    expect(content).toContain('SAFE_TO_SHIP')
-    expect(content).toContain('**Risk Score:** 0/100')
+    expect(content).toContain('# ShipGuard report: SAFE TO SHIP')
+    expect(content).toContain('findings: 0')
   })
 })

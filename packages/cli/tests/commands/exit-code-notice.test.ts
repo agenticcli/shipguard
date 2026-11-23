@@ -30,16 +30,18 @@ describe('exit-code notice', () => {
     expect(EXIT_NOTICE).toBe('exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.')
   })
 
-  it('human output without --strict ends with the notice when blocking findings exist (exit stays 0)', async () => {
+  it('human output without --strict says on line 2 that the scan finished with exit 0 (exit stays 0)', async () => {
     const r = await runCli(['scan', mkTree(BLOCKED)])
     expect(r.code).toBe(0)
-    expect(lastLine(r.stdout)).toBe(EXIT_NOTICE)
+    expect(stripAnsi(r.stdout).split('\n')[1]).toBe('This scan finished (exit 0). Add --strict to exit 1 on DO NOT SHIP.')
+    expect(lastLine(r.stdout)).toMatch(/^Rules ran: /) // nothing about exit codes after line 2
   })
 
   it('human output with --strict has no notice (the exit code says it) and exits 1', async () => {
     const r = await runCli(['scan', mkTree(BLOCKED), '--strict'])
     expect(r.code).toBe(1)
     expect(stripAnsi(r.stdout)).not.toContain(EXIT_NOTICE)
+    expect(lastLine(r.stdout)).toMatch(/^Exit 1: --strict stops on DO NOT SHIP\./)
   })
 
   it('a clean scan prints no notice', async () => {

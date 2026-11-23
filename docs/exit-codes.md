@@ -24,10 +24,10 @@ With `--json` or `--sarif`, an exit `2` prints exactly one JSON object on stdout
 
 ## Degraded scans
 
-If ShipGuard could not read everything (an oversized file, an unreadable file, a skipped symlink, lost Pro rules, or a scan that read no files), the scan is `degraded` and the verdict is `DO_NOT_SHIP`. The reasons are in `degradedReasons`.
+If ShipGuard could not read everything (an oversized file, an unreadable file, a skipped symlink, a rulebook that could not be downloaded, or a scan that read no files), the scan is `degraded` and the verdict is `DO_NOT_SHIP`. The reasons are in `degradedReasons`.
 
 ## JSON output
 
-`shipguard scan --json` prints one JSON object with, among others: `recommendation` (`SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`), `findings`, `riskScore`, `filesScanned`, `coverage`, `degraded`, `degradedReasons` and `exitMeaning`, `schemaVersion` (`"6"`), `telemetry` (`"on"` or `"off"`: whether usage pings are on). Each finding has `id`, `title`, `severity`, `category`, `file`, an optional `line`, `explanation`, `recommendation`, `blocking` and an optional `fix`.
+`shipguard scan --json` prints one JSON object with, among others: `recommendation` (`SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`), `findings`, `riskScore`, `filesScanned`, `coverage`, `degraded`, `degradedReasons` and `exitMeaning`, `schemaVersion` (`"7"`), `telemetry` (`"on"` or `"off"`: whether product usage telemetry is on). Each finding has `id`, `title`, `severity`, `category`, `file`, an optional `line`, `explanation`, `recommendation`, `blocking` and an optional `fix`.
 
 Run `shipguard schema --json` to print the exact contract of the version you have installed.

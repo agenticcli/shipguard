@@ -8,11 +8,14 @@ import type {
   ScanResult,
   StateStatus,
 } from '@agenticcli/shared'
+import { relative } from 'node:path'
+import { saveProblem } from '../../utils/paths.js'
+import { generalRuleCountOrNull } from '../general-rule-count.js'
 import { UNVERSIONED } from './schema.js'
 import { resolveHistoryPath } from './path.js'
 import { resolveRepoIdentity } from './identity.js'
 import { computeScopeFingerprint } from './fingerprint.js'
-import { HistoryStore } from './store.js'
+import { HistoryStore, openHistoryStore } from './store.js'
 import { computeRegressionResult } from './regression.js'
 import type { RuleOutcome, ScanSnapshot } from './regression.js'
 import { deriveBlocking } from '../pro-scanner.js'
@@ -94,6 +97,12 @@ function buildRuleOutcomes(
  * `stateStatus` + `regressionCheckSkipped: true` — it never throws, and the caller never
  * awaits anything that can change the scan's own outcome.
  */
+/** `general:N`; `general` alone when the bundle cannot be counted (the history write must never fail for it). */
+function generalRulesLabel(): string {
+  const n = generalRuleCountOrNull()
+  return n === null ? 'general' : `general:${n}`
+}
+
 export async function recordScanHistory(input: RecordScanHistoryInput): Promise<HistoryOutcome> {
   const { cwd, scanId, cliVersion, policy, changedOnly, categories, proRules, proApplied, rulesVersion, result } = input
 
@@ -111,11 +120,11 @@ export async function recordScanHistory(input: RecordScanHistoryInput): Promise<
   const releaseId = proReleaseId ?? UNVERSIONED
 
   const historyPath = resolveHistoryPath(cwd, policy)
-  const openResult = await HistoryStore.open(historyPath, cliVersion)
+  const openResult = await openHistoryStore(cwd, policy, cliVersion)
 
   if (!openResult.ok) {
     // Loud, not silent (loud errors) — but never fatal to the scan.
-    logger.warn(`ShipGuard history ${openResult.status}: ${openResult.reason}`)
+    if (!saveProblem(openResult.reason)) logger.warn(`ShipGuard history ${openResult.status}: ${openResult.reason}`)
     return {
       stateStatus: openResult.status,
       regressionCheckSkipped: true,
@@ -160,13 +169,17 @@ export async function recordScanHistory(input: RecordScanHistoryInput): Promise<
       mediumCount: result.riskScore.mediumCount,
       lowCount: result.riskScore.lowCount,
       infoCount: result.riskScore.infoCount,
+      incomplete: result.degraded === true,
+      filesScanned: result.coverage ? result.coverage.scanned : result.filesScanned,
+      rulesLabel: proApplied ? `rulebook:${proRules?.length ?? 0}` : generalRulesLabel(),
+      target: relative(process.cwd(), cwd) || '.',
       ruleOutcomes,
       findings: findingRows,
     })
 
     const stateStatus: StateStatus = writeResult.ok ? 'complete' : 'unavailable'
     if (!writeResult.ok) {
-      logger.warn(`ShipGuard history write failed — this scan's findings/verdict are unaffected: ${writeResult.reason}`)
+      if (!saveProblem(writeResult.reason)) logger.warn(`ShipGuard history write failed — this scan's findings/verdict are unaffected: ${writeResult.reason}`)
     }
 
     const retentionDays = policy.history?.retention_days
@@ -191,9 +204,11 @@ export async function recordScanHistory(input: RecordScanHistoryInput): Promise<
     const regressionResult = computeRegressionResult(currentSnapshot, baseline)
     return { stateStatus, ...regressionResult }
   } catch (err) {
-    logger.warn(
-      `ShipGuard history recording failed unexpectedly — this scan's findings/verdict are unaffected: ${err instanceof Error ? err.message : err}`,
-    )
+    if (!saveProblem(err)) {
+      logger.warn(
+        `ShipGuard history recording failed unexpectedly — this scan's findings/verdict are unaffected: ${err instanceof Error ? err.message : err}`,
+      )
+    }
     return {
       stateStatus: 'unavailable',
       regressionCheckSkipped: true,

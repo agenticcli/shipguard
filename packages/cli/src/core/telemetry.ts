@@ -1,9 +1,9 @@
 /**
- * ShipGuard CLI telemetry — pseudonymous, opt-out, fire-and-forget. Run ping schema v4
- * (cli-telemetry contract v4; lifecycle events stay schema v3).
+ * ShipGuard CLI telemetry — pseudonymous, opt-out, fire-and-forget. Run ping schema v5
+ * (v4 + gateKind; lifecycle events stay schema v3).
  *
  * WHAT IS SENT (always and only, exactly these keys):
- *   schema         — 4
+ *   schema         — 5
  *   eventId        — random v4 UUID per ping (lets the relay drop retries)
  *   installId      — random v4 UUID kept in ~/.config/shipguard/telemetry.json; null in CI
  *   cliVersion     — semver string, e.g. "0.7.0"
@@ -16,6 +16,8 @@
  *                    a marker value, path or text
  *   interactive    — boolean, whether stdout is a terminal
  *   output         — "json" | "human" | "sarif", the output kind of this run (--quiet counts as "human")
+ *   gateKind       — "claude" | "git" | "ci" | "none": which gate ran this scan (`shipguard gate --host ...`);
+ *                    "none" for a plain scan. A label only, never a command, path or hook text
  *   traffic        — OPTIONAL, "test" | "internal" from SHIPGUARD_TRAFFIC (dev builds default to "test"); omitted otherwise
  *
  * The install id is pseudonymous, not anonymous: random, never derived from the machine, user or repo,
@@ -26,7 +28,8 @@
  *   file paths, file contents, project/repo/branch/commit names (hashed or not), hostnames, usernames,
  *   env values, rule ids, finding text, exact counts or durations — anything identifying
  *
- * OPT OUT (first match wins): DO_NOT_TRACK=1 or SHIPGUARD_TELEMETRY=0 in the environment
+ * OPT OUT (first match wins): safe mode (`--safe-mode`, SHIPGUARD_SAFE_MODE=1; telemetry-config.ts isSafeMode)
+ * > DO_NOT_TRACK=1 or SHIPGUARD_TELEMETRY=0 in the environment
  * > `shipguard telemetry disable` (user config) > `telemetry.enabled: false` in shipguard.policy.yml
  * or .shipguard.yml (the file `scan --pro` generates)
  * > default on. `shipguard telemetry status` shows the effective state and why.
@@ -84,7 +87,6 @@ export function resolveEndpoint(
 
 import { randomUUID } from 'node:crypto'
 import { logger } from '../utils/logger.js'
-import { goLink } from './links.js'
 import {
   UUID_V4,
   firstRunHandled,
@@ -92,6 +94,7 @@ import {
   getOrCreateInstallId,
   markFirstRunHandled,
   markNoticeShown,
+  isSafeMode,
   noticeShown,
   projectTelemetryEnabled,
   readInstallId,
@@ -142,9 +145,24 @@ export function detectAgent(env: NodeJS.ProcessEnv = process.env): TelemetryAgen
   return OTHER_AGENT_MARKERS.some((k) => env[k] !== undefined && env[k] !== '') ? 'other_agent' : 'none'
 }
 
-/** The v4 wire payload. Exactly these keys, all required. */
+export const TELEMETRY_GATE_KINDS = ['claude', 'git', 'ci', 'none'] as const
+export type TelemetryGateKind = (typeof TELEMETRY_GATE_KINDS)[number]
+
+let currentGateKind: TelemetryGateKind = 'none'
+
+/**
+ * The gate command (`shipguard gate --host claude|git|ci`) calls this once, so the scan it runs
+ * reports which gate it was without every call site passing it. Anything outside the allowlist is
+ * ignored (a gate kind is a label, never free text).
+ */
+export function setGateKind(kind: string): void {
+  if ((TELEMETRY_GATE_KINDS as readonly string[]).includes(kind)) currentGateKind = kind as TelemetryGateKind
+  else logger.debug(`telemetry: ignoring unknown gate kind (not in the allowlist)`)
+}
+
+/** The v5 wire payload. Exactly these keys, all required. */
 export interface TelemetryPayload {
-  schema: 4
+  schema: 5
   eventId: string
   installId: string | null
   cliVersion: string
@@ -155,6 +173,7 @@ export interface TelemetryPayload {
   agent: TelemetryAgent
   interactive: boolean
   output: TelemetryOutput
+  gateKind: TelemetryGateKind
   /** Optional traffic label (test | internal). Omitted for ordinary users. */
   traffic?: TrafficClass
 }
@@ -165,6 +184,8 @@ export interface TelemetryInput {
   verdict: TelemetryVerdict
   durationMs: number
   output: TelemetryOutput
+  /** Which gate ran this scan; default: the one set with setGateKind(), else "none". */
+  gateKind?: TelemetryGateKind
 }
 
 const ALLOWED_KEYS: ReadonlyArray<keyof TelemetryPayload> = [
@@ -179,6 +200,7 @@ const ALLOWED_KEYS: ReadonlyArray<keyof TelemetryPayload> = [
   'agent',
   'interactive',
   'output',
+  'gateKind',
 ]
 
 const VERSION_RE = /^(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})(-[0-9A-Za-z.-]{1,24})?$/
@@ -192,7 +214,7 @@ export function durationBucket(ms: number): DurationBucket {
 }
 
 /** Env vars whose mere presence means "running in CI" (values are never read or sent). */
-const CI_PROVIDER_VARS = [
+export const CI_PROVIDER_VARS = [
   'GITHUB_ACTIONS',
   'GITLAB_CI',
   'CIRCLECI',
@@ -242,12 +264,12 @@ function envOptOut(env: NodeJS.ProcessEnv): 'env:SHIPGUARD_TELEMETRY' | 'env:DO_
 }
 
 /**
- * Build the v4 payload. Guaranteed to contain ONLY the allowed keys: the input is copied field by
+ * Build the v5 payload. Guaranteed to contain ONLY the allowed keys: the input is copied field by
  * field, so extra properties on it can never leak in.
  */
 export function buildPayload(input: TelemetryPayload): TelemetryPayload {
-  const { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci, agent, interactive, output, traffic } = input
-  const out: TelemetryPayload = { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci, agent, interactive, output }
+  const { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci, agent, interactive, output, gateKind, traffic } = input
+  const out: TelemetryPayload = { schema, eventId, installId, cliVersion, provenance, verdict, durationBucket, ci, agent, interactive, output, gateKind }
   if (traffic === 'test' || traffic === 'internal') out.traffic = traffic
   return out
 }
@@ -270,7 +292,7 @@ export function validatePayload(payload: unknown): payload is TelemetryPayload {
   if (!isTrafficOk(obj, keys.length, ALLOWED_KEYS.length)) return false
   for (const k of ALLOWED_KEYS) if (!(k in obj)) return false
 
-  if (obj.schema !== 4) return false
+  if (obj.schema !== 5) return false
   if (typeof obj.eventId !== 'string' || !UUID_V4.test(obj.eventId)) return false
   if (typeof obj.ci !== 'boolean') return false
   if (obj.ci) {
@@ -285,10 +307,12 @@ export function validatePayload(payload: unknown): payload is TelemetryPayload {
   if (!(TELEMETRY_AGENTS as readonly unknown[]).includes(obj.agent)) return false
   if (typeof obj.interactive !== 'boolean') return false
   if (!(TELEMETRY_OUTPUTS as readonly unknown[]).includes(obj.output)) return false
+  if (!(TELEMETRY_GATE_KINDS as readonly unknown[]).includes(obj.gateKind)) return false
   return true
 }
 
 export type TelemetryDecisionSource =
+  | 'safe-mode'
   | 'env:SHIPGUARD_TELEMETRY'
   | 'env:DO_NOT_TRACK'
   | 'user-config'
@@ -302,7 +326,7 @@ export interface TelemetryDecision {
 
 /**
  * Whether pings are enabled, and which rule decided. Precedence, first match wins:
- *   DO_NOT_TRACK=1|true / SHIPGUARD_TELEMETRY=0|false  >  user config (`telemetry disable`)
+ *   safe mode  >  DO_NOT_TRACK=1|true / SHIPGUARD_TELEMETRY=0|false  >  user config (`telemetry disable`)
  *   >  project policy (`telemetry.enabled: false`)  >  default on.
  * A positive setting (SHIPGUARD_TELEMETRY=1, `telemetry.enabled: true`) never overrides a lower-level opt-out.
  */
@@ -310,6 +334,7 @@ export function decideTelemetry(
   input: { env?: NodeJS.ProcessEnv; configDir?: string; policy?: unknown; projectDir?: string } = {},
 ): TelemetryDecision {
   const env = input.env ?? process.env
+  if (isSafeMode(env)) return { enabled: false, source: 'safe-mode' }
   const envOff = envOptOut(env)
   if (envOff) return { enabled: false, source: envOff }
   const dir = input.configDir ?? getConfigDir()
@@ -322,10 +347,14 @@ export function decideTelemetry(
   return { enabled: true, source: 'default' }
 }
 
-/** The one-line stderr notice printed before the first ping on an install. */
+/**
+ * The one-line stderr notice printed before the first ping on an install (spec 06 "Usage-ping notice";
+ * this is the ONE shared string). "or gate" added to the spec's wording because the v5 ping carries
+ * which gate ran the scan.
+ */
 export const NOTICE_TEXT =
-  'shipguard: usage pings: on (turn off: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, or `shipguard telemetry disable`). ' +
-  'A pseudonymous ping after each scan, once on first run and after login. Every ping carries the version, build type, a CI flag and a random install id outside CI; a scan ping also carries the verdict, a duration bucket, which coding agent runs it (or none), whether stdout is a terminal and the output kind. Never code, paths or your account. ' + goLink('telemetry')
+  'usage pings on: version, verdict, timing, run context (CI, terminal, which agent or gate ran it), a random id; never code, paths or your account. ' +
+  'Details: shipguard telemetry status. Off: shipguard telemetry disable'
 
 /**
  * The `telemetry` field of every scan JSON result: "off" when an opt-out is set (env, user config,
@@ -385,7 +414,7 @@ export function sendTelemetry(input: TelemetryInput, opts: SendOptions = {}): Pr
     const endpoint = resolveEndpoint(published, env)
     const ci = detectCi(env)
     const base = {
-      schema: 4 as const,
+      schema: 5 as const,
       eventId: randomUUID(),
       cliVersion: input.cliVersion,
       provenance: getProvenance(published),
@@ -395,6 +424,7 @@ export function sendTelemetry(input: TelemetryInput, opts: SendOptions = {}): Pr
       agent: detectAgent(env),
       interactive: opts.interactive ?? Boolean(process.stdout.isTTY),
       output: input.output,
+      gateKind: input.gateKind ?? currentGateKind,
       traffic: resolveTraffic(env, published),
     }
 

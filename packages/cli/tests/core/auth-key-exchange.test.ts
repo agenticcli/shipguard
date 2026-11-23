@@ -113,7 +113,7 @@ describe('API-key exchange — CLI exchanges SHIPGUARD_API_KEY for an access tok
     ) as unknown as typeof fetch
 
     const { getAuthToken } = await import('../../src/core/auth.js')
-    await expect(getAuthToken(API_URL)).rejects.toThrow(/budget/i)
+    await expect(getAuthToken(API_URL)).rejects.toThrow(/usage limit/i)
   })
 
   it('a 500 server_error on exchange throws loudly (no silent fallback to the raw key)', async () => {

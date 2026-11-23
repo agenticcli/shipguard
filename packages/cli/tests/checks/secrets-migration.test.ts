@@ -72,12 +72,6 @@ const FIXTURE_PAIRS = [
     expectedTitle: 'Stripe Live Secret Key',
   },
   {
-    name: 'Stripe test sk_test_',
-    safe: `const stripe = new Stripe('sk_test_abcdefghijklmnopqrstuvwx')`,
-    benign: `const stripe = new Stripe(process.env.STRIPE_TEST_KEY)`,
-    expectedTitle: 'Stripe Test Secret Key',
-  },
-  {
     name: 'AWS Access Key ID AKIA',
     safe: `const awsKey = 'AKIAIOSFODNN7EXAMPLE'`,
     benign: `// Note: Never hardcode AKIA keys. Use IAM roles.`,
@@ -169,7 +163,6 @@ const NATIVE_ORACLE_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   { name: 'OpenAI Legacy API Key',   regex: /(?:openai[_\-]?(?:api[_\-]?)?key|OPENAI[_\-]?(?:API[_\-]?)?KEY)\s*[=:]\s*['"]?(sk-[a-zA-Z0-9]{20,})['"]?/im },
   { name: 'Anthropic API Key',       regex: /['"]?(sk-ant-(?:api\d+-)?[a-zA-Z0-9_\-]{20,})['"]?/im },
   { name: 'Stripe Live Secret Key',  regex: /['"]?(sk_live_[a-zA-Z0-9]{24,})['"]?/im },
-  { name: 'Stripe Test Secret Key',  regex: /['"]?(sk_test_[a-zA-Z0-9]{24,})['"]?/im },
   { name: 'AWS Access Key ID',       regex: /['"]?(AKIA[0-9A-Z]{16})['"]?/m },
   { name: 'AWS Secret Access Key',   regex: /(?:aws[_\-]?secret[_\-]?(?:access[_\-]?)?key|AWS_SECRET_ACCESS_KEY)\s*[=:]\s*['"]?([a-zA-Z0-9\/+]{40})['"]?/im },
   { name: 'Google API Key',          regex: /['"]?(AIza[0-9A-Za-z\-_]{35})['"]?/m },
@@ -201,10 +194,6 @@ const DIFFERENTIAL_INPUTS: Record<string, string[]> = {
   ],
   'Stripe Live Secret Key': [
     `const stripe = new Stripe('sk_live_abcdefghijklmnopqrstuvwx')`,
-    `const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)`,
-  ],
-  'Stripe Test Secret Key': [
-    `const stripe = new Stripe('sk_test_abcdefghijklmnopqrstuvwx')`,
     `const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)`,
   ],
   'AWS Access Key ID': [
@@ -272,9 +261,9 @@ describe('PART 2 — Native↔re2js differential: flag decisions must match', ()
     })
   }
 
-  it('differential summary: 13/13 patterns tested against native oracle', () => {
+  it('differential summary: 12/12 patterns tested against native oracle', () => {
     // This test passes by construction — the loop above covers all 13 patterns.
-    expect(NATIVE_ORACLE_PATTERNS.length).toBe(13)
+    expect(NATIVE_ORACLE_PATTERNS.length).toBe(12)
   })
 })
 
@@ -480,8 +469,8 @@ describe('PART 4 — Targeted mutation tests', () => {
       expect(f).toBeDefined()
       // Evidence must NOT contain the full key — must be redacted
       expect(f!.evidence).not.toContain('abc1234XYZabcXYZabc12345')
-      // Evidence contains the first 8 chars of the captured group
-      expect(f!.evidence).toContain('sk-proj-')
+      // Evidence is the type and the length of the captured group only: no character of the key
+      expect(f!.evidence).toBe('openai_api_key, 32 characters, value hidden')
     })
 
     it('Stripe live key evidence is redacted correctly', () => {
@@ -493,7 +482,7 @@ describe('PART 4 — Targeted mutation tests', () => {
     })
 
     it('AWS secret key captures the 40-char value (group 1)', () => {
-      const key40 = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+      const key40 = `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`
       const file = makeFile('lib/aws.ts', `const AWS_SECRET_ACCESS_KEY = '${key40}'`)
       const findings = secretsCheck.run([file], BLOCK_ALL_POLICY)
       const f = findings.find((f) => f.title === 'AWS Secret Access Key')

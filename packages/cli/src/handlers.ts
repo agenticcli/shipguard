@@ -39,7 +39,10 @@ export function handleUnhandledRejection(reason: unknown, _promise: Promise<unkn
 }
 
 /** Handle SIGINT / SIGTERM. Exported for unit testing. */
-export function handleSignal(): void {
+export function handleSignal(signal: NodeJS.Signals = 'SIGINT'): void {
+  // A command that owns Ctrl-C (login: LOGIN_CANCELLED, exit 130) adds its own listener. Node runs every listener, so
+  // exiting here would win the race and hide that command's error template and JSON envelope (E2E C-02).
+  if (process.listenerCount(signal) > 1) return
   console.error('\nInterrupted.')
   process.exit(130)
 }

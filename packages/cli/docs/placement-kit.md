@@ -23,11 +23,14 @@ does not**, which is why section 2 exists as well — an `AGENTS.md`-only setup 
 callers uncovered.
 
 ```markdown
-## Release gate — ShipGuard
+## Security scan — ShipGuard
 
 Before you merge, push, or tell the user something is ready to ship, run:
 
-    shipguard scan --json --strict
+    npx --no-install @agenticcli/shipguard scan --json --strict
+
+(That is for a project that has ShipGuard as a devDependency, which is not on PATH. With a global
+install, run `shipguard scan --json --strict` instead.)
 
 Exit code 0 does NOT mean "safe". It means "the scan ran". Read the JSON:
 
@@ -67,7 +70,7 @@ If you would rather not import the whole file, paste the section-1 block directl
 installing, or add it by hand:
 
 ```yaml
-name: ShipGuard release gate
+name: ShipGuard security scan
 
 on:
   pull_request:
@@ -79,11 +82,11 @@ jobs:
     name: ShipGuard verdict
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
-      - name: Run the release gate
+      - name: Run ShipGuard
         run: npx --yes @agenticcli/shipguard scan --json --strict
 ```
 

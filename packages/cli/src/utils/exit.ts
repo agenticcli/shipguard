@@ -9,6 +9,8 @@
  * the process wait (standard pipe back-pressure), a truncated JSON document is worse.
  */
 import { logger } from './logger.js'
+import { errorTemplateLines } from '../core/outcome.js'
+import type { ErrorEnvelope } from '../core/outcome.js'
 
 /** Record the exit code. The caller must then return (stop executing); Node exits when output is drained. */
 export function setExitCode(code: number): void {
@@ -70,4 +72,25 @@ export function exitWhenDrained(): void {
   }
   process.stdout.write('', done)
   process.stderr.write('', done)
+}
+
+/**
+ * The ONE error exit for every command (spec 06 template + spec 02 envelope):
+ * the error template on stderr always; with a machine output (`--json`, `--sarif`) the envelope as the one
+ * JSON object on stdout; then the exit code. The caller must
+ * `return` right after it (see setExitCode).
+ */
+export function emitError(
+  env: ErrorEnvelope,
+  opts: { machine: boolean },
+): void {
+  // First line through the logger (`✗ <CODE>: <what happened>`, same glyph and colour as every error), the
+  // detail lines straight to stderr: the whole template stays on stderr, stdout is for the JSON object only.
+  const { head, rest } = errorTemplateLines(env)
+  logger.error(head)
+  for (const line of rest) console.error(line)
+  if (opts.machine) {
+    console.log(JSON.stringify(env))
+  }
+  setExitCode(env.exit.code)
 }

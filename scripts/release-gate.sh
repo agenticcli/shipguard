@@ -113,7 +113,8 @@ if ! node "$CLI_DIR/scripts/check-bundle-imports.mjs" "$DIST"; then
 fi
 echo "PASS [G3] no @agenticcli/* runtime imports in bundle"
 
-# Gate 4: Tarball size sanity (< 500 kB packed)
+# Gate 4: Tarball size sanity (<= 800 kB packed, the 0.13 budget; the maps carry line mappings only, no
+# embedded source text: about 373 kB packed / 1.5 MB unpacked). G9 below checks the full budget list.
 # Loud on every failure: a pack error or unparseable output must FAIL the gate, never default to 0.
 PACK_ERR="$(mktemp)"
 PACK_JSON="$(cd "$CLI_DIR" && npm pack --dry-run --json --ignore-scripts 2>"$PACK_ERR")" || {
@@ -122,29 +123,30 @@ PACK_JSON="$(cd "$CLI_DIR" && npm pack --dry-run --json --ignore-scripts 2>"$PAC
   gate_fail
 }
 rm -f "$PACK_ERR"
-TARBALL_SIZE="$(printf '%s' "$PACK_JSON" | node -e "
+SIZES="$(printf '%s' "$PACK_JSON" | node -e "
   const chunks=[]; process.stdin.on('data',c=>chunks.push(c)); process.stdin.on('end',()=>{
     let d; try { d=JSON.parse(Buffer.concat(chunks).toString()); }
     catch (e) { console.error('unparseable npm pack output: '+e.message); process.exit(1); }
-    const size=d[0]&&d[0].size;
-    if (!Number.isFinite(size) || size<=0) { console.error('npm pack reported no size'); process.exit(1); }
-    process.stdout.write(String(size));
+    const size=d[0]&&d[0].size, unpacked=d[0]&&d[0].unpackedSize;
+    if (!Number.isFinite(size) || size<=0 || !Number.isFinite(unpacked) || unpacked<=0) { console.error('npm pack reported no size'); process.exit(1); }
+    process.stdout.write(size+' '+unpacked);
   });
 ")" || {
   echo "FAIL [G4] could not read the packed tarball size" >&2
   gate_fail
 }
-if [[ "$TARBALL_SIZE" -gt 512000 ]]; then
-  echo "FAIL [G4] packed tarball is ${TARBALL_SIZE} bytes — exceeds the 500 kB sanity ceiling" >&2
+read -r TARBALL_SIZE UNPACKED_SIZE <<<"$SIZES"
+# Plan budgets (the same numbers scripts/check-budgets.mjs enforces in G9; install size <= 7 MB is measured there):
+# tarball <= 800 KiB, unpacked <= 3 MiB. The tarball includes the .map files (shipped on purpose, see G5b).
+if [[ "${TARBALL_SIZE:-0}" -gt 819200 ]]; then
+  echo "FAIL [G4] packed tarball is ${TARBALL_SIZE} bytes — exceeds the 800 KiB budget" >&2
   gate_fail
 fi
-# Fallback: just check dist size
-DIST_SIZE=$(du -k "$CLI_DIR/dist" | tail -1 | cut -f1)
-if [[ "$DIST_SIZE" -gt 1000 ]]; then
-  echo "FAIL [G4] dist/ is ${DIST_SIZE}KB — exceeds 1MB sanity ceiling" >&2
+if [[ "${UNPACKED_SIZE:-0}" -gt 3145728 ]]; then
+  echo "FAIL [G4] unpacked package is ${UNPACKED_SIZE} bytes — exceeds the 3 MiB budget" >&2
   gate_fail
 fi
-echo "PASS [G4] dist size ${DIST_SIZE}KB, packed tarball ${TARBALL_SIZE} bytes within limits"
+echo "PASS [G4] packed tarball ${TARBALL_SIZE} bytes (<= 819200), unpacked ${UNPACKED_SIZE} bytes (<= 3145728)"
 
 # Gate 5: checksum-manifest.json must exist (gen-checksum-manifest.mjs onSuccess)
 if [[ ! -f "$CLI_DIR/dist/checksum-manifest.json" ]]; then
@@ -152,6 +154,16 @@ if [[ ! -f "$CLI_DIR/dist/checksum-manifest.json" ]]; then
   gate_fail
 fi
 echo "PASS [G5] checksum-manifest.json present"
+
+# Gate 5b: every dist/*.js has its .map, and the map's sources point into src/ (never node_modules,
+# never an absolute path). The maps are shipped on purpose (readable source); a missing or wrong one
+# would quietly break the rebuild recipe in REBUILD.md.
+if ! node "$CLI_DIR/scripts/check-sourcemaps.mjs" "$CLI_DIR/dist" >&2; then
+  echo "FAIL [G5b] source maps missing or pointing outside src/ — see scripts/check-sourcemaps.mjs" >&2
+  gate_fail
+else
+  echo "PASS [G5b] source maps present and resolve to src/"
+fi
 
 # Gate 6: re2js must appear in dependencies (not devDependencies) — it's a runtime dep
 RE2JS_IN_DEPS=$(node -e "const p=require('$PKG'); process.stdout.write(p.dependencies?.re2js?'yes':'no')" 2>/dev/null || echo "no")
@@ -202,6 +214,58 @@ if ! (cd "$CLI_DIR" && VITEST_SLOW=1 npx --no-install vitest run tests/slow >&2)
 fi
 echo "PASS [G8] shipped-tree self-scan: no blocking findings, --strict exit 0"
 
+# Gate 9: size, speed and network budgets (plan W0). Tarball <= 800 KB, unpacked <= 3 MB, install <= 7 MB,
+# direct runtime deps <= 7 and none new, --version <= 250 ms, 812-file scan <= 8 s Free (Pro <= 10 s is
+# measured by the dev run and passed in as RELEASE_GATE_PRO_SCAN_SECONDS), RSS <= 300 MB, and 0 public
+# fetches in CI, quiet, safe mode and DO_NOT_TRACK. Logic + tests: scripts/check-budgets.mjs, tests/release/budgets.test.ts.
+# A real release (not a dry run) REQUIRES the Pro scan number: a missing RELEASE_GATE_PRO_SCAN_SECONDS fails.
+BUDGET_ARGS=()
+[[ "$DRY_RUN" == "1" ]] || BUDGET_ARGS+=(--require-pro)
+if ! node "$CLI_DIR/scripts/check-budgets.mjs" "${BUDGET_ARGS[@]}"; then
+  echo "FAIL [G9] a size, speed or network budget was breached (or could not be measured)" >&2
+  gate_fail
+else
+  echo "PASS [G9] size, speed and network budgets met"
+fi
+
+# Gate 10: npm audit of the production dependency tree (npm audit --omit=dev on the packed CLI as a user installs it). High or critical
+# advisories fail unless listed with a reason and expiry in docs/security/audit-allow.txt. An audit that
+# cannot run (no network, registry error) FAILS a real release; a dry run only skips it.
+AUDIT_RC=0
+node "$CLI_DIR/scripts/check-audit.mjs" || AUDIT_RC=$?
+if [[ "$AUDIT_RC" -eq 3 && "$DRY_RUN" == "1" ]]; then
+  echo "SKIP [G10] dry run: audit unavailable (needs the npm registry); a real release requires it"
+elif [[ "$AUDIT_RC" -ne 0 ]]; then
+  echo "FAIL [G10] npm audit found an unlisted high or critical advisory, or could not run (exit $AUDIT_RC)" >&2
+  gate_fail
+else
+  echo "PASS [G10] npm audit"
+fi
+
+# Gate 11: picomatch is pinned to exact versions in overrides, the lockfile and the PACKED package.json
+# (the Socket score item; see docs/security/shipguard.openvex.json). Reads package.json from the real tarball.
+PACKED_DIR="$(mktemp -d)"
+if (cd "$CLI_DIR" && npm pack --ignore-scripts --pack-destination "$PACKED_DIR" >/dev/null 2>&1) \
+   && tar -xzf "$PACKED_DIR"/*.tgz -C "$PACKED_DIR" package/package.json \
+   && node "$CLI_DIR/scripts/check-picomatch-pin.mjs" --packed "$PACKED_DIR/package/package.json"; then
+  echo "PASS [G11] picomatch pin"
+else
+  echo "FAIL [G11] picomatch is not pinned (see the lines above)" >&2
+  rm -rf "$PACKED_DIR"
+  gate_fail
+fi
+rm -rf "$PACKED_DIR"
+
+# Gate 12: G-PLAN on the extracted `npm pack` output: no plan facts (prices, scan or credit counts, packs,
+# trial length) and no banned words ('release gate', 'cloud', 'our servers') anywhere in what ships.
+# Fails closed: a missing path or a failed pack is an error, never "clean". Logic + self-test: scripts/g-plan.sh.
+if bash "$(git rev-parse --show-toplevel)/scripts/g-plan.sh" --self-test >/dev/null && bash "$(git rev-parse --show-toplevel)/scripts/g-plan.sh" --pack; then
+  echo "PASS [G12] G-PLAN: packed CLI holds no plan facts and no banned words"
+else
+  echo "FAIL [G12] G-PLAN found plan facts or banned words in the packed CLI (or could not run)" >&2
+  gate_fail
+fi
+
 if [[ "$DRY_RUN" == "1" ]]; then
   echo ""
   if [[ "$GATE_FAILURES" -gt 0 ]]; then
@@ -217,7 +281,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 
 echo ""
-echo "=== All release gates PASSED (10/10) — proceed with the package release ==="
+echo "=== All release gates PASSED — proceed with the package release ==="
 
 # Write the sentinel npm-publish-guard.sh checks for: "<sha> <version> <epoch>".
 # Only written here, after every gate above has exited 0 — never on failure

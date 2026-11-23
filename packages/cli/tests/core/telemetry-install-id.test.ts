@@ -91,7 +91,7 @@ describe('sendTelemetry and the install id', () => {
     const f = stub()
     await sendTelemetry(input, { published: true, env: base, configDir: dir })
     const id = readInstallId(dir)
-    expect(bodyOf(f)).toMatchObject({ schema: 4, installId: id, ci: false, provenance: 'published', durationBucket: 'lt1s' })
+    expect(bodyOf(f)).toMatchObject({ schema: 5, installId: id, ci: false, provenance: 'published', durationBucket: 'lt1s' })
 
     const ciDir = mkdtempSync(join(tmpdir(), 'sg-tel-ci-'))
     try {

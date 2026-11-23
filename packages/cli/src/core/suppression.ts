@@ -18,6 +18,7 @@
  * accepted-risk decision.
  */
 import type { Finding, FileInfo } from '@agenticcli/shared'
+import type { IgnoreEntry } from './ignore.js'
 
 /**
  * Matches `// shipguard-ignore: <ruleId> -- <reason>`.
@@ -87,5 +88,26 @@ export function applySuppressions(findings: Finding[], files: FileInfo[]): Findi
     }
   }
 
+  return findings
+}
+
+/**
+ * Apply the reasoned `finding` entries of `shipguard.policy.yml` (written by `shipguard ignore`).
+ * Same semantics as an inline suppression: the finding is kept in the report, marked
+ * `suppressed: true` and `blocking: false`, so it cannot fail a gate and does not count toward the
+ * verdict. An entry names a rule id, and optionally one file; with no file it covers that rule
+ * everywhere. Entries that carry a `path` are not handled here: they remove the file from the scan.
+ */
+export function applyPolicyIgnores(findings: Finding[], entries: readonly IgnoreEntry[]): Finding[] {
+  const byFinding = entries.filter((e) => e.finding !== undefined)
+  if (byFinding.length === 0) return findings
+  for (const f of findings) {
+    const hit = byFinding.find((e) => e.finding === f.id && (e.file === undefined || e.file === f.file))
+    if (hit) {
+      f.suppressed = true
+      f.suppressionReason = hit.reason
+      f.blocking = false
+    }
+  }
   return findings
 }

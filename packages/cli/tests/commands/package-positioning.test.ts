@@ -1,8 +1,8 @@
 /**
- * npm page positioning (ICP.md, agenticcli repo, section 2): the npm description and the README
- * opening line (the npm package page shows packages/cli/README.md) both lead with the one line
- * "The security scanner your coding agent runs before every commit", and the package stays
- * findable under the category word "security scanner".
+ * npm page positioning: the README opening line (the npm package page shows packages/cli/README.md) leads
+ * with the one line "The security scanner your coding agent runs before every commit"; the npm description
+ * leads with "Open source CLI" (licence switch, owner decision 2026-11-23); the package stays findable under
+ * the category word "security scanner".
  */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -15,13 +15,15 @@ const readme = readFileSync(resolve(pkgRoot, 'README.md'), 'utf8')
 const ONE_LINE = 'The security scanner your coding agent runs before every commit.'
 
 describe('npm package positioning', () => {
-  it('description starts with the ICP one line and stays short enough for npm search', () => {
-    expect(pkg.description.startsWith(ONE_LINE)).toBe(true)
+  // Owner decision 2026-11-23 (licence switch, Apache-2.0): the npm description leads with "Open source CLI"
+  // (plan option 1), not the ICP one line. The README still opens with the ICP one line.
+  it('description says open source CLI, stays short enough for npm search', () => {
+    expect(pkg.description.startsWith('Open source CLI that scans AI-written code')).toBe(true)
     expect(pkg.description.length).toBeLessThanOrEqual(250)
   })
 
-  it('description names what it checks and that it runs locally', () => {
-    for (const w of ['secrets', 'routes', 'migrations', 'webhooks', 'deploy', 'locally']) {
+  it('description names what it checks and the agents it is for', () => {
+    for (const w of ['secrets', 'auth', 'webhook', 'deploy', 'claude code', 'codex', 'cursor']) {
       expect(pkg.description.toLowerCase(), w).toContain(w)
     }
   })
@@ -33,6 +35,7 @@ describe('npm package positioning', () => {
 
   it('keywords include the category word', () => {
     expect(pkg.keywords).toContain('security-scanner')
+    expect(pkg.keywords).toContain('open-source')
   })
 
   it('description makes no claim the product does not back (no "100%", no "SAST", no auto-fix)', () => {

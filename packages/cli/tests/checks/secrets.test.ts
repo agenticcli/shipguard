@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { secretsCheck } from '../../src/checks/secrets.js'
+import { secretsCheck, checkSecretsWithStats } from '../../src/checks/secrets.js'
 import type { FileInfo, Policy } from '@agenticcli/shared'
 
 // ---------------------------------------------------------------------------
@@ -328,7 +328,8 @@ describe('secretsCheck — Supabase service-role key (free-tier secret gaps)', (
     expect(f!.line).toBe(3)
     expect(f!.blocking).toBe(true)
     // Evidence must be redacted, never the full key
-    expect(f!.evidence).not.toContain('service_role')
+    expect(f!.evidence).toMatch(/^supabase_service_role_key, \d+ characters, value hidden$/)
+    expect(f!.evidence).not.toContain(SERVICE_ROLE_JWT.slice(0, 12))
   })
 
   it('precision guard: the anon-role JWT (public by design) is NEVER flagged as service-role', () => {
@@ -447,5 +448,26 @@ describe('secretsCheck — .env content scanning gap (free-tier secret gaps)', (
     const findings = secretsCheck.run([file], DEFAULT_POLICY)
     expect(findings.some((f) => f.title === '.env file tracked in git')).toBe(true)
     expect(findings.some((f) => f.title === 'Secret exposed via NEXT_PUBLIC_ prefix')).toBe(true)
+  })
+})
+
+describe('secretsCheck — Firebase web config apiKey is public (B-07)', () => {
+  const KEY = 'AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q'
+  it('does not block an apiKey inside a Firebase web config', () => {
+    const f = makeFile('src/firebase.ts', `const firebaseConfig = {\n  apiKey: "${KEY}",\n  authDomain: "x.firebaseapp.com",\n  projectId: "x",\n}\ninitializeApp(firebaseConfig)`)
+    const r = checkSecretsWithStats([f], DEFAULT_POLICY)
+    // B-07/B-36: no finding at all (so SAFE TO SHIP); counted as a public identifier for the screen note.
+    expect(r.findings).toEqual([])
+    expect(r.publicIdentifiers).toBe(1)
+  })
+  it('still blocks an AIza key used server-side', () => {
+    const f = makeFile('lib/maps.ts', `const url = "https://maps.googleapis.com/x?key=${KEY}"`)
+    const out = secretsCheck.run([f], DEFAULT_POLICY)
+    expect(out.find((x) => x.title === 'Google API Key')?.blocking).toBe(true)
+  })
+  it('still blocks apiKey next to firebase-admin', () => {
+    const f = makeFile('server/a.ts', `import admin from 'firebase-admin'\nconst c = { apiKey: "${KEY}", projectId: "x" }`)
+    const out = secretsCheck.run([f], DEFAULT_POLICY)
+    expect(out.find((x) => x.title === 'Google API Key')?.blocking).toBe(true)
   })
 })

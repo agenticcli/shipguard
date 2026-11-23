@@ -17,10 +17,10 @@ import {
   DEFAULT_MAX_FILES,
   type ReadFilesResult,
 } from '../utils/fs.js'
-import { buildIgnoreRules, classifyIgnored, isShipguardArtifactPath, selfArtifactIgnorePatterns } from './ignore.js'
+import { buildIgnoreRules, classifyIgnored, isShipguardArtifactPath, readIgnoreEntries, selfArtifactIgnorePatterns } from './ignore.js'
 import { logger } from '../utils/logger.js'
 import { assertCwdAlive } from '../utils/cwd-guard.js'
-import { secretsCheck } from '../checks/secrets.js'
+import { secretsCheck, checkSecretsWithStats } from '../checks/secrets.js'
 import { authCheck } from '../checks/auth.js'
 import { databaseCheck } from '../checks/database.js'
 import { payments } from '../checks/payments.js'
@@ -28,11 +28,11 @@ import { deploymentCheck } from '../checks/deployment.js'
 import type { FileInfo, Finding, ScanOptions, ScanResult, QualityGateRule, DegradeReason, ScanCoverage } from '@agenticcli/shared'
 import { runProRulesWithDispatch, runProRules } from './pro-scanner.js'
 import { loadChecksumManifest } from './coderef-dispatch.js'
-import { applySuppressions, isLineSuppressed } from './suppression.js'
+import { applyPolicyIgnores, applySuppressions, isLineSuppressed } from './suppression.js'
 import { loadBundledRules } from './bundled-rules.js'
 import { dedupeLegacyAgainstCorpus } from './legacy-corpus-map.js'
 import { collapseSameIssueFindings } from './collapse-findings.js'
-import { fillMissingLines, lowerFakeKeyConfidence } from './tidy-findings.js'
+import { fillMissingLines, dropTestValueFindings, dropTestPathInjectionNoise, lowerFakeKeyConfidence } from './tidy-findings.js'
 import { redactFindingsEvidence } from './redact.js'
 
 const CHECK_MODULES = [secretsCheck, authCheck, databaseCheck, payments, deploymentCheck]
@@ -138,6 +138,8 @@ function buildCoverage(
       special: sortedCapped(state.skippedSpecialFiles),
       nulSubstituted: sortedCapped(state.nulSubstitutedFiles),
       selfArtifacts: sortedCapped(state.selfArtifactFiles),
+      invalidUtf8: sortedCapped(state.invalidUtf8Files.map((f) => f.relativePath)),
+      unreadable: sortedCapped(state.unreadableFiles),
     },
   }
 }
@@ -306,10 +308,21 @@ export async function scan(
   // The secrets check masks its own evidence at the source (checks/secrets.ts `redact()`);
   // remember which findings are its so the central redaction below leaves them byte-identical.
   const sourceRedacted = new Set<Finding>()
+  // Test and placeholder values the checks skipped (counted for `coverage.ignoredTestValues`, never findings).
+  let ignoredTestValues = 0
+  let publicIdentifiers = 0
   const legacyFindings = applySuppressions(
     CHECK_MODULES.flatMap((mod) => {
-      const found = mod.run(files, policy)
-      if (mod === secretsCheck) for (const f of found) sourceRedacted.add(f)
+      let found: Finding[]
+      if (mod === secretsCheck) {
+        const withStats = checkSecretsWithStats(files, policy)
+        ignoredTestValues += withStats.ignoredTestValues
+        publicIdentifiers += withStats.publicIdentifiers
+        found = withStats.findings
+        for (const f of found) sourceRedacted.add(f)
+      } else {
+        found = mod.run(files, policy)
+      }
       return found
     }),
     files,
@@ -401,9 +414,14 @@ export async function scan(
   }
   allFindings = collapsed.findings
 
+  // Reasoned `finding` exceptions from `shipguard ignore` (policy file): suppressed like an inline comment.
+  allFindings = applyPolicyIgnores(allFindings, readIgnoreEntries(policy))
+
   // Tidy-up on the final list: a line for every file finding, LOW confidence for stand-in keys.
   // Before redaction: judging a key needs the matched text.
   fillMissingLines(allFindings, files)
+  ignoredTestValues += dropTestValueFindings(allFindings)
+  dropTestPathInjectionNoise(allFindings)
   lowerFakeKeyConfidence(allFindings)
 
   // Redact secrets in every finding's evidence — the ONE central point (core/redact.ts).
@@ -528,7 +546,7 @@ export async function scan(
 
   const isDegraded = degradedReasons.length > 0 || undefined
 
-  const coverage = buildCoverage(state, mode, changedInfo)
+  const coverage = { ...buildCoverage(state, mode, changedInfo), ignoredTestValues, ...(publicIdentifiers > 0 ? { publicIdentifiers } : {}) }
 
   const result: ScanResultWithMeta = {
     findings: allFindings,

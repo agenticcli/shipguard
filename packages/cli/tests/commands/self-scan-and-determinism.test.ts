@@ -147,9 +147,10 @@ describe('#6 — a read-only project degrades loudly and never crashes', () => {
     const { code, stdout, stderr } = (await runCli(['scan', dir, '--report', '--json']))
     expect(code).toBe(0)
     expect(() => JSON.parse(stdout)).not.toThrow()
-    // Loud: every failed write is reported on stderr, never swallowed.
-    expect(stderr).toContain('Report generation failed')
+    // Loud: the failed writes are reported on stderr, never swallowed: ONE plain warning (no raw EACCES, E2E B-35).
+    expect(stderr).toContain("Could not save ShipGuard's files in this project")
     expect(stderr).toContain('history')
+    expect(stderr).not.toMatch(/EACCES|Report generation failed/)
     // And the machine channel says the audit store did not persist.
     expect(JSON.parse(stdout).stateStatus).not.toBe('complete')
   })
