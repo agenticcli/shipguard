@@ -7,7 +7,7 @@
 // DESIGN DECISIONS
 // ================
 // 1. re2js@2.8.7 exact (verified 2026-06-25 as npm latest; 1.4.0 deprecated).
-//    Pure-JS, MIT, zero native/WASM deps → tsup-bundleable, Apache-2.0-compatible.
+//    Pure-JS, MIT, zero native/WASM deps → tsup-bundleable, ELv2-compatible.
 //
 // 2. LOOKBEHINDS OFF for v1.
 //    RE2JS.LOOKBEHINDS is NOT set. The re2js lookbehind feature (captureless only,

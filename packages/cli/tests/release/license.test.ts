@@ -62,8 +62,10 @@ describe('Apache-2.0 licence switch', () => {
       'README.md', 'CONTRIBUTING.md', 'CITATION.cff', 'docs/faq.md', 'docs/privacy.md',
       'packages/cli/README.md', 'packages/cli/docs/llms.txt', 'packages/cli/package.json',
       'packages/shared/package.json', 'packages/matcher-contract/package.json',
-      'packages/matcher-contract/src/adapters/re2js-v1.ts', 'packages/cli/scripts/gen-cli-facts.mjs',
+      'packages/cli/scripts/gen-cli-facts.mjs',
     ]
+    // Not listed on purpose: packages/matcher-contract/src/adapters/re2js-v1.ts. That file is frozen (its SHA-256 and the
+    // runtimeId derived from it are pinned by re2js-v1-freeze.test.ts), so its "ELv2-compatible" code comment stays.
     for (const f of files) expect(read(resolve(ROOT, f)), f).not.toMatch(/elastic|elv2|source[- ]available/i)
   })
 })
