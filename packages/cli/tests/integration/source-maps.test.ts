@@ -91,7 +91,7 @@ describe('packed tarball with source maps', () => {
     expect(js.length).toBeGreaterThan(3)
     for (const p of js) expect(paths, `${p}.map missing from the package`).toContain(`${p}.map`)
     for (const p of paths) {
-      expect(p, `unexpected packed file ${p}`).toMatch(/^(dist\/|rules\/|templates\/|docs\/|README\.md$|LICENSE$|CHANGELOG\.md$|package\.json$)/)
+      expect(p, `unexpected packed file ${p}`).toMatch(/^(dist\/|rules\/|templates\/|docs\/|README\.md$|LICENSE$|NOTICE$|CHANGELOG\.md$|package\.json$)/)
       expect(p).not.toMatch(/(^|\/)\.env|\.pem$|\.key$|pro-rules|pro-bundle/i)
     }
   })

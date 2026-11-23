@@ -11,16 +11,16 @@ The npm package ships source maps (`dist/*.js.map`). From 0.13.0 the maps point 
 
 ```bash
 # needs node 24, pnpm 9.15.0, git, network
-git clone --depth 1 --branch v0.12.1 https://github.com/agenticcli/shipguard.git
+git clone --depth 1 --branch v0.13.0 https://github.com/agenticcli/shipguard.git
 cd shipguard
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm run build                                    # builds the shared packages the CLI bundles
 pnpm --filter @agenticcli/shipguard run build:publish
-npm pack @agenticcli/shipguard@0.12.1 && mkdir pub && tar -xzf agenticcli-shipguard-0.12.1.tgz -C pub
+npm pack @agenticcli/shipguard@0.13.0 && mkdir pub && tar -xzf agenticcli-shipguard-0.13.0.tgz -C pub
 node packages/cli/scripts/compare-dist.mjs pub/package/dist packages/cli/dist
 ```
 
-Or in one step: `bash scripts/rebuild-verify.sh 0.12.1` (does the same in a temp folder).
+Or in one step: `bash scripts/rebuild-verify.sh 0.13.0` (does the same in a temp folder).
 
 - `MATCH` = the SHA-256 of every `dist/*.js` and `dist/*.js.map` in the npm package equals your rebuild.
 - It must be `build:publish`, not `build`. The publish build sets one flag (`SHIPGUARD_PUBLISHED_BUILD=1`) that changes the bytes.

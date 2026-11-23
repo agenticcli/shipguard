@@ -1,7 +1,7 @@
 {
   "name": "@agenticcli/shipguard",
   "version": "0.13.0",
-  "description": "The security scanner your coding agent runs before every commit. Review code with a rulebook to build secure code. Checks for secrets, open routes, webhooks, migrations and deploy settings, on your machine.",
+  "description": "Open source CLI that scans AI-written code for secrets, auth, webhook and deploy flaws. For Claude Code, Codex, Cursor.",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
@@ -12,7 +12,9 @@
     "rules",
     "templates",
     "docs",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsup",
@@ -52,30 +54,31 @@
   "keywords": [
     "shipguard",
     "agenticcli",
+    "open-source",
     "security-scanner",
-    "ai-code",
-    "cli",
-    "ai-agents",
+    "secret-scanner",
+    "secret-detection",
     "claude-code",
-    "cursor",
+    "claude-code-security",
     "codex",
-    "agentic",
-    "llm-generated-code",
+    "codex-cli",
+    "codex-security",
+    "cursor",
+    "ai-agents",
+    "ai-coding-agent",
+    "ai-agent-security",
     "ai-generated-code",
+    "ai-code",
+    "security-review",
     "pre-commit",
+    "pre-commit-hook",
     "github-actions",
     "ci",
-    "pre-deploy",
-    "stripe-webhook",
-    "env-files",
     "nextjs",
-    "secret-scanner",
-    "claude-code-security",
-    "pre-commit-hook",
-    "leaked-api-key",
-    "nextjs-security"
+    "stripe-webhook",
+    "leaked-api-key"
   ],
-  "license": "Elastic-2.0",
+  "license": "Apache-2.0",
   "author": {
     "name": "AgenticCLI",
     "url": "https://agenticcli.dev"
