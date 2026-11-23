@@ -214,7 +214,7 @@ export function durationBucket(ms: number): DurationBucket {
 }
 
 /** Env vars whose mere presence means "running in CI" (values are never read or sent). */
-const CI_PROVIDER_VARS = [
+export const CI_PROVIDER_VARS = [
   'GITHUB_ACTIONS',
   'GITLAB_CI',
   'CIRCLECI',
