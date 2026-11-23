@@ -220,12 +220,12 @@ const nodeEngine = extractNodeEngine(pkg)
 // License — DERIVED from package.json's `license` field (the legal source of
 // truth), never hardcoded. licenseDisplay is the short UI label the website
 // renders in footers (it consumes cli-facts.json as its facts source of truth;
-// a missing license field there once let a hardcoded "MIT" label show for an
-// ELv2 product).
+// a missing license field there once let a hardcoded "MIT" label show for a
+// differently licensed product).
 // Fail LOUD if the field is missing or unmapped: silently emitting no license
 // (the pre-fix behavior) is exactly what allowed the drift.
 const LICENSE_DISPLAY = {
-  'Elastic-2.0': 'ELv2',
+  'Apache-2.0': 'Apache-2.0',
 }
 const license = pkg.license
 if (!license) {

@@ -16,10 +16,12 @@ const BANNED: Array<[string, RegExp]> = [
   ['free forever', /\bfree forever\b/i],
   ['AI-powered', /\bAI-powered\b/i],
   ['open source', /\bopen[- ]source\b/i],
+  ['fully open source', /\bfully open[- ]source\b/i],
   ['quality gate', /\bquality gate\b/i],
 ]
-// A line may say ShipGuard is not an OSI-approved open source license.
-const ALLOW: Record<string, RegExp> = { 'open source': /not an OSI-approved/i }
+// The CLI is licensed Apache-2.0, so "open source CLI" (and the `open-source` npm keyword on its own line) is true.
+// Anything else, such as "open source platform" or "fully open source" (the Pro rulebook is not covered), stays banned.
+const ALLOW: Record<string, RegExp> = { 'open source': /\bopen[- ]source CLI\b|^open-source$|not an OSI-approved/i }
 
 /** Return only the string literals of a TS file (comments dropped). */
 export function stringLiterals(src: string): string[] {

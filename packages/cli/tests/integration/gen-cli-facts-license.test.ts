@@ -5,14 +5,14 @@
  * never emitted it into the `facts` document, so the website's facts source of truth
  * (cli-facts.json, synced from this generator's output) had no license
  * field — which let a hardcoded "MIT" footer label ship live on /for-ai-agents for an
- * ELv2 product. The web app now derives its license label from cli-facts.json's
+ * differently licensed product. The web app now derives its license label from cli-facts.json's
  * `licenseDisplay`, so this generator dropping the field again would re-open that
  * drift on the next facts sync.
  *
  * This test runs the REAL generator (no mocks) and asserts the emitted JSON carries:
  *   - `license` exactly equal to packages/cli/package.json's `license` field
- *     (the legal source of truth — currently "Elastic-2.0"), and
- *   - `licenseDisplay` mapped to the short UI label ("ELv2") the web footer renders.
+ *     (the legal source of truth — currently "Apache-2.0"), and
+ *   - `licenseDisplay` mapped to the short UI label ("Apache-2.0") the web footer renders.
  *
  * fail-before / pass-after: on the pre-fix generator the emitted JSON has neither
  * field (facts object literal never referenced pkg.license) — both assertions fail
@@ -51,7 +51,8 @@ describe('gen-cli-facts.mjs — license fields emitted', () => {
   it('emits `licenseDisplay` as the short UI label the web footer renders', () => {
     // If the license ever legitimately changes, update the generator's
     // LICENSE_DISPLAY map + this expectation together — never remove the field.
-    expect(facts.licenseDisplay).toBe('ELv2')
+    expect(facts.licenseDisplay).toBe('Apache-2.0')
+    expect(facts.license).toBe('Apache-2.0')
   })
 
   it('generator source no longer silently drops pkg.license (structural lock)', () => {

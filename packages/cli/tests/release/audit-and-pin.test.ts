@@ -129,8 +129,9 @@ describe('this repository', () => {
     expect(Object.keys(pkg.dependencies)).not.toContain('jose')
     expect(readFileSync(join(ROOT, 'pnpm-lock.yaml'), 'utf-8')).not.toMatch(/^ {2,6}jose[@:]/m)
   })
-  it('the package description carries the core line', () => {
-    const pkg = JSON.parse(readFileSync(join(CLI, 'package.json'), 'utf-8'))
-    expect(pkg.description).toContain('Review code with a rulebook to build secure code')
+  // The npm description is the short "Open source CLI ..." line (owner decision 2026-11-23, licence switch),
+  // so the core line now lives in the npm README, which is the package page.
+  it('the package README carries the core line', () => {
+    expect(readFileSync(join(CLI, 'README.md'), 'utf-8')).toContain('Review code with a rulebook to build secure code')
   })
 })

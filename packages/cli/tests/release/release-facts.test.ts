@@ -27,7 +27,7 @@ function fixture(over: { version?: string; heading?: string } = {}): string {
     join(d, 'packages', 'cli', 'CHANGELOG.md'),
     `# @agenticcli/shipguard\n\n${over.heading ?? `## ${version.split('-')[0]} - ${TODAY}`}\n\n- Added: a thing.\n- Fixed: another thing.\n\n## 0.12.0 - 2026-11-17\n\n- old\n`,
   )
-  writeFileSync(join(d, 'CITATION.cff'), `cff-version: 1.2.0\ntitle: "ShipGuard"\nversion: ${version}\ndate-released: ${TODAY}\nlicense: Elastic-2.0\n`)
+  writeFileSync(join(d, 'CITATION.cff'), `cff-version: 1.2.0\ntitle: "ShipGuard"\nversion: ${version}\ndate-released: ${TODAY}\nlicense: Apache-2.0\n`)
   writeFileSync(
     join(d, 'REBUILD.md'),
     `# Verify\n\nFrom 0.12.1 the package ships maps.\n\n\`\`\`bash\ngit clone --depth 1 --branch v${version} https://x/shipguard.git\nnpm pack @agenticcli/shipguard@${version} && tar -xzf agenticcli-shipguard-${version}.tgz\n\`\`\`\n\nOr: \`bash scripts/rebuild-verify.sh ${version}\`.\n`,
