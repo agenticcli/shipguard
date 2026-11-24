@@ -11,7 +11,7 @@
  * Spawns the BUILT binary: in-process tests never exercise the real exit path.
  */
 import { execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -58,11 +58,15 @@ async function run(args: string[], env: Record<string, string> = {}): Promise<Ru
   const addr = server.address()
   const port = typeof addr === 'object' && addr ? addr.port : 0
   try {
+    // Pre-seed the first-run marker so only the scan ping is counted (cli_first_run has its own e2e test).
+    const home = mkTmp()
+    mkdirSync(join(home, '.config', 'shipguard'), { recursive: true })
+    writeFileSync(join(home, '.config', 'shipguard', 'telemetry-first-run-sent'), '1\n')
     const result = await spawnNode(distCli, args, {
       cwd: mkTmp(),
       env: {
         ...process.env,
-        HOME: mkTmp(),
+        HOME: home,
         SHIPGUARD_TELEMETRY_URL: `http://127.0.0.1:${port}/cli-telemetry`,
         SHIPGUARD_TELEMETRY: '1',
         DO_NOT_TRACK: '0',
@@ -88,8 +92,9 @@ describe('scan with a missing / non-directory path', () => {
   it('--json: stdout is exactly one error object with a stable code, exit 2', async () => {
     const r = await run(['scan', '/nonexistent-shipguard-path', '--json'])
     const parsed = JSON.parse(r.stdout)
-    expect(parsed.code).toBe('PATH_NOT_FOUND')
-    expect(typeof parsed.error).toBe('string')
+    expect(parsed.error.code).toBe('PATH_NOT_FOUND')
+    expect(typeof parsed.error.message).toBe('string')
+    expect(parsed.error.command).toBeNull() // no real path is known: nothing an agent could run as written
     expect(r.code).toBe(2)
   })
 
@@ -98,7 +103,7 @@ describe('scan with a missing / non-directory path', () => {
     const file = join(dir, 'a.txt')
     writeFileSync(file, 'x')
     const r = await run(['scan', file, '--json'])
-    expect(JSON.parse(r.stdout).code).toBe('PATH_NOT_A_DIRECTORY')
+    expect(JSON.parse(r.stdout).error.code).toBe('PATH_NOT_A_DIRECTORY')
     expect(r.code).toBe(2)
   })
 

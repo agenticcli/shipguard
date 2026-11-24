@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from 'no
 import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { resolveRepoIdentity, ensureGitignored, resolveContentIdentity } from '../../../src/core/history/identity.js'
+import { resolveRepoIdentity, resolveContentIdentity } from '../../../src/core/history/identity.js'
 
 const tempDirs: string[] = []
 function mkTemp(): string {
@@ -88,8 +88,9 @@ describe('resolveRepoIdentity (§2.1)', () => {
     expect(identity.repoId).toMatch(/^[0-9a-f-]{36}$/)
     expect(existsSync(join(dir, '.shipguard', 'repo-id'))).toBe(true)
 
-    const gitignore = readFileSync(join(dir, '.gitignore'), 'utf-8')
-    expect(gitignore).toMatch(/\.shipguard\//)
+    // The user's .gitignore is never created or edited; the folder ignores itself.
+    expect(existsSync(join(dir, '.gitignore'))).toBe(false)
+    expect(readFileSync(join(dir, '.shipguard', '.gitignore'), 'utf-8')).toBe('*\n')
   })
 
   it('a git repo with ZERO commits (no HEAD yet) falls back to a UUID, never throws', () => {
@@ -168,29 +169,35 @@ describe('resolveContentIdentity (scanId reuse — pre-scan content identity)', 
   })
 })
 
-describe('ensureGitignored', () => {
-  it('creates .gitignore with the entry when absent', () => {
-    const dir = mkTemp()
-    ensureGitignored(dir, '.shipguard/')
-    const content = readFileSync(join(dir, '.gitignore'), 'utf-8')
-    expect(content).toContain('.shipguard/')
+describe('fallback-uuid identity never edits the user\'s .gitignore (spec 06: .gitignore is never edited)', () => {
+  const gi = 'node_modules/\n.env.local'
+
+  it('zero-commit git repo: .gitignore byte-identical, .shipguard/ still ignored by git through its own .gitignore', () => {
+    const dir = mkRepo()
+    writeFileSync(join(dir, '.gitignore'), gi, 'utf-8')
+    const identity = resolveRepoIdentity(dir)
+    expect(identity.repoIdKind).toBe('fallback-uuid')
+    expect(readFileSync(join(dir, '.gitignore'), 'utf-8')).toBe(gi)
+    expect(readFileSync(join(dir, '.shipguard', '.gitignore'), 'utf-8')).toBe('*\n')
+    expect(existsSync(join(dir, '.shipguard', 'repo-id'))).toBe(true)
+    // git itself says the id file is ignored, and nothing of ShipGuard's shows as untracked
+    expect(execSync('git check-ignore .shipguard/repo-id', { cwd: dir, encoding: 'utf-8' }).trim()).toBe('.shipguard/repo-id')
+    expect(execSync('git status --porcelain --untracked-files=all', { cwd: dir, encoding: 'utf-8' })).not.toContain('.shipguard')
   })
 
-  it('is idempotent — does not duplicate an existing entry', () => {
-    const dir = mkTemp()
-    ensureGitignored(dir, '.shipguard/')
-    ensureGitignored(dir, '.shipguard/')
-    const content = readFileSync(join(dir, '.gitignore'), 'utf-8')
-    const occurrences = content.split('\n').filter((l) => l.trim() === '.shipguard/').length
-    expect(occurrences).toBe(1)
+  it('no .gitignore before: none is created (non-git folder and zero-commit repo)', () => {
+    for (const dir of [mkTemp(), mkRepo()]) {
+      resolveRepoIdentity(dir)
+      expect(existsSync(join(dir, '.gitignore'))).toBe(false)
+      expect(readFileSync(join(dir, '.shipguard', '.gitignore'), 'utf-8')).toBe('*\n')
+    }
   })
 
-  it('appends to an existing .gitignore without clobbering prior entries', () => {
+  it('a second call keeps the same id and does not rewrite .shipguard/.gitignore', () => {
     const dir = mkTemp()
-    writeFileSync(join(dir, '.gitignore'), 'node_modules/\n', 'utf-8')
-    ensureGitignored(dir, '.shipguard/')
-    const content = readFileSync(join(dir, '.gitignore'), 'utf-8')
-    expect(content).toContain('node_modules/')
-    expect(content).toContain('.shipguard/')
+    const first = resolveRepoIdentity(dir)
+    writeFileSync(join(dir, '.shipguard', '.gitignore'), '*\n# mine\n', 'utf-8')
+    expect(resolveRepoIdentity(dir).repoId).toBe(first.repoId)
+    expect(readFileSync(join(dir, '.shipguard', '.gitignore'), 'utf-8')).toBe('*\n# mine\n')
   })
 })

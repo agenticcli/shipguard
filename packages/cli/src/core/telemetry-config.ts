@@ -8,6 +8,7 @@
  *                             Unknown keys are preserved. Also holds `installId`: a random
  *                             v4 UUID (crypto.randomUUID) made lazily on the first non-CI ping; never derived from anything.
  *   telemetry-notice-shown    marker: the one-line "we send an anonymous ping" notice was printed.
+ *   telemetry-first-run-sent  marker: the one-off `cli_first_run` event was handled for this install.
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
@@ -18,8 +19,41 @@ import { ensureSecureDir, writeSecureFileSync } from '../utils/secure-fs.js'
 import { DEFAULT_POLICY_PATH } from '@agenticcli/shared'
 import { logger } from '../utils/logger.js'
 
+/**
+ * Safe mode (spec 06, owner decision A6): flag `--safe-mode` or environment `SHIPGUARD_SAFE_MODE=1`.
+ * THE one place it is decided: every other module calls isSafeMode(). It stops usage pings and every
+ * new `~/.config/shipguard` write (install id, notice marker, hint, counters, offer cache, plan block)
+ * and the weekly public fetch; the sign-in token is the only thing written outside the project.
+ * The flag is read from argv here so the decision is the same before and after the CLI parses its
+ * options (the option itself is registered in cli.ts so commander accepts it).
+ */
+export const SAFE_MODE_LINE = 'Safe mode: no usage pings, no writes outside the project except the sign-in token.'
+
+export function isSafeMode(env: NodeJS.ProcessEnv = process.env, argv: readonly string[] = process.argv): boolean {
+  const v = env.SHIPGUARD_SAFE_MODE
+  if (v !== undefined && ['1', 'true'].includes(v.trim().toLowerCase())) return true
+  const end = argv.indexOf('--')
+  return (end === -1 ? argv : argv.slice(0, end)).includes('--safe-mode')
+}
+
+let safeModeAnnounced = false
+
+/**
+ * Print the safe-mode line once per process on stderr (stdout line 1 stays the verdict). Call it
+ * before the command prints anything else. Returns whether safe mode is on.
+ */
+export function announceSafeMode(env: NodeJS.ProcessEnv = process.env, argv: readonly string[] = process.argv): boolean {
+  if (!isSafeMode(env, argv)) return false
+  if (!safeModeAnnounced) {
+    safeModeAnnounced = true
+    process.stderr.write(SAFE_MODE_LINE + '\n')
+  }
+  return true
+}
+
 const CONFIG_FILE = 'telemetry.json'
 const NOTICE_MARKER = 'telemetry-notice-shown'
+const FIRST_RUN_MARKER = 'telemetry-first-run-sent'
 
 export function getConfigDir(): string {
   return join(homedir(), '.config', 'shipguard')
@@ -84,6 +118,7 @@ export function readInstallId(dir: string = getConfigDir()): string | undefined 
 export function getOrCreateInstallId(dir: string = getConfigDir()): string | undefined {
   const existing = readInstallId(dir)
   if (existing) return existing
+  if (isSafeMode()) return undefined // safe mode: no new ~/.config write
   try {
     const installId = randomUUID()
     writeConfig(dir, { ...readUserConfig(dir), installId })
@@ -111,17 +146,39 @@ export function writeUserEnabled(dir: string, enabled: boolean): string {
   return writeConfig(dir, { ...readUserConfig(dir), enabled })
 }
 
+/** Folders whose notice this process already printed: an unwritable config folder cannot keep the marker, so the notice would print twice in one run. */
+const noticePrinted = new Set<string>()
+
 export function noticeShown(dir: string = getConfigDir()): boolean {
-  return existsSync(join(dir, NOTICE_MARKER))
+  return noticePrinted.has(dir) || existsSync(join(dir, NOTICE_MARKER))
 }
 
 /** Record that the notice was printed. Best-effort: if it cannot be written the notice just repeats. */
 export function markNoticeShown(dir: string = getConfigDir()): void {
+  noticePrinted.add(dir)
+  if (isSafeMode()) return
   try {
     ensureSecureDir(dir)
     writeSecureFileSync(join(dir, NOTICE_MARKER), '1\n')
   } catch (err) {
     logger.debug(`telemetry: could not persist the notice marker: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+export function firstRunHandled(dir: string = getConfigDir()): boolean {
+  return existsSync(join(dir, FIRST_RUN_MARKER))
+}
+
+/** Record that the first-run event was sent (or skipped for an older install). Returns false if it could not be saved. */
+export function markFirstRunHandled(dir: string = getConfigDir()): boolean {
+  if (isSafeMode()) return false
+  try {
+    ensureSecureDir(dir)
+    writeSecureFileSync(join(dir, FIRST_RUN_MARKER), '1\n')
+    return true
+  } catch (err) {
+    logger.debug(`telemetry: could not persist the first-run marker: ${err instanceof Error ? err.message : String(err)}`)
+    return false
   }
 }
 

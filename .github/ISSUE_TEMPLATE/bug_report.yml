@@ -1,0 +1,40 @@
+name: Bug report
+description: ShipGuard crashed, gave a wrong result or behaved in a way the docs do not describe.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please do not paste real secrets, keys or private code. Use the smallest example that shows the problem.
+  - type: input
+    id: version
+    attributes:
+      label: ShipGuard version
+      description: Output of `shipguard --version`.
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command you ran
+      placeholder: shipguard scan --json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Smallest file or project that shows it
+    validations:
+      required: false
+  - type: input
+    id: env
+    attributes:
+      label: Node version and operating system
+      placeholder: Node 22, macOS 15
+    validations:
+      required: false

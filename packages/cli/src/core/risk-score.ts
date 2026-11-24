@@ -36,26 +36,18 @@ export function computeRiskScore(findings: Finding[]): RiskScore {
 
   const score = Math.min(100, rawScore)
 
-  // Score-only verdict. The thresholds live in computeVerdict() and nowhere else
-  // : this call knows
+  // Findings-only verdict, decided in computeVerdict() and nowhere else: this call knows
   // nothing about degradation because a RiskScore is a pure function of findings.
   // The degradation-aware, fail-closed verdict is stamped later by applyVerdict(),
   // which overwrites this field as a deliberate MIRROR of the top-level
   // `recommendation` — see core/verdict.ts.
-  const recommendation: RiskScore['recommendation'] = computeVerdict({
-    riskScore: { score },
-    degraded: false,
-  })
+  const counts = { criticalCount, highCount, mediumCount, lowCount, infoCount, blockingCount }
+  const recommendation: RiskScore['recommendation'] = computeVerdict({ riskScore: counts, degraded: false })
 
   return {
     score,
     recommendation,
     totalFindings: findings.length,
-    criticalCount,
-    highCount,
-    mediumCount,
-    lowCount,
-    infoCount,
-    blockingCount,
+    ...counts,
   }
 }

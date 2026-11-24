@@ -1,35 +1,60 @@
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import { existsSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
+import { ensureShipguardDirIgnored, refuseWrite, saveFailed, saveProblem } from '../utils/paths.js'
 import { scan } from '../core/scanner.js'
 import { generateReport } from '../core/report.js'
 import { toSarif } from '../core/sarif.js'
-import { loadPolicy } from '../core/policy.js'
+import { loadPolicy, PolicyFileError } from '../core/policy.js'
 import { isGitRepo } from '../core/git.js'
 import { logger } from '../utils/logger.js'
 import { goLink } from '../core/links.js'
 import {
-  verdictPanel,
-  renderFindingsSummary,
-  findingsByCategoryTable,
-  coverageLine,
+  renderScanScreen,
+  renderQuietLine,
+  generalRuleCountOrNull,
   welcomeBanner,
   shouldShowProgress,
   renderProgressBar,
-  quietVerdict,
-  actionFooter,
 } from '../core/render.js'
+import type { RulesRan } from '../core/render.js'
+import { collectNotScanned } from '../core/not-scanned.js'
+import { probeGate, detectNextAgent, detectManifest } from '../core/screen-context.js'
+import { runRulebookStep, readPublicOffer } from '../core/rulebook-step.js'
+import type { RulebookStepResult, StepError } from '../core/rulebook-step.js'
+import { getPlanEnv, isHookOrGate, loadNagFor, nagCtx, repoIdOf } from '../core/plan-client.js'
+import { repoKey, markMoment, momentDue, isMuted } from '../core/nag.js'
+import { maybeFetchWeeklyOffer } from '../core/offer-cache.js'
+import { computeReceipt, receiptLines, screenPitch, usageNoticeLines, updateNoticeLines } from '../core/plan-lines.js'
+import { unavailableBlock } from '../core/plan.js'
+import { reportPathsFor } from '../core/report.js'
+import type { DetectedStack, Receipt } from '../core/plan-lines.js'
+import { parseMaskedSecret, secretScreenLabel } from '../core/redact.js'
+
 import { EXIT_CODES, DEFAULT_REPORT_FILE } from '@agenticcli/shared'
-import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation } from '@agenticcli/shared'
+import type { ScanOptions, QualityGateRule, DegradeReason, Recommendation, Finding } from '@agenticcli/shared'
 import { recordScanHistory, resolveScanId } from '../core/history/index.js'
+import { gateReuseFor } from '../core/history/scan-id.js'
+import { gateHealthWarnings, healthWarningLine } from '../core/gate-state.js'
 import { applyVerdict, effectiveRecommendation } from '../core/verdict.js'
 import type { FrameworkEntry } from '../core/framework.js'
-import { sendTelemetry } from '../core/telemetry.js'
-import type { TelemetryVerdict } from '../core/telemetry.js'
+import { sendTelemetry, telemetryState } from '../core/telemetry.js'
+import { isSafeMode } from '../core/telemetry-config.js'
+import { emitError, setExitCode } from '../utils/exit.js'
+import {
+  CORE_LINE, SCHEMA_VERSION, buildErrorEnvelope, buildScanEnvelope, buildVerdictJson, buildPlanJson,
+  buildNextSteps, buildCoverageJson, buildDegradedReasons, buildNotScanned, decideAgentAction, blockingOccurrences,
+  computeSinceLastRun, readLastRun, writeLastRun, maxRepeatRuns, REPEAT_LABELS, stackDisplayName,
+} from '../core/outcome.js'
+import type { ErrorCode, ExtraErrorFields, SinceLastRun } from '../core/outcome.js'
+import { buildRerunCommand } from '../core/rerun.js'
+import { loadBundledRules } from '../core/bundled-rules.js'
+import type { TelemetryOutput, TelemetryVerdict } from '../core/telemetry.js'
 // Type-only import — deliberately NOT a value import. pro-scanner.ts (re2js, matcher-contract,
 // coderef-dispatch, etc.) is dynamically imported ONLY inside the `if (opts.pro)` branch below to
 // keep non-pro scans fast; a value import here would force it to load eagerly on every scan.
 import type { ProFetchErrorCode } from '../core/pro-scanner.js'
+import { PRO_RULES_UNAVAILABLE_MESSAGE } from '../core/platform-status.js'
 
 const LEARN_MORE = `Docs ${goLink('docs')} · Site ${goLink('site')} · Pricing ${goLink('pricing')} · Issues https://github.com/agenticcli/shipguard/issues`
 
@@ -60,9 +85,10 @@ const CLI_VERSION =
  *       degraded/partial (e.g. a pro-rules fetch failure or an oversized file
  *       was skipped) — degradation is surfaced via `degraded`/`degradedReasons`
  *       in the JSON output, not by hijacking a different exit code.
- *   1 — BLOCKED. Opt-in hard gate: only when --strict is passed AND at least
- *       one blocking finding exists. This is the only condition that changes
- *       the exit code from the default 0 — everything else is informational.
+ *   1 — BLOCKED. Opt-in hard gates, nothing else moves the exit code off the
+ *       default 0: --strict (a blocking finding, an unfinished/degraded scan, or
+ *       a DO_NOT_SHIP verdict) and --check-regressions (a previously-passing rule
+ *       now fails). Everything else is informational.
  *   2 — CONFIG ERROR, strictly. Malformed policy file, unknown CLI option,
  *       non-project directory without --all, etc. Never reused for a
  *       degraded-but-completed scan (that is exit 0 + `degraded:true` in JSON).
@@ -165,7 +191,9 @@ export function proFetchActionHint(code: ProFetchErrorCode, retryAfterSeconds?: 
     case 'AUTH_FAILED':
       return 'Run `shipguard login` to re-authenticate, or pass --allow-degraded to run local rules only.'
     case 'INSUFFICIENT_CREDITS':
-      return `Buy more credits at ${goLink('billing')}, or pass --allow-degraded to run local rules only.`
+    case 'ALLOWANCE_USED':
+    case 'PLAN_INACTIVE':
+      return `The server did not provide the rulebook for this scan. Run \`shipguard upgrade\` for details, or pass --allow-degraded to run general rules only.`
     case 'RATE_LIMITED':
       return retryAfterSeconds !== undefined
         ? `Rate limited — retry after ${retryAfterSeconds}s, or pass --allow-degraded to run local rules only.`
@@ -174,10 +202,12 @@ export function proFetchActionHint(code: ProFetchErrorCode, retryAfterSeconds?: 
       return 'This looks like a transient server/network issue — retry the scan, or pass --allow-degraded to run local rules only.'
     case 'PLATFORM_UNAVAILABLE':
       return platformUnavailableMessage(retryAfterSeconds)
+    case 'FRESHNESS_EXPIRED':
+      return PRO_RULES_UNAVAILABLE_MESSAGE
     case 'BUNDLE_INVALID':
-      return 'The pro rule bundle failed validation (server-side issue) — retry, or pass --allow-degraded to run local rules only. If this persists, contact support.'
+      return 'The rulebook download failed validation (server-side issue) — retry, or pass --allow-degraded to run local rules only. If this persists, contact support.'
     case 'NO_ACTIVE_RELEASE':
-      return 'The Pro rule server has no active rule release yet — this is a server-side configuration gap, not something a retry or re-login will fix. Check ' + goLink('docs') + ' or contact support, or pass --allow-degraded to run local rules only in the meantime.'
+      return 'The rulebook server has no active rule release yet — this is a server-side configuration gap, not something a retry or re-login will fix. Check ' + goLink('docs') + ' or contact support, or pass --allow-degraded to run local rules only in the meantime.'
     default:
       return 'Retry the scan, or pass --allow-degraded to run local rules only.'
   }
@@ -202,6 +232,24 @@ function platformUnavailableMessage(retryAfterSeconds?: number): string {
     `Please try again in a few minutes${wait}, or pass --allow-degraded to run local rules only.`
 }
 
+/**
+ * The one sentence that says what exit 0 means when the scan found something blocking and `--strict`
+ * was not passed. Printed as the last line of human output and returned as `exitMeaning` in --json.
+ */
+export const EXIT_NOTICE = 'exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.'
+
+/** `exitMeaning` for --json: what THIS run's exit code means, in one sentence. */
+export function exitMeaning(opts: { exitCode: number; strict: boolean; notSafe: boolean; regressionBlocks: boolean }): string {
+  if (opts.exitCode === EXIT_CODES.BLOCKED) {
+    return opts.regressionBlocks
+      ? 'exit 1 = blocked: --check-regressions found a rule that passed before and now fails.'
+      : 'exit 1 = blocked: --strict found a blocking finding, a scan that did not finish, or a DO_NOT_SHIP verdict.'
+  }
+  if (opts.strict) return 'exit 0 = scan finished and --strict found nothing that blocks.'
+  if (opts.notSafe) return EXIT_NOTICE
+  return 'exit 0 = scan finished. Read recommendation for the verdict; add --strict to fail on blocking findings.'
+}
+
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const
 
 /**
@@ -214,7 +262,7 @@ function isProjectRoot(dir: string): boolean {
 
 export function scanCommand(): Command {
   return new Command('scan')
-    .description('Scan your project for high-risk issues (verbose by default; use --quiet for one-line verdict)')
+    .description(`${CORE_LINE}. Scan your project for high-risk issues (use --quiet for a one-line verdict)`)
     .argument('[path]', 'Path to project root to scan (defaults to current directory)')
     .option('--changed', 'Only scan changed files from git diff')
     .option('--report', 'Generate a detailed Markdown report')
@@ -222,13 +270,14 @@ export function scanCommand(): Command {
     .option('--json', 'Output results as JSON (machine-readable; suppresses all decoration)')
     .option('--sarif', 'Output results as SARIF 2.1.0 (for GitHub Code Scanning)')
     .option('-q, --quiet', 'One-line verdict only (suppresses progress, panel, and tips)')
-    .option('--pro', 'Include pro quality gate rules (requires authentication)')
+    .option('--pro', 'Require the full rulebook; exit 3 if it is not used (signed out, unreachable, partial, withheld by the server, plan inactive). A plain scan uses the rulebook when it is served and otherwise runs general rules and says so; its exit code does not change. At the monthly limit, when the server says so in a signed reply, a plain scan and --pro both run general rules and the exit code does not change.')
+    .option('--general', 'Run the general rules only (no rulebook request)')
     .option('--api-url <url>', 'API server URL', 'https://agenticcli.dev')
-    .option('--category <categories>', 'Comma-separated category filter for pro rules')
+    .option('--category <categories>', 'Comma-separated category filter for rulebook rules')
     .option('--beta', 'Include beta-stage rules')
     .option('--all', 'Scan any directory, even without package.json or .git')
-    .option('--allow-degraded', 'With --pro: fall back to local-only rules if the pro rule fetch fails, instead of failing loud (opt-in; restores the pre-2026-07-14 fallback behavior — see exit code 3 below)')
-    .option('--check-regressions', 'Opt-in hard gate: exit 1 if a previously-passing blocking rule now fails under the same scan scope + corpus release (informational-only in --json unless this flag is set)')
+    .option('--allow-degraded', 'With --pro: fall back to local-only rules if the rulebook download fails, instead of failing loud (opt-in; restores the pre-2026-07-14 fallback behavior — see exit code 3 below)')
+    .option('--check-regressions', 'Opt-in hard gate: exit 1 if a previously-passing blocking rule now fails under the same scan scope + rulebook release (informational-only in --json unless this flag is set)')
     .addHelpText('after', `
 Output modes:
   (default)         Verbose: live progress (TTY), categorized findings, gamified verdict panel
@@ -244,8 +293,9 @@ Examples:
   shipguard scan ./my-app         Scan a specific directory
   shipguard scan --changed        Scan only git-diff files (faster)
   shipguard scan --json           Machine-readable output for CI/agents
-  shipguard scan --pro            Include pro quality gate rules (requires login)
-  shipguard scan --pro --allow-degraded  Fall back to local rules if the pro fetch fails (opt-in)
+  shipguard scan --pro            Require the full rulebook (needs login; exit 3 if it is not used)
+  shipguard scan --general        General rules only, no rulebook request
+  shipguard scan --pro --allow-degraded  Fall back to local rules if the rulebook download fails (opt-in)
   shipguard scan --all            Scan any directory regardless of project markers
   shipguard scan --strict         CI hard gate: exit 1 on blocking findings
   shipguard scan --check-regressions  CI hard gate: exit 1 if a previously-passing rule now fails
@@ -257,7 +307,8 @@ Exit codes (verdict-neutral by default — ShipGuard informs, you choose the gat
      partial (see \`degraded\`/\`degradedReasons\` in --json output).
   1  Blocked — with --strict AND at least one of: a blocking finding, a scan
      that did not finish (\`degraded:true\` — an unfinished scan cannot clear
-     a hard gate), or an effective \`recommendation\` of DO_NOT_SHIP (suppressed
+     a hard gate: an oversized file, a symlink, an unreadable file, a truncated
+     scan, a file with unexplained binary data, or a scan that read NOTHING), or an effective \`recommendation\` of DO_NOT_SHIP (suppressed
      findings still count toward the risk score, so a scan can cross the
      DO_NOT_SHIP threshold with zero blocking findings — the exit code always
      agrees with the printed verdict). OR with --check-regressions AND at
@@ -266,10 +317,10 @@ Exit codes (verdict-neutral by default — ShipGuard informs, you choose the gat
   2  Config error (bad policy file, bad flags, non-project directory, scan path
      that does not exist or is not a directory).
   3  Runtime error — the scan could not meaningfully run at all. This
-     INCLUDES an explicit --pro request whose rule fetch failed (auth,
-     credits, rate limit, server, an invalid bundle, no active rule
-     release on the server, or the platform being temporarily unavailable —
-     --json code PLATFORM_UNAVAILABLE, with retryAfterSeconds when known) — the requested gate did not run, so
+     INCLUDES an explicit --pro request whose rulebook could not be had (sign-in,
+     rate limit, server, an invalid bundle, no active release, or the platform
+     being temporarily unavailable: --json error.code RULEBOOK_UNREACHABLE, with
+     error.retryAfterSeconds when known) — the requested gate did not run, so
      ShipGuard fails loud instead of silently falling back to a free
      scan. Pass --allow-degraded to opt back into the free-scan
      fallback (degraded:true, exit code unaffected).
@@ -279,7 +330,7 @@ Local history: every scan is recorded to a local SQLite store
 shipguard.policy.yml or SHIPGUARD_HISTORY_PATH). \`stateStatus\` in --json
 reports whether that recording succeeded (complete/unavailable/corrupt) —
 a regression is only ever claimed when it's \`complete\` for both runs
-being compared. A corpus/rule update is reported as \`coverageChanged\`,
+being compared. A rulebook or rule update is reported as \`coverageChanged\`,
 never as a regression.
 
 ${LEARN_MORE}`)
@@ -302,11 +353,16 @@ ${LEARN_MORE}`)
       if (scanPath) {
         const pathProblem = checkScanPath(cwd)
         if (pathProblem) {
-          logger.error(pathProblem.message)
-          if (machineOutput) {
-            console.log(JSON.stringify({ error: pathProblem.message, code: pathProblem.code }))
-          }
-          await exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
+          return failWith(
+            buildErrorEnvelope({
+              code: pathProblem.code,
+              message: pathProblem.message,
+              cliVersion: CLI_VERSION,
+              cause: pathProblem.code === 'PATH_NOT_FOUND' ? `The folder ${cwd} was not found or cannot be read.` : undefined,
+              extra: { path: cwd },
+            }),
+            { startTime, projectDir: process.cwd(), opts },
+          )
         }
       }
 
@@ -317,14 +373,17 @@ ${LEARN_MORE}`)
       // and almost certainly unintentional. Require either a project root or --all.
       // ---------------------------------------------------------------------------
       if (!scanPath && !opts.all && !isProjectRoot(cwd)) {
-        logger.error(
-          `Refusing to scan a non-project directory ${cwd}. ` +
-          `Pass a path (\`shipguard scan ./my-app\`) or \`--all\` to override.`
+        return failWith(
+          buildErrorEnvelope({
+            code: 'NOT_A_PROJECT',
+            message: `${cwd} does not look like a project (no package.json or .git).`,
+            cliVersion: CLI_VERSION,
+            cause: 'ShipGuard refuses to scan a folder that is not a project, to avoid scanning your home folder by mistake.',
+            fix: 'Pass the path of your project folder (for example ./my-app), or use --all to scan this folder anyway.',
+            extra: { path: cwd },
+          }),
+          { startTime, projectDir: process.cwd(), opts },
         )
-        if (!machineOutput) {
-          console.log(`\n${LEARN_MORE}`)
-        }
-        await exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, process.cwd())
       }
 
       // Change working directory to the resolved scan root so scanner uses it as cwd
@@ -334,7 +393,7 @@ ${LEARN_MORE}`)
       }
 
       try {
-        await runScan({ cwd, opts, machineOutput, quiet, startTime })
+        await runScan({ cwd, invocationCwd: originalCwd, opts, machineOutput, quiet, startTime })
       } finally {
         if (scanPath) {
           process.chdir(originalCwd)
@@ -343,28 +402,73 @@ ${LEARN_MORE}`)
     })
 }
 
+/** The one repeat sentence above `Next:` (spec 04 "Fix loop"): states only what was measured. */
+function repeatLineFor(since: SinceLastRun, blockingCount: number): string | null {
+  if (blockingCount === 0) return null
+  const runs = maxRepeatRuns(since)
+  if (runs >= 2) return REPEAT_LABELS.stop
+  if (runs === 1) return since.treeChanged === false ? REPEAT_LABELS.unchangedScan : REPEAT_LABELS.changed
+  return null
+}
+
+/** A rulebook step failure (an explicit --pro that could not get the rulebook, or a zero-rule bundle) as the one error envelope. */
+function stepErrorEnvelope(err: StepError, ctx: { scanId: string; planEnv: ReturnType<typeof getPlanEnv> }): ReturnType<typeof buildErrorEnvelope> {
+  const code: ErrorCode = err.code
+  const calm = err.proErrorCode === 'PLATFORM_UNAVAILABLE' || err.proErrorCode === 'FRESHNESS_EXPIRED'
+  const signedOutPro = code === 'LOGIN_REQUIRED' && err.message.startsWith('--pro uses')
+  // The pointer to `upgrade` is left off in CI and when promotion is muted (spec 05).
+  const pointer = ctx.planEnv.ci || process.env.SHIPGUARD_NO_PROMO === '1' ? '' : '   (what the full rulebook adds for this repo: shipguard upgrade)'
+  return buildErrorEnvelope({
+    code,
+    message:
+      code === 'NO_RULES_APPLIED' ? 'This scan applied zero rules, so it checked nothing and cannot report a clean pass.'
+      : calm ? proFetchActionHint(err.proErrorCode as ProFetchErrorCode, err.retryAfterSeconds)
+      : code === 'TOKEN_EXPIRED' ? `${err.message} Your plan follows your account, so signing in again picks it up.`
+      : err.message,
+    cliVersion: CLI_VERSION,
+    runId: ctx.scanId,
+    ...(code === 'NO_RULES_APPLIED' ? { cause: err.message } : {}),
+    ...(signedOutPro ? { fix: `shipguard login${pointer}\n  Or run the free scan now: shipguard scan` } : {}),
+    ...(code === 'RATE_LIMITED' && err.retryAfterSeconds !== undefined ? { fix: `Retry after ${err.retryAfterSeconds} seconds` } : {}),
+    extra: err.retryAfterSeconds !== undefined ? { retryAfterSeconds: err.retryAfterSeconds } : {},
+  })
+}
+
+const MANIFESTS = ['package.json', 'pyproject.toml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'Gemfile', 'composer.json', 'pom.xml', 'build.gradle']
+
+/** The manifest that made this folder a project (spec 06 "unsupported stack"), or null when none is known. */
+function firstManifest(dir: string): string | null {
+  return MANIFESTS.find((m) => existsSync(join(dir, m))) ?? null
+}
+
+/** Output kind for the usage ping. Same precedence as the output switch below: --sarif, then --json, else human (--quiet is human). */
+function outputKind(opts: Record<string, unknown>): TelemetryOutput {
+  return opts.sarif ? 'sarif' : opts.json ? 'json' : 'human'
+}
+
 /**
- * The ONE exit path for every scan error (config 2 / runtime 3): sends a single telemetry ping with
- * verdict "error" (all opt-outs honoured inside sendTelemetry; it never rejects), awaited so the hard
- * exit cannot drop it, then exits. Keep every error exit going through here - a source-guard test
+ * The ONE exit path for every scan error (config 2 / runtime 3 / 130): the error template on stderr and, with
+ * --json/--sarif, the error envelope on stdout (utils/exit.ts emitError); then a single telemetry ping with
+ * verdict "error" (all opt-outs honoured inside sendTelemetry; it never rejects), awaited so the hard exit
+ * cannot drop it. Callers must `return` it. Keep every error exit going through here - a source-guard test
  * fails on a bare process.exit(CONFIG_ERROR|RUNTIME_ERROR) in this file.
  */
-async function exitWithError(
-  exitCode: number,
-  startTime: number,
-  projectDir: string,
-  policy?: unknown,
-): Promise<never> {
+async function failWith(
+  env: ReturnType<typeof buildErrorEnvelope>,
+  ctx: { startTime: number; projectDir: string; opts: Record<string, unknown>; policy?: unknown },
+): Promise<void> {
+  emitError(env, {
+    machine: Boolean(ctx.opts.json) || Boolean(ctx.opts.sarif),
+  })
   try {
     await sendTelemetry(
-      { cliVersion: CLI_VERSION, verdict: 'error', durationMs: Date.now() - startTime },
-      { policy, projectDir },
+      { cliVersion: CLI_VERSION, verdict: 'error', durationMs: Date.now() - ctx.startTime, output: outputKind(ctx.opts) },
+      { policy: ctx.policy, projectDir: ctx.projectDir },
     )
   } catch (err) {
     // sendTelemetry never rejects; belt and braces so telemetry can never change the exit code.
     logger.debug(`telemetry: error ping skipped (ignored): ${err instanceof Error ? err.message : String(err)}`)
   }
-  return process.exit(exitCode)
 }
 
 /** Why an explicit scan path cannot be scanned, or null when it is an existing directory. */
@@ -384,21 +488,33 @@ function checkScanPath(absPath: string): { code: 'PATH_NOT_FOUND' | 'PATH_NOT_A_
 
 async function runScan(ctx: {
   cwd: string
+  /** The folder the command was run from (before any chdir): the re-run command is relative to it. */
+  invocationCwd: string
   opts: Record<string, unknown>
   machineOutput: boolean
   quiet: boolean
   startTime: number
 }) {
-  const { cwd, opts, machineOutput, quiet, startTime } = ctx
+  const { cwd, invocationCwd, opts, machineOutput, quiet, startTime } = ctx
 
   // Load policy for header info and report path resolution
   let policy
   try {
     policy = await loadPolicy(cwd)
   } catch (error) {
-    logger.error(`Config error: ${error instanceof Error ? error.message : error}`)
-    await exitWithError(EXIT_CODES.CONFIG_ERROR, startTime, cwd)
-    return  // Unreachable in production; guards against mocked process.exit in tests
+    const cause = error instanceof PolicyFileError ? error.cause : error instanceof Error ? error.message : String(error)
+    const line = error instanceof PolicyFileError ? error.line : null
+    return failWith(
+      buildErrorEnvelope({
+        code: 'INVALID_POLICY',
+        message: `shipguard.policy.yml could not be read${line ? ` (line ${line})` : ''}.`,
+        cliVersion: CLI_VERSION,
+        cause,
+        fix: `Fix shipguard.policy.yml${line ? ` at line ${line}` : ''}, or move the file aside and run shipguard init to make a fresh one.`,
+        extra: { file: 'shipguard.policy.yml', ...(line ? { line } : {}) },
+      }),
+      { startTime, projectDir: cwd, opts },
+    )
   }
 
   // -----------------------------------------------------------------------------------
@@ -435,14 +551,19 @@ async function runScan(ctx: {
   }
   const frameworkNames = detectedFrameworks.map((f) => f.name)
 
+  const planEnv = getPlanEnv({ policy, projectDir: cwd })
+  const signedInForScanId = planEnv.apiKeyMode || existsSync(join(planEnv.configDir, 'credentials.json'))
   const { scanId, scanIdReused } = await resolveScanId({
     cwd,
     policy,
     cliVersion: CLI_VERSION,
     changedOnly,
     categories,
-    proRequested: Boolean(opts.pro),
+    // "Rulebook requested" (not just the --pro flag): the key of the reservation behind the server-side
+    // dedup. An explicit --pro asks for it, and so does the signed-in default scan (unless --general).
+    rulebookRequested: !opts.general && (Boolean(opts.pro) || signedInForScanId),
     frameworks: frameworkNames,
+    gate: gateReuseFor(cwd),
   })
 
   const inGitRepo = isGitRepo(cwd)
@@ -468,149 +589,53 @@ async function runScan(ctx: {
     logger.divider()
   }
 
-  let proRules: QualityGateRule[] | undefined
-  let creditsRemaining: number | undefined
-  let rulesVersion: string | undefined
-  let degraded = false
-  // Machine-readable reason for the pro-fetch failure — added to result.degradedReasons
-  // after the scan completes, alongside any scanner-layer reasons (FILE_TOO_LARGE, etc.)
-  let proFetchDegradeReason: DegradeReason | undefined
+  // ---- how this scan gets its rules (spec 02 "One rule for the rulebook did not run") ----
+  // One decision for every cause: general rules + what ran, or exit 3 for an explicit --pro. The rulebook is used only
+  // when the server serves a verified, attested bundle; the plan block is display data and unlocks nothing.
+  const explicitPro = Boolean(opts.pro)
+  const stackNames = detectedFrameworks.filter((f) => f.name !== 'generic').map((f) => f.name)
+  // The weekly public offer fetch (signed-out terminal scans only; stack names only) runs beside the scan itself.
+  const weeklyOffer = !signedInForScanId && !explicitPro && !opts.general
+    ? maybeFetchWeeklyOffer(nagCtx(planEnv), {
+        signedIn: false, terminal: planEnv.terminal, ci: planEnv.ci, quiet, hookOrGate: isHookOrGate(),
+        safeMode: planEnv.safeMode, trackingOff: planEnv.trackingOff, dryRun: false,
+      }, stackNames, { apiUrl: opts.apiUrl as string }).catch((err: unknown) => {
+        logger.debug(`offer fetch failed (ignored): ${err instanceof Error ? err.message : String(err)}`)
+        return { attempted: false } as const
+      })
+    : null
+  const step: RulebookStepResult = await runRulebookStep({
+    env: planEnv,
+    explicitPro,
+    general: Boolean(opts.general),
+    allowDegraded: Boolean(opts.allowDegraded),
+    hookOrGate: isHookOrGate(),
+    apiUrl: opts.apiUrl as string,
+    frameworks: detectedFrameworks.map((f) => f.name),
+    categories,
+    scanId,
+    fetchProRules: async (f, c, u, sid) => (await import('../core/pro-scanner.js')).fetchProRules(f, c, u, sid),
+  })
+  if (step.error) {
+    return failWith(stepErrorEnvelope(step.error, { scanId, planEnv }), { startTime, projectDir: cwd, opts, policy })
+  }
+  if (!machineOutput && !quiet) for (const n of step.notes) logger.warn(n)
+  // --allow-degraded kept a scan going without the rulebook that --pro required: say so on stderr, always.
+  if (step.degradedReason) logger.warn('--allow-degraded set — degrading to a local scan; the full rulebook will not be applied')
 
-  // `changedOnly`/`categories` were hoisted above (scanId reuse) so resolveScanId can compute its
-  // pre-scan reuse key before this point — the scope fingerprint (§2.2) below reuses the same
-  // values regardless of whether the pro fetch runs/succeeds.
-
-  if (opts.pro) {
-    if (!machineOutput && !quiet) {
-      logger.info('Detecting stack...')
-    }
-    try {
-      const { fetchProRules } = await import('../core/pro-scanner.js')
-      const { hasConfig, generateConfig } = await import('../core/config-generator.js')
-      // Reuse the framework set already detected above for the scanId reuse key — do NOT
-      // re-detect (a second read could disagree with the set that keyed the scanId).
-      const frameworks = detectedFrameworks
-
-      // Auto-generate .shipguard.yml on first scan
-      if (!hasConfig(cwd)) {
-        const configPath = generateConfig(cwd, frameworks)
-        if (!machineOutput && !quiet) {
-          logger.success(`Config saved to ${configPath}`)
-        }
-      }
-
-      if (!machineOutput && !quiet) {
-        for (const fw of frameworks) {
-          logger.info(`  + ${fw.name}${fw.version ? ` ${fw.version}` : ''}`)
-        }
-        logger.info('Fetching pro rules...')
-      }
-
-      // ScanId idempotency (scanId idempotency): pass the per-scan stable scanId (minted once in
-      // scanCommand) down to fetchProRules so it rides in the request body AND the
-      // Idempotency-Key header. The server's (userId, scanId) reservation then makes a
-      // dropped-response retry re-deliver the already-paid bundle instead of charging a
-      // second credit. Omitting it here forced the server to mint a fresh UUID per
-      // request, defeating the entire server-side idempotency machinery (money bug).
-      const fetched = await fetchProRules(
-        frameworks.map((f) => f.name),
-        categories.length > 0 ? categories : undefined,
-        opts.apiUrl as string,
-        scanId,
-      )
-      proRules = fetched.rules
-      creditsRemaining = fetched.creditsRemaining
-      rulesVersion = fetched.rulesVersion
-
-      if (!machineOutput && !quiet && proRules.length > 0) {
-        // Build category breakdown for display
-        const breakdown: Record<string, number> = {}
-        for (const r of proRules) {
-          breakdown[r.category] = (breakdown[r.category] ?? 0) + 1
-        }
-        const breakdownStr = Object.entries(breakdown)
-          .map(([cat, count]) => `${cat}: ${count}`)
-          .join(', ')
-        logger.info(`  + ${proRules.length} rules loaded (${breakdownStr})`)
-        logger.info('  + Encrypted | Signed | Memory-only')
-      }
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      // a NO_RULES_APPLIED (server fail-closed on an empty bundle) is an UNCHECKABLE scan,
-      // NOT a transient outage. We must NOT degrade to a free scan and report green (§11.1). Exit
-      // 3 (RUNTIME_ERROR) loudly and suppress the free-rule fallback — a scan that checked nothing
-      // can never be SAFE_TO_SHIP.
-      const isNoRulesApplied =
-        (err instanceof Error && err.name === 'NoRulesAppliedError') ||
-        (err as { code?: string })?.code === 'NO_RULES_APPLIED'
-      if (isNoRulesApplied) {
-        if (!machineOutput) {
-          logger.error(`Pro rules unavailable (fail-closed): ${errMsg}`)
-          logger.error('This scan applied ZERO rules — it checked nothing. Refusing to report a clean pass.')
-        } else {
-          console.log(JSON.stringify({ error: errMsg, code: 'NO_RULES_APPLIED' }))
-        }
-        await exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
-      }
-
-      // ---------------------------------------------------------------------
-      // every OTHER Pro-fetch failure class (auth, credits,
-      // rate limit, server/network, invalid bundle). Classify by duck-typing the
-      // `code` field pro-scanner.ts's ProFetchError carries (see the type-only
-      // import at the top of this file — we deliberately do NOT value-import
-      // pro-scanner.js here, to keep it lazy-loaded for non-pro scans).
-      // Unrecognized/untyped errors default to SERVER_ERROR: fail loud is the
-      // SAFE default (never silently reclassify an unknown error as a clean
-      // free-scan fallback).
-      // ---------------------------------------------------------------------
-      const rawErrCode = (err as { code?: unknown })?.code
-      const KNOWN_PRO_FETCH_ERROR_CODES: readonly ProFetchErrorCode[] = [
-        'AUTH_FAILED', 'INSUFFICIENT_CREDITS', 'RATE_LIMITED', 'SERVER_ERROR', 'BUNDLE_INVALID', 'NO_ACTIVE_RELEASE', 'PLATFORM_UNAVAILABLE',
-      ]
-      const proErrorCode: ProFetchErrorCode =
-        typeof rawErrCode === 'string' && (KNOWN_PRO_FETCH_ERROR_CODES as string[]).includes(rawErrCode)
-          ? (rawErrCode as ProFetchErrorCode)
-          : 'SERVER_ERROR'
-      const retryAfterSeconds = (err as { retryAfterSeconds?: number })?.retryAfterSeconds
-
-      if (opts.allowDegraded) {
-        // Opt-in: restores the pre-2026-07-14 fallback — free scan, degraded:true,
-        // verdict-neutral exit (resolveExitCode is unaffected by this branch).
-        logger.warn('--allow-degraded set — degrading to free scan; pro rules will not be applied')
-        degraded = true
-        proFetchDegradeReason = {
-          code: 'PRO_RULES_UNAVAILABLE',
-          detail: `[${proErrorCode}] Pro rules could not be fetched: ${errMsg}`,
-        }
-      } else {
-        // Default (amended A1, explicit-Pro-failure path only — see the
-        // resolveExitCode doc comment above for the governance note): the
-        // caller explicitly asked for the pro gate and it did NOT run. Fail
-        // loud, exit 3 — never silently degrade to a free scan and report
-        // green. Structured, machine-readable, and includes what the caller
-        // can do next.
-        const action = proFetchActionHint(proErrorCode, retryAfterSeconds)
-        if (proErrorCode === 'PLATFORM_UNAVAILABLE') {
-          // The action text IS the calm message (it already carries the --allow-degraded hint) —
-          // don't prefix it with the raw server string.
-          logger.error(action)
-        } else {
-          logger.error(`Pro rules request failed [${proErrorCode}]: ${errMsg}`)
-          logger.error(action)
-          logger.error('Pass --allow-degraded to fall back to a free (local-rules-only) scan instead.')
-        }
-        if (machineOutput) {
-          console.log(JSON.stringify({
-            error: errMsg,
-            code: proErrorCode,
-            degraded: false,
-            action,
-            ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
-          }))
-        }
-        await exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
-      }
-    }
+  const proRules: QualityGateRule[] | undefined = step.proRules
+  const rulesVersion: string | undefined = step.rulesVersion
+  // An explicit --pro that --allow-degraded turned into a general run keeps the 0.12 degraded record.
+  const proFetchDegradeReason: DegradeReason | undefined = step.degradedReason ?? undefined
+  const degraded = proFetchDegradeReason !== undefined
+  // Public-contract view of the same event (`rules.fallback`): code, one fixed sentence, and the server's own reason.
+  const rulesFallback: { code: string; message: string; reason: string | null } | null = step.fallback
+    ? { code: step.fallback.code, message: step.fallback.message, reason: step.fallback.reason }
+    : null
+  if (!machineOutput && !quiet && proRules && proRules.length > 0 && step.rulebookRan) {
+    const breakdown: Record<string, number> = {}
+    for (const r of proRules) breakdown[r.category] = (breakdown[r.category] ?? 0) + 1
+    logger.info(`  + ${proRules.length} rules loaded (${Object.entries(breakdown).map(([cat, count]) => `${cat}: ${count}`).join(', ')})`)
   }
 
   // -----------------------------------------------------------------------
@@ -650,12 +675,11 @@ async function runScan(ctx: {
     if (showProgress) {
       process.stderr.write('\r\x1b[K')  // Clear the progress line
     }
-    if (!machineOutput) {
-      logger.error(`Scan failed: ${error instanceof Error ? error.message : error}`)
-    } else {
-      console.log(JSON.stringify({ error: String(error) }))
-    }
-    return exitWithError(EXIT_CODES.RUNTIME_ERROR, startTime, cwd, policy)
+    const crash = error instanceof Error ? error.message : String(error)
+    return failWith(
+      buildErrorEnvelope({ code: 'INTERNAL_ERROR', message: `ShipGuard stopped unexpectedly (run ${scanId.slice(0, 8)}).`, cliVersion: CLI_VERSION, runId: scanId, cause: crash }),
+      { startTime, projectDir: cwd, opts, policy },
+    )
   }
 
   // Clear progress line before printing results
@@ -663,21 +687,14 @@ async function runScan(ctx: {
     process.stderr.write('\r\x1b[K')  // Clear the progress bar line
   }
 
-  // Extract internal metadata (human output only) before building the public result
-  const skippedTooLarge = result._skippedTooLarge ?? 0
-  const skippedTooLargeFiles = result._skippedTooLargeFiles ?? []
-  const skippedBinary = result._skippedBinary ?? 0
-  const skippedBinaryFiles = result._skippedBinaryFiles ?? []
-  const skippedSymlinks = result._skippedSymlinks ?? 0
-  const skippedSymlinkFiles = result._skippedSymlinkFiles ?? []
-  const truncatedByBounds = result._truncated ?? false
-
   // Populate new ScanResult fields
   // Bumped 4 → 5 (recommendations #1/#2/#8): the verdict is now fail-closed and the
   // duplicate `riskScore.recommendation` is a deprecated mirror; receipt fields
   // (`runId`, `treeDigest`, `cliVersion`) are additive — see the schema-freeze test's
   // own documented evolution procedure (tests/commands/scan-json-schema-freeze.test.ts).
-  result.schemaVersion = '5'
+  // Bumped 5 → 6: the additive `coverage` object (what was scanned, skipped and ignored) and the
+  // new degrade codes UNSCANNED_UNKNOWN_BINARY and NO_FILES_SCANNED.
+  result.schemaVersion = SCHEMA_VERSION
   result.scanIdReused = scanIdReused
   // OR-merge: preserve coderef version-skip degradation from scanner,
   // combined with the pro-fetch failure flag from this command layer.
@@ -692,7 +709,10 @@ async function runScan(ctx: {
     const commandReasons: DegradeReason[] = proFetchDegradeReason ? [proFetchDegradeReason] : []
     result.degradedReasons = [...existingReasons, ...commandReasons]
   }
-  result.creditsWarning = creditsRemaining !== undefined && creditsRemaining < 10
+  // Deprecated alias (0.13.x): true when the SERVER's usage.state is warn or used. The CLI never decides a
+  // threshold itself (no plan facts); with no verified plan data there is no such state.
+  const serverUsageState = step.plan.server?.usage?.state
+  result.creditsWarning = serverUsageState === 'warn' || serverUsageState === 'used'
   result.rulesVersion = rulesVersion
   // Receipt fields (rec #8). runId is the SAME id used for retry idempotency and for the
   // run-scoped report filenames, so a report on disk can always be traced back to a run.
@@ -746,164 +766,364 @@ async function runScan(ctx: {
     result.coverageChanged = historyOutcome.coverageChanged
   }
 
-  // Build the public JSON-safe result (strip internal _ fields from the frozen schema)
-  // The --json schema is a frozen contract — internal metadata must not appear in it.
-  const publicResult = { ...result }
-  delete (publicResult as Record<string, unknown>)._skippedTooLarge
-  delete (publicResult as Record<string, unknown>)._skippedTooLargeFiles
-  delete (publicResult as Record<string, unknown>)._skippedBinary
-  delete (publicResult as Record<string, unknown>)._skippedBinaryFiles
-  delete (publicResult as Record<string, unknown>)._skippedSymlinks
-  delete (publicResult as Record<string, unknown>)._skippedSymlinkFiles
-  delete (publicResult as Record<string, unknown>)._truncated
+  // The public JSON result. The skip/truncation counts used to be private `_skipped*` fields that
+  // were deleted here, so the JSON never carried them. They now live in the public `coverage`
+  // object, so there is nothing left to strip.
+  const publicResult: typeof result = { ...result }
+  publicResult.telemetry = telemetryState({ policy, projectDir: cwd })
 
   // -----------------------------------------------------------------------
   // Write the report BEFORE rendering (rec #4): the human panel embeds the report
   // path, so the path has to exist by the time the panel is built. The write is
   // unconditional-on-request and independent of output mode, exactly as before.
   // -----------------------------------------------------------------------
+  // Facts shared by the report and the screen (one source, so they never disagree).
+  const generalRuleCount = generalRuleCountOrNull()
+  const bundledGeneral = loadBundledRules()
+  const generalIds = new Set(bundledGeneral.map((r) => r.id))
+  const fb = step.fallback
+  const rulebookRan = step.rulebookRan && !degraded && Boolean(proRules?.length)
+  const screenRulesRan: RulesRan = step.partial && proRules
+    ? { kind: 'partial', count: proRules.length }
+    : fb && fb.code !== 'RULEBOOK_PARTIAL'
+      ? { kind: 'fallback', code: fb.code, serverText: fb.serverText }
+      : rulebookRan && proRules
+        ? { kind: 'rulebook', label: step.plan.server?.label ?? null, count: proRules.length }
+        : { kind: 'general' }
+  const notScannedSummary = collectNotScanned(result, { cwd, maxFileSizeBytes: policy.limits?.maxFileSizeBytes })
+  const detectedStackNames = detectedFrameworks.map((f) => f.name)
+  const ignoredTestValues = result.coverage?.ignoredTestValues ?? 0
+  // W5 masking: the one masked text `<type>, <length> characters, value hidden` is read back for the screen and the report.
+  const maskedOf = (f: Finding) => (f.evidence ? parseMaskedSecret(f.evidence) : undefined)
+  const secretLabel = (f: Finding): string | null => {
+    const m = maskedOf(f)
+    return m ? secretScreenLabel(m.length) : null
+  }
+  const secretEvidence = (f: Finding): string | null => (maskedOf(f) && f.evidence ? f.evidence : null)
+
+  // Exit code resolution (A1 contract) — computed BEFORE any output so the JSON can say what the
+  // exit code means (`exitMeaning`) and the human output can end with the exit-code notice. The
+  // computation is pure; nothing here changes which code is returned.
+  let exitCode = resolveExitCode({
+    strict: scanOptions.strict,
+    blockingCount: result.riskScore.blockingCount,
+    // the hard stop must not inherit the false-safe on an
+    // unfinished scan. Uses the FINAL degraded value (post pro-fetch OR-merge).
+    degraded: result.degraded === true,
+    // CLI-2/J-3 — the hard stop must not disagree with the printed verdict:
+    // a scan can print DO_NOT_SHIP with blockingCount 0 (active non-blocking findings,
+    // degradation). effectiveRecommendation
+    // reads the SAME field the human panel / --json `recommendation` print.
+    recommendation: effectiveRecommendation(result),
+  })
+  const strictBlocked = exitCode === EXIT_CODES.BLOCKED
+  // --check-regressions (opt-in ONLY) — see the note at the exit below.
+  const regressionBlocks =
+    Boolean(opts.checkRegressions) && exitCode === EXIT_CODES.SAFE && (result.regressions?.length ?? 0) > 0
+  if (regressionBlocks) exitCode = EXIT_CODES.BLOCKED
+  const notSafe = result.riskScore.blockingCount > 0 || effectiveRecommendation(result) === 'DO_NOT_SHIP'
+  publicResult.exitMeaning = exitMeaning({ exitCode, strict: scanOptions.strict, notSafe, regressionBlocks })
+
+  // The loop state (spec 04 "Fix loop"): how many runs in a row still show the same blocking rule + file.
+  // Partial (--changed) scans never count: a blocker outside the changed files would look "fixed".
+  let sinceLastRun: SinceLastRun | null = null
+  if (!changedOnly) {
+    const warnLoop = (m: string): void => logger.warn(m)
+    const loop = computeSinceLastRun(readLastRun(cwd, warnLoop), {
+      runId: scanId,
+      treeDigest: result.treeDigest ?? null,
+      blocking: blockingOccurrences(result.findings),
+    })
+    sinceLastRun = loop.since
+    writeLastRun(cwd, loop.next, warnLoop)
+  }
+
+  const verdictValue = effectiveRecommendation(result)
+  const rerunCommand = buildRerunCommand({
+    invocationCwd,
+    scanRoot: cwd,
+    all: Boolean(opts.all),
+    pro: explicitPro,
+    general: Boolean(opts.general),
+    allowDegraded: Boolean(opts.allowDegraded),
+  })
+
+  // ---- the plan block for this run (display state only) ----
+  // Signed in: what the rulebook request (or the cache) said. Signed out: the cached public offer, plus the one weekly fetch
+  // that ran beside the scan (stack names only).
+  let plan = step.plan
+  if (!step.signedIn) {
+    const attempt = weeklyOffer ? await weeklyOffer : null
+    plan = attempt?.attempted && attempt.result.ok ? attempt.result.block : await readPublicOffer(planEnv, stackNames)
+    if (attempt?.attempted && !attempt.result.ok && plan.status === 'unavailable' && plan.reason !== 'PLAN_UNVERIFIED') {
+      plan = unavailableBlock(attempt.result.reason)
+    }
+  }
+  const nag = loadNagFor(planEnv)
+  const muted = isMuted(nag)
+  const rk = repoKey(repoIdOf(cwd))
+  const acctId = step.acct
+  const hookOrGate = isHookOrGate()
+  const detected: DetectedStack[] = detectedFrameworks
+    .filter((f) => f.name !== 'generic')
+    .map((f) => ({ key: f.name, display: stackDisplayName(f.name), version: f.version ?? null }))
+  const generalCountN = bundledGeneral.length
+  const complete = result.degraded !== true
+  const blockingCount = result.riskScore.blockingCount
+  const rulebookRuleIds = new Set<string>(proRules && (rulebookRan || step.partial) ? proRules.filter((r) => !generalIds.has(r.id)).map((r) => r.id) : [])
+  // First-Pro receipt data: what the rulebook ran that the bundled general set did not (never on a partial or fallback run).
+  const receipt: Receipt | null = rulebookRan && fb === null && proRules
+    ? computeReceipt(
+        proRules.map((r) => ({ id: r.id, category: r.category, area: step.areaByRuleId[r.id] ?? null })),
+        generalIds,
+        // Only findings the screen shows: a shipguard-ignore (or anti-pattern) suppressed finding is not a finding of this run.
+        result.findings.filter((f) => !f.suppressed).map((f) => f.id),
+      )
+    : null
+
+  // Facts the next-steps and the screen share.
+  const reasons = result.degradedReasons ?? []
+  const degradedJson = buildDegradedReasons(reasons, result.coverage)
+  const notScanned = buildNotScanned(result.coverage, reasons)
+  const blockingFindings = result.findings.filter((f) => f.blocking && !f.suppressed)
+  // Gate health (spec 03): a stale hook and a gate the host killed are reported on every run, outside the gate too.
+  const healthWarnings = gateHealthWarnings(cwd)
+  const warnings: Array<{ code: string; message: string; command: string | null }> = healthWarnings.map((w) => ({ code: w.code, message: w.message, command: w.command }))
+  const gate = probeGate(cwd)
+  const nextAgent = detectNextAgent(cwd)
+  const steps = buildNextSteps({
+    value: verdictValue,
+    blockingFindings,
+    degraded: result.degraded === true,
+    degradedReasons: degradedJson,
+    notScanned,
+    sinceLastRun,
+    warnings,
+    rerunCommand,
+    install: { agent: nextAgent, gateInstalled: gate.state !== 'none', hookStale: gate.state === 'stale' || healthWarnings.some((w) => w.code === 'HOOK_STALE') },
+    reportMarkdown: scanOptions.reportPath,
+  })
+  const agentAction = decideAgentAction({ value: verdictValue, blockingCount, degraded: result.degraded === true, steps, sinceLastRun })
+  const marks = { pitch: false, usage: false, receipt: false }
+
+  // The schema-7 result object: the SAME object goes to stdout (--json) and to the run's JSON record.
+  const buildEnvelope = (forStdout: boolean, reportPaths: { mdPath: string; runJsonPath: string } | null): Record<string, unknown> => {
+    const rulebookResult = rulebookRan && fb === null
+    const planOut = buildPlanJson({
+      plan, signedIn: step.signedIn, accountStatus: step.accountStatus, stacks: detected, generalRuleCount: generalCountN,
+      complete, blockingCount, fallbackActive: fb !== null, ci: planEnv.ci, safeMode: planEnv.safeMode, muted,
+      jsonPitchDue: forStdout && momentDue(nag, 'jsonPitch', rk, planEnv.now),
+      usageJsonDue: forStdout && acctId !== null && momentDue(nag, 'usageJson', acctId, planEnv.now),
+      receiptJsonDue: forStdout && acctId !== null && momentDue(nag, 'receiptJson', acctId, planEnv.now),
+      receipt: rulebookResult ? receipt : null,
+    })
+    if (forStdout) { marks.pitch = planOut.mark.pitch; marks.usage = planOut.mark.usage; marks.receipt = planOut.mark.receipt }
+    const strictWouldExit = resolveExitCode({
+      strict: true, blockingCount, degraded: result.degraded === true, recommendation: verdictValue,
+    })
+    return buildScanEnvelope({
+      cliVersion: CLI_VERSION,
+      runId: scanId,
+      timestamp: result.timestamp,
+      elapsedMs: Date.now() - startTime,
+      verdictValue,
+      verdict: buildVerdictJson({
+        value: verdictValue,
+        blockingCount,
+        findingCount: result.findings.filter((f) => !f.suppressed).length,
+        degraded: result.degraded === true,
+        filesScanned: result.filesScanned,
+        notScannedCount: notScannedSummary.fileCount,
+        rulebookFallback: fb !== null && fb.code !== 'RULEBOOK_PARTIAL',
+      }),
+      exitCode,
+      strict: scanOptions.strict,
+      strictWouldExit,
+      agentAction,
+      report: reportPaths ? { markdown: reportPaths.mdPath, json: reportPaths.runJsonPath } : null,
+      stack: {
+        detected: detected.map((f) => `${f.key}${f.version ? `@${f.version}` : ''}`),
+        supported: detected.length > 0,
+        ...(detected.length === 0 ? { manifest: firstManifest(cwd) } : {}),
+      },
+      rules: {
+        corpus: rulebookRan ? 'rulebook' : 'general',
+        version: rulebookRan ? (rulesVersion ?? null) : CLI_VERSION,
+        applied: rulebookRan ? proRules!.length : generalCountN,
+        localChecks: true,
+        fallback: rulesFallback,
+        ...(step.partial ? { tiersApplied: step.tiersApplied ?? [] } : {}),
+        receipt: rulebookResult && receipt ? receipt : null,
+      },
+      plan: planOut.json,
+      findings: result.findings,
+      findingCtx: { rerunCommand, rulebookRuleIds },
+      coverage: buildCoverageJson(result.coverage, reasons, result.filesScanned, ignoredTestValues),
+      degraded: result.degraded === true,
+      degradedReasons: degradedJson,
+      warnings,
+      nextSteps: steps,
+      telemetry: publicResult.telemetry,
+      regressions: publicResult.regressions ?? [],
+      coverageChanged: publicResult.coverageChanged ?? [],
+      sinceLastRun,
+      treeDigest: result.treeDigest,
+      riskScore: result.riskScore,
+      policyUsed: result.policyUsed,
+      scanIdReused,
+      legacy: {
+        stateStatus: result.stateStatus,
+        regressionCheckSkipped: result.regressionCheckSkipped,
+        regressionCheckSkippedReason: result.regressionCheckSkippedReason,
+        creditsWarning: Boolean(result.creditsWarning),
+        filesScanned: result.filesScanned,
+        exitMeaning: publicResult.exitMeaning ?? '',
+        rulesVersion: result.rulesVersion,
+        rulesApplied: result.rulesApplied,
+        rulesBreakdown: result.rulesBreakdown,
+        aiCodeIssues: result.aiCodeIssues,
+      },
+    })
+  }
+
+  // The envelope is built once: for stdout under --json, for the report's JSON record otherwise. The report's paths are
+  // known before it is written, so the result can carry them.
   const shouldReport = scanOptions.generateReport || policy.scan.generate_report
+  const plannedReport = shouldReport ? reportPathsFor(scanOptions.reportPath, scanId) : null
+  const envelope = scanOptions.json || shouldReport ? buildEnvelope(Boolean(scanOptions.json), plannedReport) : null
   let reportPaths: Awaited<ReturnType<typeof generateReport>> | undefined
-  if (shouldReport) {
+  // A committed `.shipguard -> /elsewhere` must not receive the report: refused with a warning, the scan still prints.
+  // Every folder and file generateReport writes is checked: latest.md/.json AND the runs/ folder with the run files in it.
+  const reportDir = dirname(scanOptions.reportPath)
+  const reportBase = basename(scanOptions.reportPath, '.md')
+  const reportTargets = plannedReport
+    ? [scanOptions.reportPath, join(reportDir, `${reportBase}.json`), join(reportDir, 'runs'), plannedReport.runJsonPath, plannedReport.runJsonPath.replace(/\.json$/, '.md')]
+    : []
+  const reportRefused = shouldReport && reportTargets.map((t) => refuseWrite(cwd, t, 'the report')).some(Boolean)
+  if (shouldReport && !reportRefused) {
+    if (relative(cwd, resolve(cwd, scanOptions.reportPath)).split(/[\\/]/)[0] === '.shipguard') ensureShipguardDirIgnored(cwd)
     const reportElapsedMs = Date.now() - startTime
     try {
-      reportPaths = await generateReport(result, scanOptions.reportPath, reportElapsedMs)
+      reportPaths = await generateReport(result, scanOptions.reportPath, reportElapsedMs, {
+        stacks: detectedStackNames,
+        rerunCommand,
+        generalRuleCount,
+        rulesRan: screenRulesRan,
+        notScanned: notScannedSummary,
+        ignoredTestValues,
+        secretEvidence,
+        agentJson: envelope ?? undefined,
+      })
     } catch (error) {
       // Loud. A failed report write never changes the verdict or the exit
       // code, but it is never swallowed either.
-      logger.error(`Report generation failed: ${error instanceof Error ? error.message : error}`)
+      if (!saveProblem(error)) logger.error(`Report generation failed: ${error instanceof Error ? error.message : error}`)
     }
+  }
+
+  // Warnings that carry a command go to stderr, one line each (spec 01, 03): stdout line 1 stays the verdict. The JSON
+  // and SARIF outputs keep stderr quiet: the same facts are in warnings[]. The gate's own child run is a JSON run.
+  if (!opts.sarif && !scanOptions.json && !isHookOrGate()) {
+    for (const w of healthWarnings) process.stderr.write(`${healthWarningLine(w)}\n`)
   }
 
   // Machine-readable output — exactly one format emitted to stdout
   if (opts.sarif) {
     console.log(JSON.stringify(toSarif(publicResult), null, 2))
   } else if (scanOptions.json) {
-    console.log(JSON.stringify(publicResult, null, 2))
+    console.log(JSON.stringify(envelope, null, 2))
+    // What this JSON read told an agent is marked as shown (its own counters: the terminal never loses its window).
+    const nctx = nagCtx(planEnv)
+    if (marks.pitch) markMoment(nctx, 'jsonPitch', rk)
+    if (acctId !== null && marks.usage) markMoment(nctx, 'usageJson', acctId)
+    if (acctId !== null && marks.receipt) markMoment(nctx, 'receiptJson', acctId)
   } else if (quiet) {
-    // --quiet mode: one-line verdict only
-    console.log(quietVerdict(result, scanOptions.strict))
+    // --quiet mode: one `key=value` line (spec 01); nothing else on stdout.
+    console.log(renderQuietLine({
+      result,
+      agentAction,
+      notScanned: notScannedSummary.fileCount,
+      // PLAN_INACTIVE (a lapsed plan) is shown on a terminal only; the quiet line never carries it.
+      fallbackCode: fb && fb.code !== 'PLAN_INACTIVE' ? fb.code : null,
+      reportPath: reportPaths?.mdPath ?? null,
+    }))
   } else {
     // -----------------------------------------------------------------------
-    // Verbose human output (default) — rich, gamified, full scan experience
+    // Human screen (spec 01): verdict first, at most 25 lines, same bytes piped or on a terminal.
     // -----------------------------------------------------------------------
     const elapsedMs = Date.now() - startTime
+    const nctx = nagCtx(planEnv)
 
-    // First-run welcome banner (TTY only, not in --json/--sarif/--quiet)
+    // First-run write notice: ONCE, on stderr (stdout line 1 stays the verdict; not in --json/--sarif/--quiet)
     const isTTY = Boolean(process.stdout.isTTY)
-    if (isTTY) {
-      const banner = welcomeBanner()
-      if (banner) console.log(banner)
-    }
+    const writeNotice = welcomeBanner()
+    if (writeNotice && !saveFailed()) process.stderr.write(`${writeNotice}\n`)
 
-    // Findings summary — categorized by severity + confidence/FP labels
-    console.log(renderFindingsSummary(result.findings))
+    // Free-to-Pro line (one shared 7-day counter per repo) and the first-Pro receipt: after the result, terminal only.
+    const pitch = screenPitch({
+      plan, signedIn: step.signedIn, accountStatus: step.accountStatus, detected, rulesApplied: generalCountN,
+      scanComplete: complete, blocking: blockingCount > 0, fallbackActive: fb !== null, ci: planEnv.ci, hookOrGate,
+      safeMode: planEnv.safeMode, muted, recentlyShown: false, terminal: planEnv.terminal, quiet: false,
+      screenDue: momentDue(nag, 'screenPitch', rk, planEnv.now),
+    })
+    const receiptOpen = receipt !== null && receipt.extraRules > 0 && acctId !== null && planEnv.terminal && !planEnv.ci && !hookOrGate &&
+      !planEnv.safeMode && momentDue(nag, 'receiptShown', acctId, planEnv.now)
+    const receiptOut = receiptOpen && receipt ? receiptLines(receipt, plan) : []
+    const setupDue = momentDue(nag, 'setupHint', rk, planEnv.now)
 
-    // Category breakdown table
-    if (result.findings.length > 0) {
-      console.log(findingsByCategoryTable(result.findings))
-      console.log('')
-    }
-
-    // Oversized-file skip is a DEGRADED condition — LOUD warning that NAMES the
-    // file(s) so the user knows exactly what was NOT scanned (oversized-file skip). A 180 MB generated/minified bundle hiding a secret
-    // must never be silently dropped into a SAFE verdict.
-    if (skippedTooLarge > 0) {
-      const named = skippedTooLargeFiles.slice(0, 10).join(', ')
-      const more = skippedTooLarge > skippedTooLargeFiles.length || skippedTooLargeFiles.length > 10
-        ? ` (and others)`
-        : ''
-      logger.warn(
-        `Scan INCOMPLETE: ${skippedTooLarge} file(s) skipped for exceeding the size limit — NOT scanned: ${named}${more}`
-      )
-      logger.warn(
-        `These files were not checked. Split/minify-exclude them, or raise \`limits.maxFileSizeBytes\` in shipguard.policy.yml. Verdict is degraded — see \`degraded\`/\`degradedReasons\` in --json output (does not change the exit code).`
-      )
-    }
-
-    // Symlink skip is a DEGRADED condition — LOUD warning that NAMES the symlink(s)
-    // so the user knows exactly what subtree was NOT scanned (symlink reporting). A
-    // symlinked `src/` (or any symlinked file/dir) can hide an entire project's real
-    // source from the scan with no other signal; followSymbolicLinks:false itself is
-    // correct and unchanged  — what changed is that
-    // this is no longer silent.
-    if (skippedSymlinks > 0) {
-      const named = skippedSymlinkFiles.slice(0, 10).join(', ')
-      const more = skippedSymlinks > skippedSymlinkFiles.length || skippedSymlinkFiles.length > 10
-        ? ` (and others)`
-        : ''
-      logger.warn(
-        `Scan INCOMPLETE: ${skippedSymlinks} symlink(s) not followed — NOT scanned: ${named}${more}`
-      )
-      logger.warn(
-        `ShipGuard never follows symlinks (privacy moat — a symlink could point outside your project). If this path holds real source, replace the symlink with the real directory/file to have it scanned. Verdict is degraded — see \`degraded\`/\`degradedReasons\` in --json output (does not change the exit code).`
-      )
-    }
-
-    // Binary skips are NORMAL (no source to scan) — informational only, but named
-    // (symlink reporting: this file's own docs already admitted binary skips happen,
-    // never named which files, unlike every other skip category).
-    if (skippedBinary > 0) {
-      const named = skippedBinaryFiles.slice(0, 10).join(', ')
-      const more = skippedBinary > skippedBinaryFiles.length || skippedBinaryFiles.length > 10
-        ? ` (and others)`
-        : ''
-      logger.info(`Files skipped (binary, normal): ${skippedBinary} — ${named}${more}`)
-    }
-
-    if (creditsRemaining !== undefined) {
-      logger.info(`Credits remaining: ${creditsRemaining}`)
-    }
-
-    if (scanIdReused) {
-      logger.info('Retry detected — reused the prior scanId (no double charge for this retry)')
-    }
-
-    if (degraded) {
-      logger.warn('Scan ran in degraded mode — pro rules were unavailable')
-    }
-
-    // Truncation warning — loud, actionable
-    if (truncatedByBounds) {
-      logger.warn(
-        `Scan was truncated: file count or total size limit was reached. ` +
-        `Results are INCOMPLETE — add a \`.shipguardignore\` or edit \`shipguard.policy.yml\` limits.`
-      )
-      logger.warn(`Docs: ${goLink('docs')}`)
-    }
-
-    // Coverage line — honest statement of what was checked
-    console.log(coverageLine())
-    console.log('')
-
-    // End-of-scan action footer — copy-paste commands, zero learning curve.
-    // Rec #4: tips print BEFORE the panel. They used to sit after it, so the last
-    // thing on screen was a list of suggestions and the verdict was ~70 lines up.
-    const topRuleId = result.findings.length > 0 ? result.findings[0].id : undefined
-    // isLoggedIn: heuristic — if pro rules loaded successfully we are authenticated
-    const isLoggedIn = Boolean(opts.pro && !degraded)
-    console.log(actionFooter({
-      hasFindings: result.findings.length > 0,
-      topRuleId,
-      isLoggedIn,
-    }))
-
-    // Gamified verdict panel — LAST (rec #4). Carries the verdict, and now the report
-    // path too, so nothing prints after it that could contradict its glyph.
-    console.log(verdictPanel(
-      result,
+    // The screen marks a finding from a downloaded rulebook rule with `[<plan> rule]` (spec 05): hand it the origin the JSON already carries.
+    const screenResult: typeof result = rulebookRuleIds.size > 0
+      ? { ...result, findings: result.findings.map((f) => (rulebookRuleIds.has(f.id) ? { ...f, origin: 'rulebook' } : f)) }
+      : result
+    const screen = renderScanScreen({
+      result: screenResult,
       elapsedMs,
-      skippedTooLarge + skippedBinary + skippedSymlinks,
-      result.findings,
-      scanOptions.strict,
-      reportPaths,
-    ))
+      strict: scanOptions.strict,
+      exitCode,
+      rerunCommand,
+      reportPath: reportPaths?.mdPath ?? null,
+      stacks: detectedStackNames,
+      manifest: detectManifest(cwd),
+      generalRuleCount,
+      rulesRan: screenRulesRan,
+      notScanned: notScannedSummary,
+      next: {
+        agent: nextAgent,
+        gate: gate.state,
+        gateLabel: gate.label,
+        // The setup suggestion is shown once per 7 days; JSON always carries the setup step.
+        suggestionShownRecently: !setupDue,
+      },
+      planLines: [...pitch.lines, ...receiptOut],
+      planLabel: plan.server?.label ?? null,
+      ignoredTestValues,
+      publicIdentifiers: result.coverage?.publicIdentifiers ?? 0,
+      secretLabel,
+      fixLoop: sinceLastRun
+        ? { fixed: sinceLastRun.fixed.length, added: sinceLastRun.new.length, repeatLine: repeatLineFor(sinceLastRun, blockingCount) }
+        : undefined,
+      columns: isTTY ? (process.stdout.columns ?? 100) : undefined,
+      nothingToCheck: Boolean(result.coverage?.changed?.nothingToCheck),
+    })
+    console.log(screen)
+
+    if (pitch.mark && pitch.lines.length > 0) markMoment(nctx, 'screenPitch', rk)
+    if (receiptOut.length > 0 && acctId !== null) markMoment(nctx, 'receiptShown', acctId)
+    if (screen.includes('shipguard setup --agent')) markMoment(nctx, 'setupHint', rk)
+
+    // Allowance and update notices: stderr, interactive terminal only, once per day per account.
+    if (acctId !== null) {
+      const nc = { terminal: planEnv.terminal, quiet: false, ci: planEnv.ci, hookOrGate, safeMode: planEnv.safeMode, due: momentDue(nag, 'usageScreen', acctId, planEnv.now) }
+      const notice = [...usageNoticeLines(plan, nc), ...updateNoticeLines(plan, nc)]
+      for (const line of notice) console.error(line)
+      if (notice.length > 0) markMoment(nctx, 'usageScreen', acctId)
+    }
   }
 
   // Anonymous opt-out ping — privacy-preserving. Started here so the request overlaps with the
   // exit-code work below, and AWAITED (bounded, <= 1.5 s, never rejects) right before any explicit
   // process.exit so a --strict exit cannot drop it.
-  // Payload (schema v2): version, verdict, duration bucket, ci flag, provenance, random install id (null in CI) ONLY.
+  // Payload (schema v4): version, verdict, duration bucket, ci flag, provenance, coding-agent label, stdout-is-a-terminal flag, output kind, random install id (null in CI) ONLY.
   // Never: paths, file content, hostnames, user identity, finding details.
   // Opt out: SHIPGUARD_TELEMETRY=0, DO_NOT_TRACK=1, `shipguard telemetry disable`, or
   // `telemetry.enabled: false` in shipguard.policy.yml / .shipguard.yml. See src/core/telemetry.ts.
@@ -915,18 +1135,16 @@ async function runScan(ctx: {
     // contract (exit code is verdict-neutral by default; verdict lives in JSON).
     // 'review' means "a human should look at this before trusting the verdict":
     // either a degraded/partial scan, or a REVIEW_BEFORE_SHIP recommendation.
-    const verdictBucket: TelemetryVerdict = result.degraded
-      ? 'review'
-      : result.riskScore.blockingCount > 0
-        ? 'blocked'
-        : result.riskScore.recommendation === 'REVIEW_BEFORE_SHIP'
-          ? 'review'
-          : 'safe'
+    // G-10: the ping carries the SAME verdict the run printed (effectiveRecommendation), so an incomplete scan that
+    // ends DO_NOT_SHIP pings 'blocked', not 'review'.
+    const verdictBucket: TelemetryVerdict =
+      verdictValue === 'DO_NOT_SHIP' ? 'blocked' : verdictValue === 'REVIEW_BEFORE_SHIP' ? 'review' : 'safe'
     telemetryDone = sendTelemetry(
       {
         cliVersion: CLI_VERSION,
         verdict: verdictBucket,
         durationMs: elapsedMs,
+        output: outputKind(opts),
       },
       { policy, projectDir: cwd },
     )
@@ -940,20 +1158,8 @@ async function runScan(ctx: {
   // ONLY thing that moves the exit code off 0. Degradation is surfaced in JSON
   // (`degraded`/`degradedReasons`), never by reusing a different exit code —
   // see resolveExitCode() doc comment above.
-  let exitCode = resolveExitCode({
-    strict: scanOptions.strict,
-    blockingCount: result.riskScore.blockingCount,
-    // the hard stop must not inherit the false-safe on an
-    // unfinished scan. Uses the FINAL degraded value (post pro-fetch OR-merge).
-    degraded: result.degraded === true,
-    // CLI-2/J-3 — the hard stop must not disagree with the printed verdict:
-    // a scan can print DO_NOT_SHIP with blockingCount 0 (active non-blocking findings,
-    // degradation). effectiveRecommendation
-    // reads the SAME field the human panel / --json `recommendation` print.
-    recommendation: effectiveRecommendation(result),
-  })
 
-  if (exitCode === EXIT_CODES.BLOCKED && !machineOutput && !quiet) {
+  if (strictBlocked && !machineOutput && !quiet) {
     if (result.degraded === true) {
       logger.warn(
         `Strict mode: this scan did not finish — ${(result.degradedReasons ?? []).map((r) => r.code).join(', ') || 'reason not recorded'} ` +
@@ -961,12 +1167,6 @@ async function runScan(ctx: {
       )
     } else if (result.riskScore.blockingCount > 0) {
       logger.warn(`Strict mode: ${result.riskScore.blockingCount} blocking finding(s) — exiting with code 1`)
-    } else {
-      logger.warn(
-        `Strict mode: verdict is DO_NOT_SHIP (risk score ${result.riskScore.score}/100) — exiting with code 1. ` +
-        `No individual finding is policy-blocking, but the combined risk score of the active findings ` +
-        `crossed the DO_NOT_SHIP threshold. Fix or drop --strict to get a report without a hard stop.`
-      )
     }
   }
 
@@ -975,17 +1175,14 @@ async function runScan(ctx: {
   // opts into using the EXISTING BLOCKED exit code (never a new one) when at least one
   // regression fired. This does NOT touch resolveExitCode()'s A1 contract above — it is
   // a separate, additive override, and only ever raises the exit code, never lowers it.
-  if (opts.checkRegressions && exitCode === EXIT_CODES.SAFE && (result.regressions?.length ?? 0) > 0) {
-    exitCode = EXIT_CODES.BLOCKED
-    if (!machineOutput && !quiet) {
-      logger.warn(`--check-regressions: ${result.regressions?.length} previously-passing rule(s) now fail — exiting with code 1`)
-    }
+  if (regressionBlocks && !machineOutput && !quiet) {
+    logger.warn(`--check-regressions: ${result.regressions?.length} previously-passing rule(s) now fail — exiting with code 1`)
   }
 
   // Let the (bounded) ping finish before we may hard-exit. sendTelemetry never rejects.
   await telemetryDone
 
   if (exitCode !== EXIT_CODES.SAFE) {
-    process.exit(exitCode)
+    setExitCode(exitCode)
   }
 }

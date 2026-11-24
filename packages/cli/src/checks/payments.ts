@@ -7,10 +7,14 @@ import { compileDetectorRegex } from '../core/re2-detector-engine.js'
 // ---------------------------------------------------------------------------
 
 /** True for routes that are likely Stripe webhook handlers. */
-function isStripeWebhookRoute(relativePath: string): boolean {
+function isStripeWebhookRoute(relativePath: string, content: string): boolean {
   const p = relativePath.toLowerCase()
   // Must be in an API route directory
   if (!p.includes('api/') && !p.includes('api\\')) return false
+  // A razorpay-path file gets the Razorpay checks only when its CONTENT shows Razorpay and no Stripe.
+  // Decided by content, not path, so a Stripe flaw in a file under a razorpay path is never hidden
+  // (a file that mentions neither still gets the Stripe checks, as before).
+  if (p.includes('razorpay') && RE_RAZORPAY_WORD.test(content) && !RE_STRIPE_WORD.test(content)) return false
   return (
     p.includes('webhook') ||
     p.includes('stripe')
@@ -18,10 +22,12 @@ function isStripeWebhookRoute(relativePath: string): boolean {
 }
 
 /** True for routes that are likely Razorpay webhook handlers. */
-function isRazorpayWebhookRoute(relativePath: string): boolean {
+function isRazorpayWebhookRoute(relativePath: string, content: string): boolean {
   const p = relativePath.toLowerCase()
   if (!p.includes('api/') && !p.includes('api\\')) return false
-  return p.includes('razorpay') || (p.includes('webhook') && p.includes('razorpay'))
+  if (!p.includes('razorpay')) return false
+  // Same content rule as the Stripe side: a razorpay-path file that uses Stripe and never Razorpay is a Stripe file.
+  return RE_RAZORPAY_WORD.test(content) || !RE_STRIPE_WORD.test(content)
 }
 
 /** True for payment-related API routes (checkout, billing, subscription, payment). */
@@ -60,6 +66,10 @@ function isClientSideFile(relativePath: string): boolean {
 // uppercase-S form are collapsed into one case-insensitive pattern — semantically
 // identical under the 'i' flag, confirmed by differential).
 const RE_STRIPE_CONSTRUCT_EVENT = compileDetectorRegex('stripe\\.webhooks\\.constructEvent', 'i')
+
+// Provider names in file content (decide whether a razorpay-path file also gets Stripe checks)
+const RE_STRIPE_WORD = compileDetectorRegex('stripe', 'i')
+const RE_RAZORPAY_WORD = compileDetectorRegex('razorpay', 'i')
 
 // Line 65: /stripe-signature/i
 const RE_STRIPE_SIGNATURE = compileDetectorRegex('stripe-signature', 'i')
@@ -146,50 +156,40 @@ export const payments: CheckModule = {
       // ------------------------------------------------------------------
       // 1. Stripe webhook route missing constructEvent signature verification
       // ------------------------------------------------------------------
-      if (isStripeWebhookRoute(relativePath)) {
-        if (!hasStripeConstructEvent(content)) {
+      if (isStripeWebhookRoute(relativePath, content)) {
+        const noConstructEvent = !hasStripeConstructEvent(content)
+        const noSignatureHeader = !hasStripeSignatureHeader(content)
+        // One unsigned webhook is ONE flaw: report it once, whichever of the two signals is missing.
+        if (noConstructEvent || noSignatureHeader) {
           const id = 'payment_webhook_without_signature_check'
           findings.push({
             id,
-            title: 'Stripe webhook missing signature verification',
+            title: noConstructEvent
+              ? 'Stripe webhook missing signature verification'
+              : 'Stripe webhook does not read stripe-signature header',
             severity: 'critical',
             category: 'payments',
             file: relativePath,
-            evidence: 'No call to stripe.webhooks.constructEvent() found',
+            evidence: noConstructEvent && noSignatureHeader
+              ? 'No call to stripe.webhooks.constructEvent() and no reference to the stripe-signature header found'
+              : noConstructEvent
+                ? 'No call to stripe.webhooks.constructEvent() found'
+                : 'No reference to stripe-signature header found',
             confidence: 'MEDIUM',
-            explanation:
-              'Without calling stripe.webhooks.constructEvent(), the webhook endpoint cannot verify that ' +
-              'requests originate from Stripe. Attackers can send forged events to trigger payment logic ' +
-              '(e.g., fake payment_intent.succeeded) without making a real payment.',
+            explanation: noConstructEvent
+              ? 'Without calling stripe.webhooks.constructEvent(), the webhook endpoint cannot verify that ' +
+                'requests originate from Stripe. Attackers can send forged events to trigger payment logic ' +
+                '(e.g., fake payment_intent.succeeded) without making a real payment.' +
+                (noSignatureHeader
+                  ? ' The stripe-signature header, which carries the proof, is not read either.'
+                  : '')
+              : 'The Stripe-Signature header carries the HMAC timestamp+hash that proves the request ' +
+                'originated from Stripe. Without reading it, signature verification is impossible.',
             recommendation:
               'Verify every incoming webhook with stripe.webhooks.constructEvent(rawBody, sig, webhookSecret). ' +
-              'Pass the raw request body — not a parsed JSON object — to prevent HMAC mismatch.',
-            blocking: isBlocking(id, policy),
-          })
-        }
-
-        // ----------------------------------------------------------------
-        // 2. Stripe webhook route missing stripe-signature header read
-        //    (separate check — constructEvent may be present but header may
-        //    be fetched incorrectly in a wrapper; also catches middleware
-        //    that skips the header entirely)
-        // ----------------------------------------------------------------
-        if (!hasStripeSignatureHeader(content)) {
-          const id = 'payment_webhook_without_signature_check'
-          findings.push({
-            id,
-            title: 'Stripe webhook does not read stripe-signature header',
-            severity: 'critical',
-            category: 'payments',
-            file: relativePath,
-            evidence: 'No reference to stripe-signature header found',
-            confidence: 'MEDIUM',
-            explanation:
-              'The Stripe-Signature header carries the HMAC timestamp+hash that proves the request ' +
-              'originated from Stripe. Without reading it, signature verification is impossible.',
-            recommendation:
+              'Pass the raw request body, not a parsed JSON object, to prevent HMAC mismatch. ' +
               'Read the header with request.headers.get("stripe-signature") (Next.js) or ' +
-              'req.headers["stripe-signature"] (Express) before calling constructEvent().',
+              'req.headers["stripe-signature"] (Express) first.',
             blocking: isBlocking(id, policy),
           })
         }
@@ -198,7 +198,7 @@ export const payments: CheckModule = {
       // ------------------------------------------------------------------
       // 3. Razorpay webhook route missing validateWebhookSignature
       // ------------------------------------------------------------------
-      if (isRazorpayWebhookRoute(relativePath)) {
+      if (isRazorpayWebhookRoute(relativePath, content)) {
         if (!hasRazorpayValidateWebhook(content)) {
           const id = 'payment_webhook_without_signature_check'
           findings.push({
@@ -275,24 +275,26 @@ export const payments: CheckModule = {
       // 5. Webhook routes without idempotency handling
       //    Applies to both Stripe and Razorpay webhook files.
       // ------------------------------------------------------------------
-      if (isStripeWebhookRoute(relativePath) || isRazorpayWebhookRoute(relativePath)) {
+      if (isStripeWebhookRoute(relativePath, content) || isRazorpayWebhookRoute(relativePath, content)) {
         if (!hasIdempotencyHandling(content)) {
           const id = 'missing_idempotency'
           findings.push({
             id,
-            title: 'Webhook handler lacks idempotency protection',
-            severity: 'medium',
+            title: 'No idempotency (duplicate-delivery) check found in webhook handler',
+            // Robustness, not a security hole: a duplicate delivery repeats an action, it does not open access.
+            severity: 'low',
             category: 'payments',
             file: relativePath,
-            evidence: 'No idempotency key, event.id check, or duplicate-detection logic found',
+            evidence: 'No idempotency key, event.id check, or duplicate-detection logic found in this file',
             confidence: 'LOW',
             explanation:
-              'Payment providers may deliver the same webhook event more than once (retries after ' +
-              'network failure, provider-side bugs). Without idempotency guards, duplicate deliveries ' +
-              'can cause double-charges, double-fulfillments, or double-refunds.',
+              'Payment providers can send the same webhook event more than once (for example after a ' +
+              'timeout). This file has no sign of a check for events it has already handled, so a repeat ' +
+              'could run the same action twice, such as a second order fulfilment or refund. If you handle ' +
+              'repeats elsewhere (a shared helper or the database), this finding can be ignored.',
             recommendation:
-              'Record processed event IDs (e.g., store event.id in a database) before acting on the ' +
-              'event. If the ID already exists, return 200 immediately without reprocessing.',
+              'Store each processed event.id before acting on the event. If the ID is already stored, ' +
+              'return 200 right away without running the action again.',
             blocking: isBlocking(id, policy),
           })
         }

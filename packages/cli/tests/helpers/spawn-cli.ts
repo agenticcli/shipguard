@@ -12,6 +12,19 @@ import { spawn } from 'node:child_process'
 export const DEFAULT_KILL_TIMEOUT_MS = 25_000
 const KILL_GRACE_MS = 2_000
 
+// Children still running. The child is detached (own process group), so if the test worker itself
+// dies (test-file timeout, SIGTERM) it would survive as an orphan; reap them when the worker exits.
+const liveGroups = new Set<number>()
+process.once('exit', () => {
+  for (const pid of liveGroups) {
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {
+      /* ESRCH: already gone */
+    }
+  }
+})
+
 export interface SpawnResult {
   code: number
   stdout: string
@@ -34,6 +47,7 @@ export function spawnNode(
       // that inherited our stdout/stderr pipes would otherwise keep them open and stall 'close'.
       detached: true,
     })
+    if (child.pid !== undefined) liveGroups.add(child.pid)
     const killGroup = (signal: NodeJS.Signals) => {
       try {
         if (child.pid !== undefined) process.kill(-child.pid, signal)
@@ -58,6 +72,7 @@ export function spawnNode(
       killTimer = setTimeout(() => killGroup('SIGKILL'), KILL_GRACE_MS)
     }, opts.timeoutMs ?? DEFAULT_KILL_TIMEOUT_MS)
     const clear = () => {
+      if (child.pid !== undefined) liveGroups.delete(child.pid)
       clearTimeout(timer)
       if (killTimer) clearTimeout(killTimer)
     }

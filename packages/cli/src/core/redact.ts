@@ -18,8 +18,8 @@
 // bundled corpus + Pro rules), before the list leaves the core. Every downstream surface
 // (verdict, history, report, SARIF, JSON, text, hooks) then only ever sees safe text.
 //
-// FORMAT: the legacy `redact()` format — first 8 characters visible, then `***` — so a
-// corpus finding and a legacy finding for the same key read the same.
+// FORMAT: `<type>, <length> characters, value hidden` (maskSecret) for a secret; `***` for a value
+// masked inside a longer line. No character of any value is shown.
 //
 // POLICY
 // ======
@@ -38,10 +38,53 @@ import { createHash } from 'node:crypto'
 import type { Finding } from '@agenticcli/shared'
 import { compileDetectorRegex } from './re2-detector-engine.js'
 
-/** Redact a secret value — keep first 8 chars visible, mask the rest. (Legacy format.) */
-export function redactSecretValue(value: string): string {
-  if (value.length <= 8) return '***'
-  return value.slice(0, 8) + '***'
+/**
+ * Mask a secret value inside free text. No character of the value is kept (OUTPUT-SPEC 06
+ * "Secret masking": not a prefix, not a suffix). Used where a value sits inside a longer line.
+ */
+export function redactSecretValue(_value: string): string {
+  return '***'
+}
+
+/** A secret's type name for evidence: `Stripe Live Key` or `generic.secrets.stripe-live-key` -> `stripe_live_key`. */
+export function secretTypeName(nameOrRuleId: string): string {
+  const last = nameOrRuleId.includes('.') ? nameOrRuleId.slice(nameOrRuleId.lastIndexOf('.') + 1) : nameOrRuleId
+  const slug = last.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  return slug === '' ? 'secret' : slug
+}
+
+/**
+ * THE one masked form of a secret: `<type>, <length> characters, value hidden`. The type name and
+ * the length are all that is ever shown. Every output path that shows a matched secret calls this
+ * (or `secretEvidenceObject` for the JSON object form); nothing else may format a matched value.
+ */
+export function maskSecret(secretType: string, value: string): string {
+  return `${secretTypeName(secretType)}, ${[...value].length} characters, value hidden`
+}
+
+export interface SecretEvidence {
+  kind: 'secret'
+  secretType: string
+  length: number
+  valueHidden: true
+}
+
+/** The JSON object form of the masked secret (OUTPUT-SPEC 06): same facts as `maskSecret`. */
+export function secretEvidenceObject(secretType: string, value: string): SecretEvidence {
+  return { kind: 'secret', secretType: secretTypeName(secretType), length: [...value].length, valueHidden: true }
+}
+
+/** The short form every human screen shows next to a secret finding (scan screen, gate block): `36 chars, value hidden`. */
+export function secretScreenLabel(length: number | null): string {
+  return length === null ? 'value hidden' : `${length} chars, value hidden`
+}
+
+const MASKED_SECRET_RE = /^([a-z0-9_]+), (\d+) characters, value hidden$/
+
+/** Read back a string made by `maskSecret` (for the JSON object form); undefined when it is not one. */
+export function parseMaskedSecret(evidence: string): SecretEvidence | undefined {
+  const m = MASKED_SECRET_RE.exec(evidence.trim())
+  return m ? { kind: 'secret', secretType: m[1], length: Number(m[2]), valueHidden: true } : undefined
 }
 
 // Evidence that is provably not a secret VALUE, so masking it would only cost signal:
@@ -161,11 +204,11 @@ export function scrubSecretShapes(text: string): string {
  * already redacted at the source (the legacy secrets check) must not call this — see
  * `redactFindingsEvidence`'s `alreadyRedacted` set.
  */
-export function redactEvidence(evidence: string, category: string): string {
+export function redactEvidence(evidence: string, category: string, ruleId = 'secret'): string {
   if (category === 'secrets') {
     const trimmed = evidence.trim()
-    if (NON_SECRET_EVIDENCE_RE.test(trimmed)) return evidence
-    return `...${redactSecretValue(trimmed)}...`
+    if (NON_SECRET_EVIDENCE_RE.test(trimmed) || parseMaskedSecret(trimmed)) return evidence
+    return maskSecret(ruleId, trimmed)
   }
   return scrubSecretShapes(evidence)
 }
@@ -183,6 +226,20 @@ export function computeFindingKey(finding: Finding): string {
 }
 
 const FINDING_KEY_PROP = '_findingKey'
+
+/**
+ * A check that masks its evidence at the source calls this with the RAW matched value, so the
+ * finding's identity key is still computed from the value and not from the masked text (type and
+ * length alone would make two different keys of one type look like the same finding).
+ */
+export function stampFindingIdentity(finding: Finding, rawValue: string): void {
+  Object.defineProperty(finding, FINDING_KEY_PROP, {
+    value: createHash('sha256').update(rawValue).digest('hex').slice(0, 16),
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  })
+}
 
 /**
  * The identity key stamped by `redactFindingsEvidence`, or (for a finding that never went
@@ -211,7 +268,9 @@ export function redactFindingsEvidence(
   alreadyRedacted: ReadonlySet<Finding> = new Set(),
 ): Finding[] {
   for (const f of findings) {
-    Object.defineProperty(f, FINDING_KEY_PROP, {
+    if (Object.prototype.hasOwnProperty.call(f, FINDING_KEY_PROP)) {
+      // already stamped from the raw value at the source
+    } else Object.defineProperty(f, FINDING_KEY_PROP, {
       value: computeFindingKey(f),
       enumerable: false,
       writable: true,
@@ -219,7 +278,7 @@ export function redactFindingsEvidence(
     })
     if (typeof f.evidence !== 'string' || f.evidence.length === 0) continue
     if (alreadyRedacted.has(f)) continue
-    f.evidence = redactEvidence(f.evidence, f.category)
+    f.evidence = redactEvidence(f.evidence, f.category, f.id)
   }
   return findings
 }

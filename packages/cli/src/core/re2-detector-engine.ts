@@ -3,7 +3,7 @@
 // PURPOSE
 // =======
 // Provides a minimal drop-in API surface for compiling and executing regex
-// patterns in detector files (src/checks/**). Uses re2js@2.8.3 (pure-JS RE2
+// patterns in detector files (src/checks/**). Uses re2js@2.8.7 (pure-JS RE2
 // engine) for linear-time, ReDoS-immune matching — identical engine as the
 // Pro path (re2jsV1Executor in @agenticcli/matcher-contract).
 //
@@ -47,6 +47,7 @@
 
 import { RE2JS } from 're2js'
 import { parseFlags } from '@agenticcli/matcher-contract'
+import { buildPrefilter, mayMatchText, prefilterControl } from './rule-prefilter.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -188,13 +189,22 @@ export function compileDetectorRegex(source: string, flags = ''): CompiledDetect
     )
   }
 
-  // 3. Build the CompiledDetectorRegex wrapper.
+  // 3. Required-text prefilter (rule-prefilter.ts): when the input lacks text every match must
+  //    contain, the answer is "no match" without running the engine. Built only from patterns the
+  //    prefilter parser fully understands; otherwise `skip` is always false.
+  const prefilter = buildPrefilter([source], flags)
+  const cannotMatch = (input: string): boolean =>
+    prefilter !== undefined && prefilterControl.enabled && !mayMatchText(prefilter, input)
+
+  // 4. Build the CompiledDetectorRegex wrapper.
   return {
     test(input: string): boolean {
+      if (cannotMatch(input)) return false
       return compiled.matcher(input).find()
     },
 
     exec(input: string): DetectorExecResult | null {
+      if (cannotMatch(input)) return null
       const m = compiled.matcher(input)
       if (!m.find()) return null
       // Group count: re2js groupCount() returns the number of capturing groups.
@@ -213,6 +223,7 @@ export function compileDetectorRegex(source: string, flags = ''): CompiledDetect
     },
 
     matchAll(input: string): DetectorExecResult[] {
+      if (cannotMatch(input)) return []
       const results: DetectorExecResult[] = []
       const m = compiled.matcher(input)
       const groupCount = compiled.groupCount()
@@ -250,6 +261,7 @@ export function compileDetectorRegex(source: string, flags = ''): CompiledDetect
     },
 
     replaceFirst(input: string, replacement: string): string {
+      if (cannotMatch(input)) return input
       const m = compiled.matcher(input)
       if (!m.find()) return input
       const start = m.start()
@@ -261,6 +273,7 @@ export function compileDetectorRegex(source: string, flags = ''): CompiledDetect
       // re2js Matcher.replaceAll() with javaMode=false uses JS-style replacement
       // semantics: $& = full match, $1/$2/... = groups, $` = pre, $' = post, $$ = literal $.
       // This is EXACTLY equivalent to native String.prototype.replace(/<re>/g, replacement).
+      if (cannotMatch(input)) return input
       return compiled.matcher(input).replaceAll(replacement)
     },
   }

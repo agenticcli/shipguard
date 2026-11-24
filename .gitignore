@@ -10,3 +10,8 @@ dist/
 reports/
 # Conformance test artifact — written to repo root by hash-equality-proof.ts
 computed-hashes.json
+# Internal notes, kept out of the public repo
+docs/testlab/
+docs/sessions/
+docs/plans/
+docs/progress/

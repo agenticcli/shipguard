@@ -78,7 +78,7 @@ describe('detectCi', () => {
 
 describe('sendTelemetry and the install id', () => {
   const base = { SHIPGUARD_TELEMETRY_URL: 'https://sink.example/t' }
-  const input = { cliVersion: '1.2.3', verdict: 'safe' as const, durationMs: 50 }
+  const input = { cliVersion: '1.2.3', verdict: 'safe' as const, durationMs: 50, output: 'json' as const }
   function stub() {
     const f = vi.fn().mockResolvedValue(new Response('ok'))
     vi.stubGlobal('fetch', f)
@@ -91,7 +91,7 @@ describe('sendTelemetry and the install id', () => {
     const f = stub()
     await sendTelemetry(input, { published: true, env: base, configDir: dir })
     const id = readInstallId(dir)
-    expect(bodyOf(f)).toMatchObject({ schema: 2, installId: id, ci: false, provenance: 'published', durationBucket: 'lt1s' })
+    expect(bodyOf(f)).toMatchObject({ schema: 5, installId: id, ci: false, provenance: 'published', durationBucket: 'lt1s' })
 
     const ciDir = mkdtempSync(join(tmpdir(), 'sg-tel-ci-'))
     try {

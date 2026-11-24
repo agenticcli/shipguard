@@ -8,10 +8,17 @@ import { secretsCheck } from '../../src/checks/secrets.js'
 // Mocks — must be hoisted before any import of scanner
 // ---------------------------------------------------------------------------
 
-vi.mock('../../src/core/git.js', () => ({
-  isGitRepo: vi.fn(() => false),
-  getChangedFiles: vi.fn(() => []),
-}))
+// scan() now calls getChangedFilesDetailed (exact names, nested root); the mock derives it from the
+// getChangedFiles mock so each test keeps controlling the changed list (and git failures) in one place.
+vi.mock('../../src/core/git.js', () => {
+  const getChangedFiles = vi.fn((_dir: string): string[] => [])
+  return {
+    listGitIgnored: vi.fn(() => null),
+    isGitRepo: vi.fn(() => false),
+    getChangedFiles,
+    getChangedFilesDetailed: vi.fn((dir: string) => ({ paths: getChangedFiles(dir), unaddressable: [] as string[], outsideScope: 0, unreadable: [] as string[] })),
+  }
+})
 
 // Dynamic import after mocks are set up
 const { scan } = await import('../../src/core/scanner.js')
@@ -173,7 +180,12 @@ describe('scan()', () => {
     try {
       const result = await scan({ changedOnly: true, generateReport: false, strict: false, json: false, reportPath: '.shipguard/reports/latest.md' })
       expect(result.filesScanned).toBe(0)
-      expect(result.degraded).toBeFalsy()  // genuinely clean, not degraded
+      // Git ran and found nothing changed. Still distinguishable from the git-failure case, which throws.
+      // Nothing scanned is never SAFE_TO_SHIP: degraded NO_FILES_SCANNED, fail-closed verdict.
+      expect(result.degraded).toBe(true)
+      expect(result.degradedReasons?.map((r) => r.code)).toEqual(['NO_FILES_SCANNED'])
+      expect(result.recommendation).toBe('DO_NOT_SHIP')
+      expect(result.coverage?.changed?.nothingToCheck).toBe(true)
     } finally {
       process.chdir(originalCwd)
     }

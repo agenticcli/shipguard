@@ -54,7 +54,12 @@ export interface RecordedCli {
   cleanup(): void
 }
 
-export function makeRecordedCli(cliPath: string): RecordedCli {
+/**
+ * `freshInstall: true` leaves the config dir empty so the one-off cli_first_run event fires on the
+ * first command. By default the first-run marker is pre-seeded so tests that count scan pings keep
+ * measuring only the scan ping.
+ */
+export function makeRecordedCli(cliPath: string, opts: { freshInstall?: boolean } = {}): RecordedCli {
   const work = mkdtempSync(join(tmpdir(), 'sg-recorded-'))
   const home = join(work, 'home')
   const project = join(work, 'proj')
@@ -62,6 +67,11 @@ export function makeRecordedCli(cliPath: string): RecordedCli {
   const recorder = join(work, 'record-fetch.cjs')
   const runner = join(work, 'runner.cjs')
   for (const d of [home, project]) execFileSync('mkdir', ['-p', d])
+  if (!opts.freshInstall) {
+    const cfgDir = join(home, '.config', 'shipguard')
+    execFileSync('mkdir', ['-p', cfgDir])
+    writeFileSync(join(cfgDir, 'telemetry-first-run-sent'), '1\n')
+  }
   writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }))
   writeFileSync(join(project, 'index.js'), 'console.log("hi")\n')
   writeFileSync(

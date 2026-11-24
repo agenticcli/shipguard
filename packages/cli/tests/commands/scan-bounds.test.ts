@@ -68,6 +68,7 @@ vi.mock('../../src/core/policy.js', () => ({
 }))
 
 vi.mock('../../src/core/git.js', () => ({
+  listGitIgnored: vi.fn(() => null),
   isGitRepo: vi.fn(() => false),
   getChangedFiles: vi.fn(() => []),
 }))
@@ -81,6 +82,7 @@ vi.mock('../../src/utils/logger.js', () => ({
     finding: vi.fn(),
     score: vi.fn(),
     divider: vi.fn(),
+    debug: vi.fn(),
   },
 }))
 
@@ -89,6 +91,7 @@ const { scanCommand } = await import('../../src/commands/scan.js')
 const { logger } = await import('../../src/utils/logger.js')
 
 afterEach(() => {
+  process.exitCode = undefined // the command only SETS it (utils/exit.ts); never leak into the worker exit status
   vi.clearAllMocks()
   // Reset the scan mock to default non-degraded result after each test
   vi.mocked(mockScan).mockResolvedValue(makeScanResult())
@@ -120,10 +123,10 @@ describe('scan scope guard', () => {
     process.chdir(dir)
     try {
       const cmd = scanCommand()
-      await expect(
-        cmd.parseAsync(['node', 'scan'])
-      ).rejects.toThrow('process.exit(2)')
-      expect(exitSpy).toHaveBeenCalledWith(2)
+      await cmd.parseAsync(['node', 'scan'])
+      // The command sets process.exitCode and returns (it never calls process.exit with output queued).
+      expect(process.exitCode).toBe(2)
+      expect(exitSpy).not.toHaveBeenCalled()
     } finally {
       process.chdir(originalCwd)
     }
@@ -141,11 +144,13 @@ describe('scan scope guard', () => {
     process.chdir(dir)
     try {
       const cmd = scanCommand()
-      await expect(cmd.parseAsync(['node', 'scan'])).rejects.toThrow('process.exit')
+      await cmd.parseAsync(['node', 'scan'])
+      expect(process.exitCode).toBe(2)
       // Should have logged an error message mentioning the issue
       const errorCalls = vi.mocked(logger.error).mock.calls
       const hasRefusalMessage = errorCalls.some(
         args => typeof args[0] === 'string' && (
+          args[0].includes('NOT_A_PROJECT') ||
           args[0].includes('Refusing') ||
           args[0].includes('non-project') ||
           args[0].includes('--all') ||
@@ -247,7 +252,7 @@ describe('scan scope guard', () => {
 // ---------------------------------------------------------------------------
 
 describe('scan human output enrichment', () => {
-  it('includes "Tips" section in non-machine output', async () => {
+  it('non-machine output is the verdict-first screen: verdict on line 1, no tips or links box', async () => {
     const dir = mkTemp()
     writeFileSync(join(dir, 'package.json'), '{"name":"test"}', 'utf-8')
 
@@ -265,7 +270,9 @@ describe('scan human output enrichment', () => {
       await cmd.parseAsync(['node', 'scan']).catch(() => {})
 
       const allOutput = consoleLogSpy.mock.calls.map(args => String(args[0])).join('\n')
-      expect(allOutput).toContain('agenticcli.dev')
+      expect(allOutput.split('\n')[0]).toMatch(/^(SAFE TO SHIP|REVIEW BEFORE SHIP|DO NOT SHIP) · /)
+      expect(allOutput).not.toContain('What now')
+      expect(allOutput).not.toContain('Learn more')
     } finally {
       process.chdir(originalCwd)
       consoleLogSpy.mockRestore()

@@ -259,7 +259,7 @@ describe('Client-side payment secret exposure', () => {
 // ---------------------------------------------------------------------------
 
 describe('Webhook idempotency', () => {
-  it('flags a webhook route with no idempotency handling (medium)', () => {
+  it('flags a webhook route with no idempotency handling (low)', () => {
     const file = makeFile(
       'app/api/webhooks/stripe/route.ts',
       `
@@ -284,7 +284,7 @@ describe('Webhook idempotency', () => {
     const findings = payments.run([file], DEFAULT_POLICY)
     const idempotencyFindings = findings.filter((f) => f.title.includes('idempotency'))
     expect(idempotencyFindings.length).toBeGreaterThan(0)
-    expect(idempotencyFindings[0].severity).toBe('medium')
+    expect(idempotencyFindings[0].severity).toBe('low')
   })
 
   it('does NOT flag a webhook route WITH idempotency via event.id', () => {

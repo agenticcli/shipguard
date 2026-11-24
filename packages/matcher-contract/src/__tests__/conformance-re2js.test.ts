@@ -251,7 +251,7 @@ describe('RE2JS_V1_RUNTIME_ID — frozen identity', () => {
     // The re2js-v1-freeze.test.ts regression test re-derives this value from current bytes.
     // If THIS test fails, the constant was changed without a proper freeze update.
     expect(RE2JS_V1_RUNTIME_ID).toBe(
-      '971fab9b230f60a1b663c7f9a888769e9a2d6ace58fa150e8ee574a3fc3c91d7',
+      'a780cc8e55ccc838940b9d8de644463fd41faca4ed51a7d68839e100a6800cd2',
     )
   })
 })

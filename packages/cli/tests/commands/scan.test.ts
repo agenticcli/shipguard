@@ -63,6 +63,7 @@ vi.mock('../../src/core/policy.js', () => ({
 }))
 
 vi.mock('../../src/core/git.js', () => ({
+  listGitIgnored: vi.fn(() => null),
   isGitRepo: vi.fn(() => false),
   getChangedFiles: vi.fn(() => []),
 }))
@@ -76,6 +77,7 @@ vi.mock('../../src/utils/logger.js', () => ({
     finding: vi.fn(),
     score: vi.fn(),
     divider: vi.fn(),
+    debug: vi.fn(),
   },
 }))
 
@@ -84,6 +86,7 @@ const { scan: mockScan } = await import('../../src/core/scanner.js')
 const { scanCommand } = await import('../../src/commands/scan.js')
 
 afterEach(() => {
+  process.exitCode = undefined // the command only SETS it (utils/exit.ts); never leak into the worker exit status
   vi.clearAllMocks()
   // Reset mock to default non-degraded result after each test
   vi.mocked(mockScan).mockResolvedValue(makeScanResult())
@@ -164,10 +167,10 @@ describe('TC-EXIT-17 — degradation never changes the exit code (A1)', () => {
     })
 
     const cmd = scanCommand()
-    await expect(
-      cmd.parseAsync(['node', 'scan', '--json', '--strict'])
-    ).rejects.toThrow('process.exit(1)')
+    await cmd.parseAsync(['node', 'scan', '--json', '--strict'])
 
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    // The command sets process.exitCode and returns; process.exit is never called with output queued.
+    expect(process.exitCode).toBe(1)
+    expect(exitSpy).not.toHaveBeenCalled()
   })
 })

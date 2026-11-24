@@ -1,0 +1,33 @@
+# Exit codes and JSON output
+
+ShipGuard's exit code is verdict-neutral by default. The verdict is in the JSON `recommendation` field, so read it with `shipguard scan --json`.
+
+| Code | Meaning |
+|------|---------|
+| `0` | The scan completed. Returned even when findings are blocking, and even when the scan is degraded. Read `recommendation`. |
+| `1` | Blocked. Only with `--strict`: a blocking finding, a scan that did not finish (`degraded: true`), or a `DO_NOT_SHIP` verdict. Also with `--check-regressions` when a rule that passed before now fails. |
+| `2` | Config error: a bad policy file, an unknown flag, or a folder that is not a project (use `--all` to scan one anyway). |
+| `3` | Runtime error: the scan could not run at all (for example, no rules applied, or `--pro` could not fetch its rules). |
+
+Exit `0` does not mean "safe". Never use it alone as a pass. To make that hard to miss, when blocking findings exist and `--strict` is off the terminal output ends with `exit 0 = scan finished, not safe. Add --strict to fail on blocking findings.`, and `--json` carries what this run's exit code means in the `exitMeaning` field. `shipguard --help` lists the four codes.
+
+## Config errors in machine mode
+
+With `--json` or `--sarif`, an exit `2` prints exactly one JSON object on stdout (also for `--sarif`, instead of a SARIF document): `{ "error": "<message>", "code": "<CODE>" }`. The same message goes to stderr. Codes:
+
+| `code` | Meaning |
+|--------|---------|
+| `INVALID_POLICY` | `shipguard.policy.yml` could not be parsed. |
+| `NOT_A_PROJECT` | The folder is not a project root. Pass a path or `--all`. |
+| `PATH_NOT_FOUND` | The scan path does not exist or cannot be read. |
+| `PATH_NOT_A_DIRECTORY` | The scan path is a file. |
+
+## Degraded scans
+
+If ShipGuard could not read everything (an oversized file, an unreadable file, a skipped symlink, a rulebook that could not be downloaded, or a scan that read no files), the scan is `degraded` and the verdict is `DO_NOT_SHIP`. The reasons are in `degradedReasons`.
+
+## JSON output
+
+`shipguard scan --json` prints one JSON object with, among others: `recommendation` (`SAFE_TO_SHIP`, `REVIEW_BEFORE_SHIP` or `DO_NOT_SHIP`), `findings`, `riskScore`, `filesScanned`, `coverage`, `degraded`, `degradedReasons` and `exitMeaning`, `schemaVersion` (`"7"`), `telemetry` (`"on"` or `"off"`: whether product usage telemetry is on). Each finding has `id`, `title`, `severity`, `category`, `file`, an optional `line`, `explanation`, `recommendation`, `blocking` and an optional `fix`.
+
+Run `shipguard schema --json` to print the exact contract of the version you have installed.

@@ -34,7 +34,7 @@ import * as os from 'node:os'
 // Dynamic imports (ESM modules with top-level await patterns)
 // ---------------------------------------------------------------------------
 
-const { verifyBundleResponse } = await import('../../src/core/release-verify.js')
+const { verifyBundleResponse, FRESHNESS_MAX_TTL_SECONDS } = await import('../../src/core/release-verify.js')
 const { _testInjectKeyringEntry, computeSpkiFingerprint } = await import('../../src/core/crypto.js')
 const { canonicalJson, NATIVE_V1_RUNTIME_ID, RE2JS_V1_RUNTIME_ID } = await import('@agenticcli/matcher-contract')
 const { sha256 } = await import('@noble/hashes/sha2.js')
@@ -799,6 +799,70 @@ describe('verifyBundleResponse', () => {
   })
 
   // ── freshness signed by bundle key (wrong role) ────────────────────
+  // ── freshness token lifetime cap (72h + 1h slack) ───────────────────
+  async function verifyWithTtl(freshnessTtl: number, freshnessIssuedAt?: number) {
+    const f = await buildValidFixtures({ freshnessTtl, ...(freshnessIssuedAt !== undefined ? { freshnessIssuedAt } : {}) })
+    cleanupFns.push(f.cleanupAll)
+    const floorPath = makeTempFloorPath()
+    const result = await verifyBundleResponse(
+      {
+        fullManifest: f.manifest,
+        corpusAttestation: f.attestation,
+        freshnessTok: f.freshnessTok,
+        selectedRules: f.selectedRules,
+        bundleEnvelope: f.bundleEnvelope,
+      },
+      f.request,
+      floorPath,
+    )
+    try { fs.unlinkSync(floorPath) } catch { /* ignore */ }
+    return result
+  }
+
+  it('freshness token with a 48h lifetime is accepted', async () => {
+    const result = await verifyWithTtl(48 * 3600)
+    expect(result.ok).toBe(true)
+  })
+
+  it('freshness token with a 72h lifetime is accepted', async () => {
+    const result = await verifyWithTtl(72 * 3600)
+    expect(result.ok).toBe(true)
+  })
+
+  it('freshness token lifetime exactly at the cap is accepted, one second over is rejected', async () => {
+    expect(FRESHNESS_MAX_TTL_SECONDS).toBe(262800)
+    expect((await verifyWithTtl(FRESHNESS_MAX_TTL_SECONDS)).ok).toBe(true)
+    const over = await verifyWithTtl(FRESHNESS_MAX_TTL_SECONDS + 1)
+    expect(over.ok).toBe(false)
+    if (!over.ok) {
+      expect(over.reason).toMatch(/TTL exceeds maximum/)
+      expect(over.nonSafe).toBe(true)
+    }
+  })
+
+  it('freshness token with a 74h lifetime is still rejected', async () => {
+    const result = await verifyWithTtl(74 * 3600)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/TTL exceeds maximum/)
+  })
+
+  it('freshness token issued more than 300 s in the future is still rejected', async () => {
+    const nowSec = Math.floor(Date.now() / 1000)
+    const result = await verifyWithTtl(3600, nowSec + 400)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/issued in the future/)
+  })
+
+  it('an expired freshness token is flagged freshnessExpired; other failures are not', async () => {
+    const nowSec = Math.floor(Date.now() / 1000)
+    const expired = await verifyWithTtl(3600, nowSec - 7200)
+    expect(expired.ok).toBe(false)
+    if (!expired.ok) expect(expired.freshnessExpired).toBe(true)
+    const tooLong = await verifyWithTtl(74 * 3600)
+    expect(tooLong.ok).toBe(false)
+    if (!tooLong.ok) expect(tooLong.freshnessExpired).toBeUndefined()
+  })
+
   it('freshness token signed by bundle key is rejected (wrong role)', async () => {
     const f = await buildValidFixtures()
     cleanupFns.push(f.cleanupAll)
@@ -1401,7 +1465,7 @@ describe('Finding 9 — strict schema validation of all 5 signed components', ()
 
     const badEnvelope = {
       ...f.bundleEnvelope,
-      protocolVersion: '2',  // wrong version
+      protocolVersion: '3',  // wrong version (1 and 2 are the two supported envelope protocols)
     }
 
     const result = await verifyBundleResponse(

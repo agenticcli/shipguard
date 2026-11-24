@@ -20,7 +20,12 @@ export default defineConfig({
   target: 'node20',
   noExternal: [/^@agenticcli\/.*/],
   dts: false,
-  sourcemap: false,
+  sourcemap: true,
+  // Maps point lines back to the public sources at the tagged commit; the source text is NOT embedded
+  // (it would add about 1.5 MB to the package, past the 800 KiB packed budget). See REBUILD.md.
+  esbuildOptions(options) {
+    options.sourcesContent = false
+  },
   clean: true,
   define: {
     __SHIPGUARD_VERSION__: JSON.stringify(version),

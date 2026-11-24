@@ -12,7 +12,7 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 })
 
 const SINK = 'http://127.0.0.1:1/cli-telemetry' // loopback: a dev build sends here; the recorder captures it
 const ON = { SHIPGUARD_TELEMETRY: '1', DO_NOT_TRACK: '0', SHIPGUARD_TELEMETRY_URL: SINK }
-const NOTICE_MARK = 'sends a pseudonymous usage ping'
+const NOTICE_MARK = 'usage pings on:'
 
 let devPath: string
 let dev: RecordedCli
@@ -48,7 +48,7 @@ describe('one-line stderr notice before the first ping, in every mode, once per 
         expect(first.attempts).toHaveLength(1)
         const noticeLines = first.stderr.split('\n').filter((l) => l.includes(NOTICE_MARK))
         expect(noticeLines).toHaveLength(1)
-        for (const s of ['SHIPGUARD_TELEMETRY=0', 'DO_NOT_TRACK=1', 'shipguard telemetry disable']) {
+        for (const s of ['shipguard telemetry status', 'shipguard telemetry disable']) {
           expect(noticeLines[0]).toContain(s)
         }
         expect(first.stdout).not.toContain(NOTICE_MARK)
@@ -130,7 +130,7 @@ describe('shipguard telemetry status | enable | disable', () => {
     const s = await pub.run(['telemetry', 'status', '--json'], { env: {} })
     expect(JSON.parse(s.stdout)).toMatchObject({
       provenance: 'published',
-      endpoint: 'https://cheery-toucan-348.convex.site/cli-telemetry',
+      endpoint: 'https://agenticcli.dev/api/cli-telemetry',
     })
     expect(s.attempts).toEqual([])
   })
@@ -170,13 +170,13 @@ describe('SHIPGUARD_TELEMETRY_DEBUG=1 prints the exact payload and sends nothing
     })
     expect(r.attempts).toEqual([])
     stdoutIsPureJson(r.stdout)
-    const m = r.stderr.match(/\[shipguard:telemetry\][^\n]*?(\{"schema":2.*\})/)
+    const m = r.stderr.match(/\[shipguard:telemetry\][^\n]*?(\{"schema":5.*\})/)
     expect(m, r.stderr).not.toBeNull()
     const payload = JSON.parse(m![1])
     expect(Object.keys(payload).sort()).toEqual([
-      'ci', 'cliVersion', 'durationBucket', 'eventId', 'installId', 'provenance', 'schema', 'verdict',
+      'agent', 'ci', 'cliVersion', 'durationBucket', 'eventId', 'gateKind', 'installId', 'interactive', 'output', 'provenance', 'schema', 'verdict',
     ])
-    expect(payload).toMatchObject({ schema: 2, provenance: 'published', ci: false })
+    expect(payload).toMatchObject({ schema: 5, provenance: 'published', ci: false, agent: 'none', interactive: false, output: 'json' })
     expect(payload.installId).toMatch(UUID_V4)
   })
 })
@@ -217,18 +217,18 @@ describe('a --strict exit no longer loses the ping, and the exit code is unchang
   })
 })
 
-describe('C4: pseudonymous install id, v2 payload, never in CI, telemetry reset', () => {
-  const V2 = ['ci', 'cliVersion', 'durationBucket', 'eventId', 'installId', 'provenance', 'schema', 'verdict']
+describe('C4: pseudonymous install id, v4 payload, never in CI, telemetry reset', () => {
+  const V2 = ['agent', 'ci', 'cliVersion', 'durationBucket', 'eventId', 'gateKind', 'installId', 'interactive', 'output', 'provenance', 'schema', 'traffic', 'verdict']
   const sent = (r: { attempts: Array<{ body: string }> }) => JSON.parse(r.attempts[0].body) as Record<string, unknown>
 
-  it('human run: v2 payload with a random v4 install id, saved 0600 next to other keys, stable across runs', async () => {
+  it('human run: v4 payload with a random v4 install id, saved 0600 next to other keys, stable across runs', async () => {
     const cli = makeRecordedCli(devPath)
     try {
       writeFileSync(join(cli.home, '.keep'), '')
       const a = await cli.run(['scan', cli.project, '--json'], { env: ON })
       const pa = sent(a)
       expect(Object.keys(pa).sort()).toEqual(V2)
-      expect(pa).toMatchObject({ schema: 2, provenance: 'dev', ci: false, durationBucket: expect.stringMatching(/^(lt1s|1to5s|5to30s|gt30s)$/) })
+      expect(pa).toMatchObject({ schema: 5, provenance: 'dev', traffic: 'test', ci: false, agent: 'none', interactive: false, output: 'json', durationBucket: expect.stringMatching(/^(lt1s|1to5s|5to30s|gt30s)$/) })
       expect(pa.installId).toMatch(UUID_V4)
       expect(pa.eventId).toMatch(UUID_V4)
       const file = join(cli.home, '.config', 'shipguard', 'telemetry.json')
@@ -335,5 +335,34 @@ describe('C4: pseudonymous install id, v2 payload, never in CI, telemetry reset'
     } finally {
       cli.cleanup()
     }
+  })
+})
+
+describe('S2: schema 4 on the wire and the `telemetry` field in the scan JSON', () => {
+  const json = (r: { stdout: string }) => JSON.parse(r.stdout) as Record<string, unknown>
+  const sent = (r: { attempts: Array<{ body: string }> }) => JSON.parse(r.attempts[0].body) as Record<string, unknown>
+
+  it('--json: "telemetry":"on", and the ping carries agent none, interactive false, output json', async () => {
+    const r = await dev.run(['scan', dev.project, '--json'], { env: ON })
+    expect(json(r).telemetry).toBe('on')
+    expect(sent(r)).toMatchObject({ schema: 5, agent: 'none', interactive: false, output: 'json' })
+  })
+
+  it('a known agent marker in the environment is reported as its label only', async () => {
+    const r = await dev.run(['scan', dev.project, '--json'], { env: { ...ON, CLAUDECODE: '1', AI_AGENT: 'claude-code_9' } })
+    expect(sent(r)).toMatchObject({ agent: 'claude_code' })
+    expect(r.attempts[0].body).not.toContain('claude-code_9')
+  })
+
+  it('output kind follows the flags: --sarif -> sarif, --quiet and plain -> human', async () => {
+    expect(sent(await dev.run(['scan', dev.project, '--sarif'], { env: ON })).output).toBe('sarif')
+    expect(sent(await dev.run(['scan', dev.project, '--quiet'], { env: ON })).output).toBe('human')
+    expect(sent(await dev.run(['scan', dev.project], { env: ON })).output).toBe('human')
+  })
+
+  it('opt-out env: "telemetry":"off" and nothing is sent', async () => {
+    const r = await dev.run(['scan', dev.project, '--json'], { env: { ...ON, DO_NOT_TRACK: '1' } })
+    expect(json(r).telemetry).toBe('off')
+    expect(r.attempts).toEqual([])
   })
 })

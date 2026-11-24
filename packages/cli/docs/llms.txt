@@ -1,20 +1,25 @@
-# ShipGuard CLI
-> CLI-first release gate for AI-built apps
+# ShipGuard by AgenticCLI
+> The security scanner your coding agent runs before every commit. One command checks a project for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings. It runs on your machine and gives the same answer every time. Review code with a rulebook to build secure code. Rules come down; your code never goes up.
 
-ShipGuard checks the high-risk mistakes that AI coding agents commonly introduce before code is deployed.
+ShipGuard is not a code reviewer and not a full SAST tool. It uses plain pattern rules (no AI model). It informs: the verdict is in the JSON `recommendation` field (SAFE_TO_SHIP, REVIEW_BEFORE_SHIP, DO_NOT_SHIP). The exit code is 0 whenever the scan completes; add --strict to make it exit 1 on a blocking result.
 
 ## Install
+npx @agenticcli/shipguard scan
 npm install -g @agenticcli/shipguard
 
 ## Commands
 shipguard init — initialize policy file
 shipguard scan — scan project for risks
-shipguard scan --changed — scan only changed files
-shipguard scan --strict — exit code 1 on high-risk findings
+shipguard scan --changed — scan only changed files (not for CI: a clean checkout has nothing to compare)
+shipguard scan --strict — exit code 1 on a blocking result or an unfinished scan (opt-in hard gate, free on every plan)
 shipguard scan --report — generate Markdown report
-shipguard scan --json — machine-readable output
+shipguard scan --json — machine-readable output (schemaVersion 7; the `coverage` object says how many files were discovered, scanned and skipped, and why)
 shipguard scan --check-regressions — exit code 1 if a previously-passing rule now fails
+shipguard hook — install a git hook (--target claude or --target ci for Claude Code or GitHub Actions)
+shipguard setup — set up the gate for your agent (claude, codex, cursor, ci); --dry-run lists every file first
+shipguard uninstall — remove what setup wrote and name what stays
 shipguard history — show recent local scan history for this repo (read-only)
+shipguard schema --json — the machine-readable contract: verdicts, exit codes, limits
 
 ## Risk Categories
 - Secrets: hardcoded API keys, committed .env files, frontend exposure
@@ -24,7 +29,22 @@ shipguard history — show recent local scan history for this repo (read-only)
 - Deployment: CORS misconfiguration, debug mode, missing headers
 
 ## Target Users
-Solo SaaS builders, indie hackers, small dev teams using Claude Code, Codex, Cursor, or Lovable
+SaaS founders shipping with Claude Code, Codex and Cursor
+
+## Privacy
+Your code never leaves your machine. ShipGuard never sends code, file paths or file contents. It sends product usage telemetry to help improve the product. Switch it off: `shipguard telemetry disable` or DO_NOT_TRACK=1. Details: https://github.com/agenticcli/shipguard/blob/main/docs/privacy.md
+
+## Plans
+Free: the general rules, unlimited, no account. Pro: the full rulebook (rulebook scans); prices at https://agenticcli.dev/pricing
+
+## License
+Apache License 2.0 (open source CLI; free to use, change and share, including commercially). The ShipGuard and AgenticCLI names are not part of the license.
+
+## Docs
+- Getting started: https://github.com/agenticcli/shipguard/blob/main/docs/getting-started.md
+- FAQ: https://github.com/agenticcli/shipguard/blob/main/docs/faq.md
+- Product page: https://agenticcli.dev/shipguard
+- Docs: https://agenticcli.dev/shipguard/docs
 
 ## GitHub
 https://github.com/agenticcli/shipguard

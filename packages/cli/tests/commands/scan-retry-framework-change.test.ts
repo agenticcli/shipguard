@@ -71,6 +71,7 @@ vi.mock('../../src/core/policy.js', () => ({
 }))
 
 vi.mock('../../src/core/git.js', () => ({
+  listGitIgnored: vi.fn(() => null),
   isGitRepo: vi.fn(() => true),
   getChangedFiles: vi.fn(() => []),
 }))
@@ -84,6 +85,7 @@ vi.mock('../../src/utils/logger.js', () => ({
     finding: vi.fn(),
     score: vi.fn(),
     divider: vi.fn(),
+    debug: vi.fn(),
   },
 }))
 
@@ -96,7 +98,8 @@ vi.mock('../../src/core/config-generator.js', () => ({
   generateConfig: vi.fn(() => '.shipguard.yml'),
 }))
 
-vi.mock('../../src/core/pro-scanner.js', () => ({
+vi.mock('../../src/core/pro-scanner.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/core/pro-scanner.js')>()),
   fetchProRules: vi.fn().mockImplementation(async () => ({
     rules: [],
     creditsRemaining: 42,
@@ -104,8 +107,10 @@ vi.mock('../../src/core/pro-scanner.js', () => ({
   })),
 }))
 
-vi.mock('../../src/core/telemetry.js', () => ({
+vi.mock('../../src/core/telemetry.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/core/telemetry.js')>()),
   sendTelemetry: vi.fn(),
+  telemetryState: () => 'on',
 }))
 
 const { fetchProRules: mockFetchProRules } = await import('../../src/core/pro-scanner.js')
@@ -164,7 +169,8 @@ describe('scanId reuse over-dedup guard — a framework change on an already-dir
     const call2 = vi.mocked(mockFetchProRules).mock.calls[1]
 
     // Sanity: the two runs genuinely detected DIFFERENT framework sets (arg 0 = framework names).
-    expect(call1[0]).toEqual(['nextjs'])
+    // integrate: W9 added React detection, so a Next.js app now reports nextjs + react.
+    expect(call1[0]).toEqual(['nextjs', 'react'])
     expect(call2[0]).toEqual(expect.arrayContaining(['nextjs', 'express']))
 
     // FAIL-BEFORE (frameworks NOT in the key): identical contentIdentity + same scope → call2[3]

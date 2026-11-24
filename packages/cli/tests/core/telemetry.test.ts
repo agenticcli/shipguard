@@ -36,7 +36,7 @@ const PKG_VERSION = JSON.parse(
 ).version as string
 
 const VALID_PAYLOAD: TelemetryPayload = {
-  schema: 2,
+  schema: 5,
   eventId: '3f2b6c1e-8a4d-4e0b-9c77-5d1f0a2b3c4d',
   installId: '7b1e4f52-0c3a-4d8e-a1b6-92f3c5d7e801',
   cliVersion: PKG_VERSION,
@@ -44,9 +44,13 @@ const VALID_PAYLOAD: TelemetryPayload = {
   verdict: 'blocked',
   durationBucket: '1to5s',
   ci: false,
+  agent: 'none',
+  interactive: false,
+  output: 'json',
+  gateKind: 'none',
 }
-const V2_KEYS = ['ci', 'cliVersion', 'durationBucket', 'eventId', 'installId', 'provenance', 'schema', 'verdict']
-const INPUT = { cliVersion: PKG_VERSION, verdict: 'blocked' as const, durationMs: 1234 }
+const V4_KEYS = ['agent', 'ci', 'cliVersion', 'durationBucket', 'eventId', 'gateKind', 'installId', 'interactive', 'output', 'provenance', 'schema', 'verdict']
+const INPUT = { cliVersion: PKG_VERSION, verdict: 'blocked' as const, durationMs: 1234, output: 'json' as const }
 const NO_CI_ENV = { SHIPGUARD_TELEMETRY_URL: 'https://test.example/cli-telemetry' }
 let cfgDir: string
 beforeEach(() => {
@@ -57,11 +61,11 @@ afterEach(() => rmSync(cfgDir, { recursive: true, force: true }))
 // ─── 1. Payload shape ───────────────────────────────────────────────────────
 
 describe('TelemetryPayload — shape invariants', () => {
-  it('payload contains exactly the 8 v2 keys', () => {
+  it('payload contains exactly the 12 v5 keys', () => {
     const p = buildPayload(VALID_PAYLOAD)
     const keys = Object.keys(p).sort()
-    expect(keys).toEqual(V2_KEYS)
-    expect(keys).toHaveLength(8)
+    expect(keys).toEqual(V4_KEYS)
+    expect(keys).toHaveLength(12)
   })
 
   it('serialized payload does not contain path-like strings', () => {
@@ -76,7 +80,7 @@ describe('TelemetryPayload — shape invariants', () => {
     expect(serialized).not.toMatch(/\.(com|dev|io|net|org)\/[a-z]/)
   })
 
-  it('buildPayload strips extra fields — only the 8 v2 keys survive', () => {
+  it('buildPayload strips extra fields — only the 12 v5 keys survive', () => {
     const leaky = {
       ...VALID_PAYLOAD,
       // These must never be in the payload — privacy invariant
@@ -91,7 +95,7 @@ describe('TelemetryPayload — shape invariants', () => {
     const serialized = JSON.stringify(p)
 
     // Extra fields dropped
-    expect(Object.keys(p)).toHaveLength(8)
+    expect(Object.keys(p)).toHaveLength(12)
     expect(serialized).not.toContain('projectPath')
     expect(serialized).not.toContain('hostname')
     expect(serialized).not.toContain('username')
@@ -149,8 +153,9 @@ describe('validatePayload', () => {
     expect(validatePayload(bad)).toBe(false)
   })
 
-  it('enforces the v2 contract: schema, uuid shapes, buckets, provenance, ci/installId rule', () => {
+  it('enforces the v5 contract: schema, uuid shapes, buckets, provenance, ci/installId rule', () => {
     expect(validatePayload({ ...VALID_PAYLOAD, schema: 1 })).toBe(false)
+    expect(validatePayload({ ...VALID_PAYLOAD, schema: 2 })).toBe(false)
     expect(validatePayload({ ...VALID_PAYLOAD, eventId: 'not-a-uuid' })).toBe(false)
     expect(validatePayload({ ...VALID_PAYLOAD, eventId: VALID_PAYLOAD.eventId.toUpperCase() })).toBe(false)
     expect(validatePayload({ ...VALID_PAYLOAD, installId: '/home/alice' })).toBe(false)
@@ -248,7 +253,7 @@ describe('sendTelemetry — fetch suppressed when opted out', () => {
     delete process.env.SHIPGUARD_TELEMETRY_URL
   })
 
-  it('sends only the 8 v2 keys in the request body', async () => {
+  it('sends only the 12 v5 keys in the request body', async () => {
     process.env.SHIPGUARD_TELEMETRY_URL = 'https://test.example/cli-telemetry'
     sendTelemetry(INPUT, { published: true, env: NO_CI_ENV, configDir: cfgDir }) // dev builds never send to a remote URL (TEL-03)
     await Promise.resolve()
@@ -256,7 +261,7 @@ describe('sendTelemetry — fetch suppressed when opted out', () => {
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit]
     const body = JSON.parse(init.body as string) as Record<string, unknown>
     const keys = Object.keys(body).sort()
-    expect(keys).toEqual(V2_KEYS)
+    expect(keys).toEqual(V4_KEYS)
     delete process.env.SHIPGUARD_TELEMETRY_URL
   })
 })

@@ -838,7 +838,8 @@ export async function POST(request: NextRequest) {
     })
 
     it('a fully insecure Stripe webhook generates ALL applicable findings', () => {
-      // Missing: constructEvent, stripe-signature header, idempotency
+      // Missing: constructEvent, stripe-signature header, idempotency. The first two are ONE flaw
+      // (an unverified webhook) and are reported as one finding.
       const file = makeFile(
         'app/api/webhooks/stripe/route.ts',
         `import { NextRequest, NextResponse } from 'next/server'
@@ -850,8 +851,10 @@ export async function POST(request: NextRequest) {
       )
       const findings = payments.run([file], BLOCK_ALL_POLICY)
       const titles = findings.map((f) => f.title)
+      expect(titles.filter((t) => t.includes('signature'))).toHaveLength(1)
       expect(titles.some((t) => t.includes('missing signature verification'))).toBe(true)
-      expect(titles.some((t) => t.includes('stripe-signature'))).toBe(true)
+      const merged = findings.find((f) => f.title.includes('missing signature verification'))
+      expect(merged?.evidence).toContain('stripe-signature')
       expect(titles.some((t) => t.includes('idempotency'))).toBe(true)
     })
   })

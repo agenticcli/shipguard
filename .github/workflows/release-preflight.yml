@@ -1,0 +1,63 @@
+name: Release preflight
+
+# Runs the EXACT release gate (the same composite action release.yml uses: install, build, lint, test, release-gate.sh
+# G1-G12 in real mode, pack) on main, with no publish and no GitHub Release. A green run for a commit is the only
+# thing that lets release-tag.yml create a release tag on it, and release.yml re-checks it first thing.
+# Why: release tags are immutable, so a gate failure after tagging burns the version. Prove the gate first.
+#
+# Runs on every push to main that touches packages/cli/package.json (a version bump lands there), and on demand:
+#   gh workflow run release-preflight.yml --ref main
+# It always tests the commit it runs on (its head_sha is the proof key); there is no way to vouch for another SHA.
+# No secrets, no id-token, contents: read only.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/cli/package.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-preflight-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Release gate (real mode, no publish)
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tag this version would get
+        id: ver
+        run: echo "tag=v$(node -p "require('./packages/cli/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Build, gate, pack (shared with release.yml)
+        id: gate
+        uses: ./.github/actions/release-build
+        with:
+          tag: ${{ steps.ver.outputs.tag }}
+
+      - name: Record the pass
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          TARBALL: ${{ steps.gate.outputs.tarball }}
+          SHA256: ${{ steps.gate.outputs.sha256 }}
+        run: |
+          {
+            echo "### release-preflight PASSED"
+            echo "- commit: \`$GITHUB_SHA\`"
+            echo "- version: \`$TAG\`"
+            echo "- packed: \`$TARBALL\` sha256 \`$SHA256\`"
+            echo "- next: run the release-tag workflow with this version"
+          } >> "$GITHUB_STEP_SUMMARY"

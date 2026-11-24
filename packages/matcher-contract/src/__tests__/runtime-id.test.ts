@@ -168,10 +168,10 @@ describe('computeMatcherRuntimeId — key-order invariant', () => {
 // ---------------------------------------------------------------------------
 
 describe('computeMatcherRuntimeId — re2js version is pinned', () => {
-  it('the re2js engineMeta version is always RE2JS_VERSION (2.8.3)', () => {
+  it('the re2js engineMeta version is always RE2JS_VERSION (2.8.7)', () => {
     const meta = makeRe2jsEngineMeta()
     expect(meta.version).toBe(RE2JS_VERSION)
     // If this test fails, it means makeRe2jsEngineMeta is not using the pin
-    expect(meta.version).toBe('2.8.3')
+    expect(meta.version).toBe('2.8.7')
   })
 })

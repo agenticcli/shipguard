@@ -5,6 +5,9 @@ import type { StateStatus } from '@agenticcli/shared'
 import { CURRENT_SCHEMA_VERSION, MIGRATIONS } from './schema.js'
 import { keyFindingIdentity, loadOrCreateSalt } from './finding-key.js'
 import { logger } from '../../utils/logger.js'
+import { ensureHistoryFolderIgnored, historyPathRefusal, resolveHistoryPath } from './path.js'
+import type { Policy } from '@agenticcli/shared'
+import { assertCwdAlive } from '../../utils/cwd-guard.js'
 import type { RuleOutcome, ScanSnapshot } from './regression.js'
 
 // ---------------------------------------------------------------------------
@@ -106,6 +109,13 @@ export interface ScanRecordInput {
   mediumCount: number
   lowCount: number
   infoCount: number
+  /** History table facts (migration 4). Optional so older callers keep working. */
+  incomplete?: boolean
+  filesScanned?: number
+  /** `general:N` or `rulebook:N`. */
+  rulesLabel?: string
+  /** Scan target relative to where the command ran (`.` = the current folder). */
+  target?: string
   ruleOutcomes: RuleOutcome[]
   findings: Array<{
     ruleId: string
@@ -163,6 +173,7 @@ export class HistoryStore {
     const preExisted = existsSync(dbPath)
 
     try {
+      assertCwdAlive()
       mkdirSync(dirname(dbPath), { recursive: true })
     } catch (err) {
       return {
@@ -340,8 +351,8 @@ export class HistoryStore {
             scan_id, repo_id, repo_id_kind, repo_remote_label, scope_fingerprint,
             corpus_version, release_id, cli_version, timestamp, recommendation,
             blocking_count, critical_count, high_count, medium_count, low_count, info_count,
-            state_status
-          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            state_status, incomplete, files_scanned, rules_label, target
+          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scanId,
@@ -361,6 +372,10 @@ export class HistoryStore {
           input.lowCount,
           input.infoCount,
           'complete',
+          input.incomplete === undefined ? null : input.incomplete ? 1 : 0,
+          input.filesScanned ?? null,
+          input.rulesLabel ?? null,
+          input.target ?? null,
         )
 
       const insertRuleOutcome = this.db.prepare(
@@ -486,11 +501,20 @@ export class HistoryStore {
     corpusVersion: string
     recommendation: string | null
     blockingCount: number
+    /** Sum of the per-severity counts (the number of findings in that run). */
+    findingCount: number
+    /** null for rows written before schema 4. */
+    incomplete: boolean | null
+    filesScanned: number | null
+    rulesLabel: string | null
+    target: string | null
     stateStatus: string
   }> {
     const rows = this.db
       .prepare(
-        `SELECT scan_id, timestamp, scope_fingerprint, corpus_version, recommendation, blocking_count, state_status
+        `SELECT scan_id, timestamp, scope_fingerprint, corpus_version, recommendation, blocking_count,
+                critical_count + high_count + medium_count + low_count + info_count AS finding_count,
+                incomplete, files_scanned, rules_label, target, state_status
          FROM scans WHERE repo_id = ? ORDER BY timestamp DESC LIMIT ?`,
       )
       .all(repoId, limit) as Array<{
@@ -500,6 +524,11 @@ export class HistoryStore {
       corpus_version: string
       recommendation: string | null
       blocking_count: number
+      finding_count: number
+      incomplete: number | null
+      files_scanned: number | null
+      rules_label: string | null
+      target: string | null
       state_status: string
     }>
     return rows.map((r) => ({
@@ -509,6 +538,11 @@ export class HistoryStore {
       corpusVersion: r.corpus_version,
       recommendation: r.recommendation,
       blockingCount: r.blocking_count,
+      findingCount: r.finding_count,
+      incomplete: r.incomplete === null ? null : r.incomplete === 1,
+      filesScanned: r.files_scanned,
+      rulesLabel: r.rules_label,
+      target: r.target,
       stateStatus: r.state_status,
     }))
   }
@@ -551,4 +585,15 @@ export class HistoryStore {
       // Nothing meaningful to do — the process is exiting anyway; never throw from close().
     }
   }
+}
+
+/**
+ * Open the history store for this project's policy: refused (typed "unavailable", scan unaffected) when the location is a
+ * symbolic link or outside the project, and `.shipguard/` is made self-ignoring in git first.
+ */
+export async function openHistoryStore(cwd: string, policy: Pick<Policy, 'history'>, cliVersion: string): Promise<OpenResult> {
+  const refusal = historyPathRefusal(cwd, policy)
+  if (refusal !== null) return { ok: false, status: 'unavailable', reason: refusal }
+  ensureHistoryFolderIgnored(cwd, policy)
+  return HistoryStore.open(resolveHistoryPath(cwd, policy), cliVersion)
 }

@@ -12,7 +12,7 @@
  *
  * NOT for API calls: login, scan, rule fetch and JWKS use the API base URL (core/auth.ts, core/jwks.ts) and are never tagged.
  */
-export const GO_SLOTS = ['docs', 'site', 'pricing', 'billing', 'dashboard', 'telemetry'] as const
+export const GO_SLOTS = ['docs', 'site', 'pricing', 'billing', 'dashboard', 'telemetry', 'checkout', 'pricing-md'] as const
 export type GoSlot = (typeof GO_SLOTS)[number]
 
 const GO_BASE = 'https://agenticcli.dev/go/'
@@ -20,4 +20,19 @@ const GO_BASE = 'https://agenticcli.dev/go/'
 /** The short link for a slot, e.g. goLink('docs') -> https://agenticcli.dev/go/docs */
 export function goLink(slot: GoSlot): string {
   return `${GO_BASE}${slot}`
+}
+
+/**
+ * The go-link for a slot NAME that came from the server (`offer.slot`). The server never sends a URL: the name
+ * is looked up in the closed GO_SLOTS list and an unknown name becomes 'pricing'. Never builds a link from any
+ * other server text.
+ */
+export function goLinkFromServerSlot(slot: unknown): string {
+  const known = typeof slot === 'string' ? GO_SLOTS.find((s) => s === slot) : undefined
+  return goLink(known ?? 'pricing')
+}
+
+/** The slot a server slot name resolves to (same lookup as goLinkFromServerSlot). */
+export function resolveServerSlot(slot: unknown): GoSlot {
+  return (typeof slot === 'string' ? GO_SLOTS.find((s) => s === slot) : undefined) ?? 'pricing'
 }

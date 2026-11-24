@@ -55,6 +55,11 @@ const SENSITIVE_EXPRESS_PATHS =
 // Webhook paths — user auth is not expected here (path classifier, not content).
 const WEBHOOK_PATH_PATTERN = /\/webhooks?\//
 
+// Sign-in style paths are public by design: a login page or login endpoint under /admin or /account
+// is how a visitor gets in, so it must not be reported as "unprotected" (path classifier, not content).
+const PUBLIC_AUTH_PATH_PATTERN =
+  /(?:^|\/)(?:\(auth\)|sign-?in|sign-?up|sign-?out|log-?in|log-?out|register|forgot-password|reset-password|verify-email|callback)(?:\/|\.|$)/i
+
 /* eslint-enable no-restricted-syntax */
 
 // ─── Content-scanning patterns — re2js engine (ReDoS-immune) ──────────────────
@@ -76,8 +81,9 @@ const RE2_EXPRESS_ROUTE_DEFINITION = compileDetectorRegex(
 // The dead AUTH_CALL_SITE_PATTERN (with a /g stale-lastIndex hazard and a
 // variable-width lookbehind (?<!\/{2}[^\n]*?)) is also DELETED.
 // No lookahead/lookbehind/backreference → RE2-safe.
+// Auth calls for the API-route check. 0.12: also the session/user helpers the common stacks use.
 const RE2_AUTH_CALL_PATTERN = compileDetectorRegex(
-  `(?:auth|getServerSession|requireAuth|verifyToken|withAuth|clerkMiddleware|authMiddleware)\\s*\\(`,
+  `(?:auth|getAuth|getServerSession|getSession|getUser|getClaims|currentUser|requireAuth|requireUser|requireSession|requireAdmin|verifyToken|verifyAuth|withAuth|validateRequest|clerkMiddleware|authMiddleware)\\s*\\(`,
 )
 
 // Commented-out auth — matches lines where a comment marker precedes an auth call.
@@ -96,11 +102,106 @@ const RE2_EXPRESS_AUTH_MIDDLEWARE_PATTERN = compileDetectorRegex(
   'i',
 )
 
-// Middleware content coverage — checks whether middleware.ts references sensitive routes.
+// Middleware content coverage — checks whether middleware.ts / proxy.ts references sensitive routes.
 // No lookahead/lookbehind/backreference → RE2-safe.
 const RE2_MIDDLEWARE_ADMIN_COVERAGE = compileDetectorRegex(
   `(?:admin|dashboard|billing|account|management)`,
 )
+// A catch-all matcher whose lookahead excludes one of these prefixes does NOT cover them. api and auth are not
+// listed: the Next.js docs matcher itself excludes api, _next and static files, and login routes are public by design.
+const RE2_SENSITIVE_PREFIX = compileDetectorRegex(
+  `(?:admin|dashboard|billing|account|management|settings)`,
+)
+
+/** Source with comments removed; string and template literals are kept intact. */
+function stripComments(src: string): string {
+  let out = ''
+  let i = 0
+  while (i < src.length) {
+    const c = src[i]
+    if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1
+      while (j < src.length && src[j] !== c) j += src[j] === '\\' ? 2 : 1
+      out += src.slice(i, j + 1)
+      i = j + 1
+    } else if (c === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') i++
+    } else if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2)
+      i = end === -1 ? src.length : end + 2
+      out += ' '
+    } else {
+      out += c
+      i++
+    }
+  }
+  return out
+}
+
+/** String literals inside the value of `matcher:` (a string or an array), or [] if none. */
+function matcherLiterals(code: string): string[] {
+  const key = code.indexOf('matcher')
+  if (key === -1) return []
+  let i = code.indexOf(':', key)
+  if (i === -1) return []
+  i++
+  while (i < code.length && ' \t\r\n'.includes(code[i])) i++
+  const lits: string[] = []
+  let depth = 0
+  for (; i < code.length; i++) {
+    const c = code[i]
+    if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1
+      while (j < code.length && code[j] !== c) j += code[j] === '\\' ? 2 : 1
+      lits.push(code.slice(i + 1, j))
+      i = j
+      if (depth === 0) break
+    } else if (c === '[') depth++
+    else if (c === ']') {
+      depth--
+      if (depth <= 0) break
+    } else if (depth === 0) break
+  }
+  return lits
+}
+
+/** `/((?!a|b).*)` style catch-all whose lookahead does not exclude a sensitive prefix. */
+function isSafeCatchAll(lit: string): boolean {
+  const start = lit.indexOf('(?!')
+  if (start === -1 || !lit.startsWith('/(')) return false
+  let depth = 0
+  let end = -1
+  for (let i = start; i < lit.length; i++) {
+    if (lit[i] === '\\') i++
+    else if (lit[i] === '(') depth++
+    else if (lit[i] === ')' && --depth === 0) {
+      end = i
+      break
+    }
+  }
+  if (end === -1) return false
+  const rest = lit.slice(end + 1)
+  if (rest !== '.*)' && rest !== '.*') return false
+  return !RE2_SENSITIVE_PREFIX.test(lit.slice(start, end + 1))
+}
+
+function middlewareCoversRoutes(content: string): boolean {
+  const code = stripComments(content)
+  // Words inside a negative lookahead are EXCLUDED routes, so drop those groups before the word test.
+  let words = ''
+  for (let i = 0; i < code.length; i++) {
+    if (code.startsWith('(?!', i)) {
+      let depth = 0
+      for (; i < code.length; i++) {
+        if (code[i] === '\\') i++
+        else if (code[i] === '(') depth++
+        else if (code[i] === ')' && --depth === 0) break
+      }
+    } else words += code[i]
+  }
+  if (RE2_MIDDLEWARE_ADMIN_COVERAGE.test(words)) return true
+  return matcherLiterals(code).some(isSafeCatchAll)
+}
 
 // Inline auth check — verifies whether a 300-char route call slice contains auth middleware.
 // No lookahead/lookbehind/backreference → RE2-safe.
@@ -110,9 +211,9 @@ const RE2_INLINE_AUTH_CHECK = compileDetectorRegex(
 )
 
 // ─── Middleware file matchers ─────────────────────────────────────────────────
-// Path classifier — native RegExp is fine (non-content).
+// Path classifier — native RegExp is fine (non-content). Next 16 renamed middleware.ts to proxy.ts.
 // eslint-disable-next-line no-restricted-syntax
-const MIDDLEWARE_FILE_PATTERN = /^(?:src\/)?middleware\.[tj]s$/
+const MIDDLEWARE_FILE_PATTERN = /^(?:src\/)?(?:middleware|proxy)\.[tj]s$/
 
 // ─── Next.js detection ───────────────────────────────────────────────────────
 // Detect Next.js without reading disk (checks are pure (files, policy) → findings).
@@ -607,6 +708,203 @@ function hasActiveAuthCall(content: string): boolean {
   return RE2_AUTH_CALL_PATTERN.test(execText)
 }
 
+// An API route that checks the caller's credential itself and turns the request away with 401/403
+// is guarded even without a named auth helper. Needs BOTH a credential read and a deny response,
+// so a route that only mentions 401 in one unrelated branch is still reported.
+const RE2_INLINE_DENY = compileDetectorRegex(
+  `status\\s*:\\s*40[13]\\b|\\.status\\s*\\(\\s*40[13]\\s*\\)|\\b(?:unauthorized|forbidden)\\s*\\(`,
+)
+const RE2_CREDENTIAL_READ = compileDetectorRegex(
+  `authorization|cookies\\s*\\(|\\.cookies\\b|bearer|x-api-key|\\bsession\\b|\\btoken\\b`,
+  'i',
+)
+function hasInlineCredentialGate(content: string): boolean {
+  return RE2_INLINE_DENY.test(extractExecutableText(content)) && RE2_CREDENTIAL_READ.test(stripComments(content))
+}
+
+// eslint-disable-next-line no-restricted-syntax -- path classifier, not content
+const PAGE_FILE_PATTERN = /(?:^|\/)page\.[tj]sx?$/
+function isPageFile(rp: string): boolean {
+  return PAGE_FILE_PATTERN.test(rp)
+}
+
+/**
+ * Layout files from the sensitive segment folder (app/dashboard, app/admin, ...) down to the page's folder.
+ * The root layout and any layout above the sensitive segment are NOT included: they usually read the
+ * session only to draw a nav bar, which protects nothing.
+ */
+function layoutChain(pagePath: string, byPath: Map<string, FileInfo>): FileInfo[] {
+  const segs = pagePath.split('/').slice(0, -1)
+  const start = segs.findIndex((x) => RE2_SENSITIVE_SEGMENT.test(x))
+  const out: FileInfo[] = []
+  if (start === -1) return out
+  for (let n = start + 1; n <= segs.length; n++) {
+    const dir = segs.slice(0, n).join('/')
+    for (const ext of ['tsx', 'ts', 'jsx', 'js']) {
+      const f = byPath.get(`${dir}/layout.${ext}`)
+      if (f) out.push(f)
+    }
+  }
+  return out
+}
+
+// ─── Does this page / layout actually GATE access? ───────────────────────────
+// Fetching the session is not protection: the result has to be checked and the request turned away.
+// Counts: an enforcing call (requireUser(), auth.protect()), or a session fetch with no data argument whose
+// result is followed by redirect / notFound / unauthorized / throw / `return null`, inside the component.
+// Does not count: anything in a comment, getUser(<id>) (a data fetch), a notFound() for a missing row with no
+// session fetch before it, a function that nothing calls, the root layout.
+const RE2_SENSITIVE_SEGMENT = compileDetectorRegex(`^(?:admin|dashboard|billing|account|settings|management|debug|internal)$`)
+const RE2_ENFORCING_CALL = compileDetectorRegex(
+  `\\b(?:require(?:Auth|User|Session|Admin|Login)\\w*|assertAuth\\w*|ensureAuth\\w*|withAuth\\w*|verifyToken|clerkMiddleware|authMiddleware)\\s*\\(|\\bauth\\.protect\\s*\\(`,
+)
+const RE2_SESSION_FETCH = compileDetectorRegex(
+  `\\b(?:auth|getAuth|getUser|getSession|getClaims|currentUser|validateRequest|getCurrentUser)\\s*\\(\\s*(?:supabase|client|sb|req|request|ctx|context)?\\s*\\)|\\bgetServerSession\\s*\\(|\\buse(?:Session|User|Auth)\\s*\\(`,
+)
+// What a guard does once its condition is true: turn the request away.
+const RE2_GUARD_ACTION = compileDetectorRegex(
+  `^\\s*(?:\\{\\s*)?(?:return\\s+)?(?:(?:redirect|permanentRedirect|notFound|unauthorized|forbidden)\\s*\\(|throw\\b|null\\b|<|router\\.(?:push|replace)\\s*\\()`,
+)
+const RE2_IF_OPEN = compileDetectorRegex(`\\bif\\s*\\(`)
+const RE2_INLINE_GUARD = compileDetectorRegex(`^[^\\n;]{0,60}(?:\\|\\||\\?\\?)\\s*(?:redirect|notFound|unauthorized|forbidden)\\s*\\(`)
+const RE2_ASSIGN_TARGET = compileDetectorRegex(`^(?:const|let|var)\\s+([^=;]{1,120}?)\\s*=`)
+const RE2_IDENT = compileDetectorRegex(`[A-Za-z_$][\\w$]*`)
+
+const RE2_DEFAULT_FN = compileDetectorRegex(`export\\s+default\\s+(?:async\\s+)?function\\s*(\\w*)\\s*\\(`)
+const RE2_DEFAULT_REF = compileDetectorRegex(`export\\s+default\\s+(\\w+)\\s*;?\\s*$`, 'm')
+const RE2_CALL_NAME = compileDetectorRegex(`\\b([A-Za-z_]\\w*)\\s*\\(`)
+
+/** Text between the brace that matches the first `{` at or after `from`, or '' when unbalanced. */
+function braceBody(code: string, from: number): string {
+  const open = code.indexOf('{', from)
+  if (open === -1) return ''
+  let depth = 0
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === '{') depth++
+    else if (code[i] === '}' && --depth === 0) return code.slice(open, i + 1)
+  }
+  return ''
+}
+
+/** Index just after the `)` that closes the `(` at `open`. */
+function afterParens(code: string, open: number): number {
+  let depth = 0
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === '(') depth++
+    else if (code[i] === ')' && --depth === 0) return i + 1
+  }
+  return open
+}
+
+function functionBody(code: string, name: string): string {
+  const fn = compileDetectorRegex(`(?:function\\s+${name}\\s*\\(|(?:const|let)\\s+${name}\\s*=\\s*(?:async\\s*)?(?:function\\s*)?\\()`).exec(code)
+  if (!fn) return ''
+  const paren = code.indexOf('(', fn.index + fn.match.length - 1)
+  return braceBody(code, afterParens(code, paren))
+}
+
+/** The default-exported component plus the bodies of local functions it calls; the whole file if it cannot be found. */
+function componentText(code: string): string {
+  let body = ''
+  const decl = RE2_DEFAULT_FN.exec(code)
+  if (decl) {
+    body = braceBody(code, afterParens(code, decl.index + decl.match.length - 1))
+  } else {
+    const ref = RE2_DEFAULT_REF.exec(code)
+    if (ref) body = functionBody(code, ref.groups[0] ?? '') || ''
+  }
+  if (body === '') return code
+  let extra = ''
+  for (const m of RE2_CALL_NAME.matchAll(body)) {
+    const name = m.groups[0] ?? ''
+    if (name === 'if' || name === 'function' || name === '') continue
+    extra += functionBody(code, name)
+  }
+  return body + '\n' + extra
+}
+
+/** Identifiers a session fetch is assigned to: `const user`, `const { data: { user } }`, `const [a, b]`. */
+function assignedNames(text: string, fetchIdx: number): string[] {
+  const before = text.slice(Math.max(0, fetchIdx - 300), fetchIdx)
+  // the declaration the fetch belongs to: the LAST const/let/var before it (also `= await Promise.all([ ...`)
+  const kw = Math.max(before.lastIndexOf('const '), before.lastIndexOf('let '), before.lastIndexOf('var '))
+  if (kw === -1 || before.slice(kw).includes(';')) return []
+  const m = RE2_ASSIGN_TARGET.exec(before.slice(kw))
+  if (!m) return []
+  const names: string[] = []
+  const lhs = m.groups[0] ?? ''
+  for (const id of RE2_IDENT.matchAll(lhs)) {
+    // `{ data: { user } }`: `data` is a property KEY, only `user` is a bound name. `{ data: session }` binds `session`.
+    let k = id.index + id.match.length
+    while (k < lhs.length && (lhs[k] === ' ' || lhs[k] === '\t' || lhs[k] === '\n' || lhs[k] === '\r')) k++
+    if (lhs[k] === ':') continue
+    names.push(id.match)
+  }
+  return names
+}
+
+/** Drop leading whitespace and closing parens (the end of an `if (...)` condition). */
+function trimLead(t: string): string {
+  let k = 0
+  while (k < t.length && (t[k] === ' ' || t[k] === '\t' || t[k] === '\n' || t[k] === '\r' || t[k] === ')')) k++
+  return t.slice(k)
+}
+
+/** First `n` lines of `text`. */
+function firstLines(text: string, n: number): string {
+  let end = 0
+  for (let k = 0; k < n; k++) {
+    const nl = text.indexOf('\n', end)
+    if (nl === -1) return text
+    end = nl + 1
+  }
+  return text.slice(0, end)
+}
+
+/** `if (<cond naming the variable with a negation/comparison>) <redirect|notFound|throw|return null>` in `win`. */
+function testsVariableThenTurnsAway(win: string, names: string[]): boolean {
+  for (const open of RE2_IF_OPEN.matchAll(win)) {
+    let depth = 0
+    let close = -1
+    for (let k = open.index + open.match.length - 1; k < win.length && k < open.index + 200; k++) {
+      if (win[k] === '(') depth++
+      else if (win[k] === ')' && --depth === 0) {
+        close = k
+        break
+      }
+    }
+    if (close === -1) continue
+    const cond = win.slice(open.index + open.match.length, close)
+    const condIds = new Set<string>()
+    for (const id of RE2_IDENT.matchAll(cond)) condIds.add(id.match)
+    const namesIt = names.some((nm) => condIds.has(nm))
+    const tests = cond.includes('!') || cond.includes('==')
+    if (namesIt && tests && RE2_GUARD_ACTION.test(win.slice(close + 1))) return true
+  }
+  for (const nm of names) {
+    const tail = win.split(nm)
+    for (let k = 1; k < tail.length; k++) if (RE2_INLINE_GUARD.test(tail[k])) return true
+  }
+  return false
+}
+
+function gatesAccess(src: string): boolean {
+  const text = componentText(extractExecutableText(src))
+  if (RE2_ENFORCING_CALL.test(text)) return true
+  for (const m of RE2_SESSION_FETCH.matchAll(text)) {
+    const end = m.index + m.match.length
+    const lineStart = text.lastIndexOf('\n', m.index) + 1
+    // fetch sits inside the guard's own condition: `if (!(await auth())) redirect(...)`
+    const prefix = text.slice(lineStart, m.index)
+    if (RE2_IF_OPEN.test(prefix) && RE2_GUARD_ACTION.test(trimLead(text.slice(text.indexOf(')', end) + 1)))) return true
+    if (RE2_INLINE_GUARD.test(text.slice(end))) return true
+    // otherwise the guard must test the variable the fetch was assigned to, within ~6 lines
+    const names = assignedNames(text, m.index)
+    if (names.length > 0 && testsVariableThenTurnsAway(firstLines(text.slice(end), 7), names)) return true
+  }
+  return false
+}
+
 /**
  * Returns true if the file shows evidence of a commented-out auth call
  * (suggesting auth was intentionally removed).
@@ -665,26 +963,10 @@ export const authCheck: CheckModule = {
     const middlewareFile = files.find((f) => MIDDLEWARE_FILE_PATTERN.test(f.relativePath))
 
     if (isNextjsProject(files)) {
-      if (!middlewareFile) {
-        // No middleware.ts — any sensitive Next.js pages are doubly at risk.
-        findings.push({
-          id: 'public_admin_route',
-          title: 'No Next.js middleware.ts found',
-          severity: 'high',
-          category: 'auth',
-          file: 'middleware.ts',
-          confidence: 'MEDIUM',
-          explanation:
-            'No middleware.ts file was found. Next.js App Router relies on middleware to enforce ' +
-            'route-level auth for admin, dashboard, and billing routes. Without it, protection ' +
-            'depends entirely on individual Server Components and Route Handlers, which is error-prone.',
-          recommendation:
-            'Create middleware.ts at the project root (or src/middleware.ts) and add a matcher ' +
-            'that covers /admin, /dashboard, and /billing. Use auth() from next-auth/auth.js or ' +
-            'clerkMiddleware() to redirect unauthenticated requests.',
-          blocking: policy.block.includes('public_admin_route'),
-        })
-      } else if (!RE2_MIDDLEWARE_ADMIN_COVERAGE.test(middlewareFile.content)) {
+      // A missing middleware.ts / proxy.ts is NOT a finding: Next.js documents middleware as optional,
+      // and an app that checks the session in each page, layout or route handler is protected without it.
+      // Only an existing middleware whose matcher leaves the sensitive prefixes out is reported.
+      if (middlewareFile && !middlewareCoversRoutes(middlewareFile.content)) {
         findings.push({
           id: 'public_admin_route',
           title: 'middleware.ts does not cover admin/dashboard routes',
@@ -705,6 +987,7 @@ export const authCheck: CheckModule = {
     }
 
     // ── 2. Per-file checks ────────────────────────────────────────────────────
+    const filesByPath = new Map<string, FileInfo>(files.map((f) => [f.relativePath, f]))
     for (const file of files) {
       const { relativePath: rp, content } = file
 
@@ -713,9 +996,17 @@ export const authCheck: CheckModule = {
         continue
       }
 
+      // Sign-in / sign-up / callback routes are public by design (not a missing guard).
+      if (PUBLIC_AUTH_PATH_PATTERN.test(rp) && (SENSITIVE_NEXTJS_PAGE_PATTERN.test(rp) || SENSITIVE_API_ROUTE_PATTERN.test(rp))) {
+        continue
+      }
+
       // ── 2a. Next.js App Router page / layout files ──────────────────────────
       if (SENSITIVE_NEXTJS_PAGE_PATTERN.test(rp)) {
-        if (!hasActiveAuthCall(content)) {
+        // Only the page itself is judged (helpers, styles and components in the folder are not routes), and
+        // it counts as protected when the page OR a layout above it checks the session.
+        if (!isPageFile(rp)) continue
+        if (!gatesAccess(content) && !layoutChain(rp, filesByPath).some((l) => gatesAccess(l.content))) {
           // Check if auth was recently removed (commented out).
           const wasRemoved = hasCommentedAuthCall(content)
           findings.push({
@@ -744,7 +1035,7 @@ export const authCheck: CheckModule = {
 
       // ── 2b. Next.js API Route Handlers for sensitive endpoints ──────────────
       if (SENSITIVE_API_ROUTE_PATTERN.test(rp)) {
-        if (!hasActiveAuthCall(content)) {
+        if (!hasActiveAuthCall(content) && !hasInlineCredentialGate(content)) {
           const wasRemoved = hasCommentedAuthCall(content)
           findings.push({
             id: 'auth_route_without_guard',

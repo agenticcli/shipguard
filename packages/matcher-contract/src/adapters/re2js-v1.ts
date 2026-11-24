@@ -1,12 +1,12 @@
 // Phase D.1 — re2js-v1 matching engine adapter
 //
-// Implements HarnessExecutor using re2js@2.8.3 (pure-JS RE2 engine).
+// Implements HarnessExecutor using re2js@2.8.7 (pure-JS RE2 engine).
 // Provides linear-time (ReDoS-immune) rule evaluation — the 'g' flag
 // catastrophic-backtracking hazard is eliminated at the engine level.
 //
 // DESIGN DECISIONS
 // ================
-// 1. re2js@2.8.3 exact (verified 2026-06-25 as npm latest; 1.4.0 deprecated).
+// 1. re2js@2.8.7 exact (verified 2026-06-25 as npm latest; 1.4.0 deprecated).
 //    Pure-JS, MIT, zero native/WASM deps → tsup-bundleable, ELv2-compatible.
 //
 // 2. LOOKBEHINDS OFF for v1.
@@ -647,7 +647,7 @@ function evaluateFileRelationship(
 // ---------------------------------------------------------------------------
 
 /**
- * The re2js-v1 executor: uses re2js@2.8.3 for linear-time primary matching.
+ * The re2js-v1 executor: uses re2js@2.8.7 for linear-time primary matching.
  *
  * Implements HarnessExecutor (from conformance/harness.ts) so the conformance
  * harness can inject it directly alongside nativeV1Executor.
@@ -736,7 +736,7 @@ export function re2jsTestPattern(pattern: string, input: string): boolean {
  * validates that this constant matches the current file's SHA-256.
  */
 export const RE2JS_V1_ADAPTER_IMPL_HASH =
-  '5b277d6a183d640ac9b8ebc0dc01d292101a6e577603c5cd7c6ab360263964d9' as const
+  '02e0f86920548addd8135a4391b29d34870263ec9ba61941a9fb964be8189006' as const
 
 /**
  * The frozen matcherRuntimeId for the re2js-v1 adapter (0.5.0 freeze).
@@ -747,7 +747,7 @@ export const RE2JS_V1_ADAPTER_IMPL_HASH =
  * |--------------------|----------------------------------------------------|
  * | contractVersion    | 0.5.0                                              |
  * | adapterImplHash    | RE2JS_V1_ADAPTER_IMPL_HASH (sha256 of 0.5.0 src)  |
- * | engineVersion      | 2.8.3 (RE2JS_VERSION from engine-meta.ts)          |
+ * | engineVersion      | 2.8.7 (RE2JS_VERSION from engine-meta.ts)          |
  * | engineOptions      | { LOOKBEHINDS: false }                             |
  * | buildLock          | re2js-v1-build-2026-06-25-v0.5.0                  |
  *
@@ -758,4 +758,4 @@ export const RE2JS_V1_ADAPTER_IMPL_HASH =
  * from current bytes and asserts equality — so it can never silently go stale.
  */
 export const RE2JS_V1_RUNTIME_ID =
-  '971fab9b230f60a1b663c7f9a888769e9a2d6ace58fa150e8ee574a3fc3c91d7' as const
+  'a780cc8e55ccc838940b9d8de644463fd41faca4ed51a7d68839e100a6800cd2' as const

@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you mention ShipGuard in your work, please cite it as below."
+title: "ShipGuard by AgenticCLI"
+type: software
+abstract: "The security scanner your coding agent runs before every commit. It checks a project for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deployment settings. It runs on your machine: rules come down, your code never goes up."
+authors:
+  - name: "AgenticCLI"
+    website: "https://agenticcli.dev"
+version: 0.13.1
+date-released: 2026-11-24
+license: Apache-2.0
+url: "https://agenticcli.dev/shipguard"
+repository-code: "https://github.com/agenticcli/shipguard"
+repository-artifact: "https://www.npmjs.com/package/@agenticcli/shipguard"
+keywords:
+  - security scanner
+  - AI-generated code
+  - secret detection
+  - CI/CD
+  - command-line tool

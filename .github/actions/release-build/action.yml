@@ -1,0 +1,101 @@
+name: Release build, gate, pack
+description: >
+  The single definition of the release gate. Both release-preflight.yml (before a tag exists) and release.yml
+  (after the tag) call this, so what is proven before tagging is exactly what runs at release time.
+  Needs the repository checked out first. Installs (lifecycle scripts blocked), builds, lints, tests, runs
+  release-gate.sh (G1-G12) in REAL mode, packs and checks the tarball. It never publishes and never writes.
+
+inputs:
+  tag:
+    description: Release tag the checkout must agree with (vX.Y.Z). Release facts and package.json must match it.
+    required: true
+outputs:
+  tarball:
+    description: Basename of the packed tarball
+    value: ${{ steps.pack.outputs.tarball }}
+  sha256:
+    description: sha256 of the packed tarball
+    value: ${{ steps.pack.outputs.sha256 }}
+  pack-dir:
+    description: Directory holding the tarball and its .sha256 file
+    value: ${{ steps.pack.outputs.dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup pnpm
+      uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413  # v6.1.0
+      with:
+        version: '9.15.0'
+
+    # No `cache: pnpm`: a release build never restores a shared cache.
+    - name: Setup Node.js 24
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+      with:
+        node-version: '24'
+
+    - name: Tag must equal the package version
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: |
+        ver="$(node -p "require('./packages/cli/package.json').version")"
+        test "v$ver" = "$TAG" \
+          || { echo "::error::tag $TAG != package.json version v$ver"; exit 1; }
+
+    # W12: before anything is installed or built, tag, package.json, the top CHANGELOG entry (version + date),
+    # CITATION.cff, the OpenVEX product purl and every pinned version in README/docs/REBUILD.md must agree.
+    - name: Release facts agree (fail closed)
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: bash scripts/release-facts.sh check --tag "$TAG"
+
+    # pnpm 9 runs dependency lifecycle scripts by default; --ignore-scripts blocks them.
+    # Nothing in the lockfile needs a build script (esbuild ships prebuilt platform binaries
+    # as optional deps); if the build below ever fails for lack of one, add it deliberately.
+    - name: Install workspace deps (lifecycle scripts blocked)
+      shell: bash
+      run: pnpm install --frozen-lockfile --ignore-scripts
+
+    - name: Build, lint, test
+      shell: bash
+      run: |
+        pnpm run build
+        pnpm run lint
+        pnpm test
+
+    # release-gate.sh runs G1-G12: build checks, size/speed/network budgets (G9), npm audit (G10),
+    # picomatch pin (G11) and G-PLAN on the packed CLI (G12). It needs the npm registry (audit).
+    # Never RELEASE_GATE_DRY_RUN here: a gate that can skip a real check cannot authorise a tag.
+    - name: Publish build + release gate
+      shell: bash
+      run: |
+        pnpm --filter @agenticcli/shipguard run build:publish
+        bash scripts/release-gate.sh
+
+    - name: Pack with pnpm and check the tarball
+      id: pack
+      shell: bash
+      working-directory: packages/cli
+      run: |
+        out="$RUNNER_TEMP/tarball"
+        mkdir -p "$out"
+        pnpm pack --pack-destination "$out"
+        test "$(ls "$out" | wc -l)" = 1
+        tgz="$(ls "$out"/agenticcli-shipguard-*.tgz)"
+        tar -tzf "$tgz"
+        tar -xzOf "$tgz" package/package.json | node -e "
+          let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{
+            const p=JSON.parse(d);
+            if(!p.bin||!p.bin.shipguard){console.error('tarball lost bin.shipguard');process.exit(1)}
+            if(p.repository.url!=='git+https://github.com/agenticcli/shipguard.git'){console.error('repository.url mismatch');process.exit(1)}
+            if(JSON.stringify(p).includes('workspace:')){console.error('workspace: protocol left in tarball');process.exit(1)}
+          })"
+        sha="$(sha256sum "$tgz" | cut -d' ' -f1)"
+        name="$(basename "$tgz")"
+        echo "$sha  $name" > "$out/$name.sha256"
+        echo "tarball=$name" >> "$GITHUB_OUTPUT"
+        echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+        echo "dir=$out" >> "$GITHUB_OUTPUT"
+        echo "packed $name sha256 $sha"

@@ -28,6 +28,8 @@ export interface Finding {
   confidence?: Confidence
   aiCodeTarget?: boolean
   suppressed?: boolean
+  /** The reason saved with a `shipguard ignore` entry that suppressed this finding (screen and report "Ignored"). Not in the JSON. */
+  suppressionReason?: string
   cwe?: string[]
   /**
    * Per-occurrence suppression state from the contract's CanonicalFinding.
@@ -207,6 +209,14 @@ export interface RiskScore {
  *                            and were
  *                           therefore NOT scanned. A skipped symlink can hide an entire subtree
  *                           (e.g. a symlinked `src/`) from the scan with no other signal.
+ *   UNSCANNED_UNKNOWN_BINARY — one or more files contain NUL bytes or control data that no reading
+ *                           (UTF-8 with NUL-to-space, UTF-16) explains and that show no real-binary
+ *                           evidence (known magic bytes AND mostly non-printable content). The
+ *                           name and extension are never used. Clear a legitimate blob by adding its
+ *                           path to `ignore.paths`.
+ *   NO_FILES_SCANNED      — zero files were actually scanned (empty tree, everything ignored or
+ *                           binary, or `--changed` on a clean checkout). A scan that read nothing
+ *                           can never be SAFE_TO_SHIP.
  */
 export type DegradeCode =
   | 'FILE_TOO_LARGE'
@@ -217,6 +227,86 @@ export type DegradeCode =
   | 'UNREADABLE_FILE'
   | 'COMPILE_FAILURE'
   | 'SYMLINK_SKIPPED'
+  | 'UNSCANNED_UNKNOWN_BINARY'
+  | 'NO_FILES_SCANNED'
+
+/**
+ * What the scan actually looked at (schemaVersion 6). Always present on a real scan, so the numbers
+ * are never lost.
+ *
+ * Invariant: `discovered = scanned + sum(skipped.*, except binaryHeadOnly) + truncated.notReached`,
+ * where `discovered` counts candidate files AFTER the ignore rules.
+ */
+export interface ScanCoverage {
+  discovered: number
+  /** Files (paths) actually scanned; equals `filesScanned`. */
+  scanned: number
+  skipped: {
+    /** Real binaries (magic bytes AND mostly non-printable). Not degraded. */
+    binary: number
+    /** Over the per-file size cap. Degraded (FILE_TOO_LARGE). */
+    tooLarge: number
+    /** Symlinks not followed. Degraded (SYMLINK_SKIPPED). */
+    symlink: number
+    /** NUL/control data no reading explains, no real-binary evidence. Degraded (UNSCANNED_UNKNOWN_BINARY). */
+    unknownBinary: number
+    /** Invalid UTF-8 or invalid UTF-16 with BOM. Degraded (INVALID_UTF8). */
+    invalidUtf8: number
+    /** Could not be read, or the file name is not valid UTF-8. Degraded (UNREADABLE_FILE). */
+    unreadable: number
+    /** FIFO, socket or device: holds no stored content. Not degraded. */
+    special: number
+    /** Subset of `binary` decided from the first 4,096 bytes only (files over the size cap). */
+    binaryHeadOnly: number
+  }
+  decoded: {
+    /** Files read as UTF-16 (BOM or BOM-less). */
+    utf16: number
+    /** Files read with NUL bytes replaced by spaces. */
+    nulSubstituted: number
+    /** Files scanned under more than one plausible reading (findings are merged). */
+    multiReading: number
+    /** SQLite and TAR files scanned through a byte-wise ASCII reading of their strings. */
+    asciiStrings: number
+    /** Magic-verified binaries (under the size cap) whose printable strings were also scanned. Still counted in skipped.binary. */
+    binaryStringsScanned: number
+  }
+  /** `false`, or which cap stopped collection and how many candidates were never reached. */
+  truncated: false | { by: 'maxFiles' | 'maxTotalBytes'; notReached: number }
+  /** Default ignore rules that matched. Directory rules report `present` and are never walked. */
+  ignoredByDefault: Array<{ pattern: string; files?: number; present?: boolean }>
+  /** Files matched by `ignore.paths` in the policy. */
+  ignoredByUser: number
+  /** ShipGuard's own artifacts found in the scan folder (the `.gitignore` it writes holding only `.shipguard/`). Never scanned, never in `discovered`, so they cannot make an empty scan look scanned. */
+  selfArtifacts: number
+  mode: 'full' | 'changed'
+  /**
+   * Matches skipped because the value is a documented test or placeholder value (a `sk_test_` key, an example
+   * key). Counted so the skip is auditable; never a finding. Optional: absent on a result built before it was counted.
+   */
+  ignoredTestValues?: number
+  /** Firebase web config apiKeys seen (public identifiers by design). Noted on the screen, never a finding, never in the verdict. */
+  publicIdentifiers?: number
+  /**
+   * `--changed` only. `listed` = every path git reported; `outsideScope` = those outside the scan folder.
+   * `nothingToCheck` is present (always `true`) only when git ran fine and nothing but ShipGuard's own
+   * files changed: nothing was scanned because there was nothing to scan. That scan is still degraded (NO_FILES_SCANNED) and never SAFE_TO_SHIP.
+   */
+  changed?: { listed: number; outsideScope: number; nothingToCheck?: true }
+  /** Project-relative names, sorted, each list capped at 50 (the counts above are exact). */
+  files: {
+    binary: string[]
+    tooLarge: string[]
+    symlink: string[]
+    unknownBinary: string[]
+    special: string[]
+    nulSubstituted: string[]
+    selfArtifacts: string[]
+    /** Degrading skips by name (screen and JSON name every file). Optional: absent on a result built before 0.13.1. */
+    invalidUtf8?: string[]
+    unreadable?: string[]
+  }
+}
 
 /** A single reason contributing to a degraded scan. */
 export interface DegradeReason {
@@ -295,6 +385,12 @@ export interface ScanResult {
    * (true/false) on builds that have it. See history/scan-id.ts.
    */
   scanIdReused?: boolean
+  /** What was actually scanned, skipped and ignored (schemaVersion 6). */
+  coverage?: ScanCoverage
+  /** Usage pings: `"on"` or `"off"` (off when an opt-out is set). Present on every scan result. */
+  telemetry?: 'on' | 'off'
+  /** What this run's exit code means, in one sentence. Read it next to `recommendation`; exit 0 is not "safe". */
+  exitMeaning?: string
 }
 
 export interface ScanOptions {
@@ -310,7 +406,8 @@ export interface QualityGateRule {
   framework: string[]
   frameworkVersion?: string
   category: CheckCategory
-  tier: 'free' | 'pro' | 'enterprise'
+  /** Open token: the server decides which tiers exist; the CLI never enumerates them (spec 02). */
+  tier: string
   severity: Severity
   subcategory?: 'vuln' | 'audit' | 'secure-default'
   confidence?: Confidence

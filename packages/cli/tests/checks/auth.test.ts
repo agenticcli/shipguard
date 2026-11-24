@@ -339,11 +339,11 @@ describe('Express route protection', () => {
 })
 
 describe('Next.js middleware.ts coverage', () => {
-  it('flags missing middleware.ts', () => {
+  it('does NOT flag a missing middleware.ts (Next.js documents middleware as optional)', () => {
     const findings = authCheck.run([ADMIN_PAGE_UNPROTECTED], policy)
     const f = findings.filter((f) => f.file === 'middleware.ts')
-    expect(f.length).toBe(1)
-    expect(f[0].id).toBe('public_admin_route')
+    expect(f.length).toBe(0)
+    expect(findings.some((x) => x.title === 'No Next.js middleware.ts found')).toBe(false)
   })
 
   it('flags middleware.ts that does not reference admin/dashboard routes', () => {
@@ -360,6 +360,91 @@ describe('Next.js middleware.ts coverage', () => {
     const findings = authCheck.run([ADMIN_PAGE_WITH_AUTH, MIDDLEWARE_WITH_ADMIN], policy)
     const f = findings.filter((f) => f.file === 'middleware.ts')
     expect(f.length).toBe(0)
+  })
+})
+
+// N-proxy (benchmark 2026-11-08, D7): Next 16 renamed middleware.ts to proxy.ts. A clean Next 16
+// app was told "No Next.js middleware.ts found" - a false claim.
+describe('Next.js 16 proxy.ts counts as middleware', () => {
+  const PROXY_WITH_ADMIN = makeFile(
+    'proxy.ts',
+    `import { NextResponse } from 'next/server'
+
+export function proxy(req: Request) {
+  return NextResponse.next()
+}
+
+export const config = { matcher: ['/admin/:path*', '/dashboard/:path*'] }`,
+  )
+
+  it('does NOT claim middleware.ts is missing when proxy.ts covers admin routes', () => {
+    const findings = authCheck.run([ADMIN_PAGE_WITH_AUTH, PROXY_WITH_ADMIN], policy)
+    expect(findings.filter((f) => /No Next\.js middleware/.test(f.title))).toEqual([])
+    expect(findings.filter((f) => f.file === 'proxy.ts' || f.file === 'middleware.ts')).toEqual([])
+  })
+
+  it('a catch-all matcher (the Next.js / Supabase / Clerk default) counts as covering every route', () => {
+    const f = makeFile(
+      'proxy.ts',
+      `export async function proxy(request: Request) { return updateSession(request) }
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png)$).*)"],
+}`,
+    )
+    const findings = authCheck.run([ADMIN_PAGE_WITH_AUTH, f], policy)
+    expect(findings.filter((x) => x.id === 'public_admin_route')).toEqual([])
+  })
+
+  const flagged = (content: string) =>
+    authCheck
+      .run([ADMIN_PAGE_WITH_AUTH, makeFile('proxy.ts', content)], policy)
+      .filter((x) => x.id === 'public_admin_route').length
+
+  it('a catch-all only mentioned in a line comment does not count', () => {
+    expect(flagged("// matcher: ['/((?!_next).*)']\nexport function proxy() { return null }")).toBe(1)
+  })
+
+  it('a catch-all only mentioned in a block comment does not count', () => {
+    expect(flagged("/* (?!_next static) */\nexport function proxy() { return null }")).toBe(1)
+  })
+
+  it('a catch-all that EXCLUDES admin/dashboard prefixes does not count', () => {
+    for (const ex of ['admin', 'dashboard', 'account', 'billing', 'settings']) {
+      expect(
+        flagged(`export function proxy() { return null }\nexport const config = { matcher: ["/((?!${ex}|_next/static).*)"] }`),
+        ex,
+      ).toBe(1)
+    }
+  })
+
+  it('an empty proxy with no matcher is still flagged', () => {
+    expect(flagged('export function proxy() { return null }')).toBe(1)
+  })
+
+  it('the Supabase-style catch-all (comment inside the matcher array) is covered', () => {
+    expect(
+      flagged(`export function proxy() { return null }
+export const config = {
+  matcher: [
+    /* Match all except: _next/static, favicon */
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg)$).*)",
+  ],
+}`),
+    ).toBe(0)
+  })
+
+  it('also accepts src/proxy.ts', () => {
+    const f = makeFile('src/proxy.ts', PROXY_WITH_ADMIN.content)
+    const findings = authCheck.run([ADMIN_PAGE_WITH_AUTH, f], policy)
+    expect(findings.filter((x) => /No Next\.js middleware/.test(x.title))).toEqual([])
+  })
+
+  it('still reviews proxy.ts content: no admin coverage is reported on proxy.ts', () => {
+    const f = makeFile('proxy.ts', "export function proxy() { return null }")
+    const findings = authCheck.run([ADMIN_PAGE_UNPROTECTED, f], policy)
+    const hit = findings.filter((x) => x.file === 'proxy.ts')
+    expect(hit.length).toBe(1)
+    expect(hit[0].explanation).toMatch(/does not reference/)
   })
 })
 
@@ -402,35 +487,34 @@ router.get('/admin/users', (req, res) => res.json({}))`),
     expect(middlewareFindings.length).toBe(0)
   })
 
-  it('DOES flag missing middleware.ts for a Next.js repo (app/ path signal)', () => {
+  it('does NOT flag a missing middleware.ts for a Next.js repo (app/ path signal)', () => {
     // App Router path present → Next.js detected → middleware check runs.
     const nextFiles = [
       makeFile('app/admin/page.tsx', `export default function AdminPage() { return <div>Admin</div> }`),
     ]
     const findings = authCheck.run(nextFiles, policy)
     const middlewareFindings = findings.filter((f) => f.file === 'middleware.ts')
-    expect(middlewareFindings.length).toBe(1)
-    expect(middlewareFindings[0].id).toBe('public_admin_route')
+    expect(middlewareFindings.length).toBe(0)
   })
 
-  it('DOES flag missing middleware.ts for a Next.js repo (next.config.js signal)', () => {
+  it('does NOT flag a missing middleware.ts for a Next.js repo (next.config.js signal)', () => {
     const nextFiles = [
       makeFile('next.config.js', `module.exports = { reactStrictMode: true }`),
       makeFile('pages/index.tsx', `export default function Home() { return <div>Home</div> }`),
     ]
     const findings = authCheck.run(nextFiles, policy)
     const middlewareFindings = findings.filter((f) => f.file === 'middleware.ts')
-    expect(middlewareFindings.length).toBe(1)
+    expect(middlewareFindings.length).toBe(0)
   })
 
-  it('DOES flag missing middleware.ts for a Next.js repo (package.json with next dep)', () => {
+  it('does NOT flag a missing middleware.ts for a Next.js repo (package.json with next dep)', () => {
     const nextFiles = [
       makeFile('package.json', JSON.stringify({ dependencies: { next: '^15.0.0', react: '^18.0.0' } })),
       makeFile('pages/index.tsx', `export default function Home() { return <div>Home</div> }`),
     ]
     const findings = authCheck.run(nextFiles, policy)
     const middlewareFindings = findings.filter((f) => f.file === 'middleware.ts')
-    expect(middlewareFindings.length).toBe(1)
+    expect(middlewareFindings.length).toBe(0)
   })
 
   // ---------------------------------------------------------------------------
@@ -474,7 +558,7 @@ router.get('/admin/users', (req, res) => res.json({}))`),
     ]
     const findings = authCheck.run(files, policy)
     const middlewareFindings = findings.filter((f) => f.file === 'middleware.ts')
-    expect(middlewareFindings.length).toBe(1)  // app-router path signal still fires
+    expect(middlewareFindings.length).toBe(0)  // no middleware finding exists any more; the app-router signal still gates the other checks
   })
 })
 
@@ -655,6 +739,7 @@ describe('Lexer: conservative on uncertainty — malformed input scanned, never 
 const broken = "unterminated
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )
@@ -697,6 +782,7 @@ describe('Lexer: no ReDoS pattern — no .*? inside lookbehinds', () => {
       `import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )
@@ -715,6 +801,7 @@ export default async function AdminPage() {
 import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )
@@ -729,6 +816,7 @@ export default async function AdminPage() {
 import { auth } from '@/auth'
 export default async function AdminPage() {
   const session = await auth()
+  if (!session) redirect('/login')
   return <div>Admin</div>
 }`,
     )

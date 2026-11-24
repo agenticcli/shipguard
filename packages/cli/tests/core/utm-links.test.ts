@@ -24,6 +24,7 @@ const URL_RE = /https?:\/\/(?:www\.)?agenticcli\.dev[^\s'"`)\]<>,]*/g
 /** Lines in src/ that are API endpoints, trust anchors or comments, not links a person follows. */
 const API_LINE = [
   /DEFAULT_API_URL\s*=/,
+  /PROD_TELEMETRY_ENDPOINT\s*=/,
   /JWKS_URL\s*=/,
   /\.option\('--api-url/,
   /^\s*(\*|\/\/)/, // comments
@@ -42,8 +43,8 @@ function missingTags(url: string, required: Record<string, string>): string[] {
 }
 
 describe('goLink', () => {
-  it('has the six slots the site redirects', () => {
-    expect([...GO_SLOTS].sort()).toEqual(['billing', 'dashboard', 'docs', 'pricing', 'site', 'telemetry'])
+  it('has the slots the site redirects', () => {
+    expect([...GO_SLOTS].sort()).toEqual(['billing', 'checkout', 'dashboard', 'docs', 'pricing', 'pricing-md', 'site', 'telemetry'])
   })
   it('builds https://agenticcli.dev/go/<slot>, short enough for the 78-column boxes', () => {
     for (const s of GO_SLOTS) {
@@ -84,7 +85,6 @@ describe('text the CLI prints (packages/cli/src)', () => {
 
 describe('README and package.json links', () => {
   const surfaces: Array<[string, Record<string, string>]> = [
-    ['README.md', { utm_source: 'github_readme', utm_medium: 'repo', utm_campaign: 'shipguard_evergreen' }],
     ['packages/cli/README.md', { utm_source: 'npm_readme', utm_medium: 'package', utm_campaign: 'shipguard_evergreen' }],
   ]
   it.each(surfaces)('%s: every agenticcli.dev link carries the full tags', (rel, required) => {
@@ -104,7 +104,15 @@ describe('README and package.json links', () => {
     expect(new URL(pkg.homepage).pathname).toBe('/shipguard')
   })
 
+  // 2026-11-04 owner decision: the GitHub README (root) uses clean canonical URLs, no UTM tags (GitHub adds nofollow, and
+  // tagged variants only split analytics). Supersedes the github_readme row of the 2026-10-18 scheme above.
+  it('README.md: agenticcli.dev links are clean canonical URLs (no utm_ tags)', () => {
+    const bad = read('README.md').split('\n').flatMap((line, i) =>
+      [...line.matchAll(URL_RE)].filter((m) => /utm_/.test(m[0])).map((m) => `README.md:${i + 1} ${m[0]}`))
+    expect(bad).toEqual([])
+  })
+
   it('mailto and GitHub links are not touched', () => {
-    expect(read('SECURITY.md')).toContain('founders@agenticcli.dev')
+    expect(read('SECURITY.md')).toContain('support@agenticcli.dev')
   })
 })

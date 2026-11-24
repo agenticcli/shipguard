@@ -465,3 +465,32 @@ export function _testInjectKeyringEntry(entry: PinnedKeyEntry): () => void {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// verifyPlanDocumentSignature
+// ---------------------------------------------------------------------------
+
+/**
+ * Verify the signature of a plan or offer document (compact JWS, EdDSA) against the pinned BUNDLE key.
+ * There is no second key and no new key role: the JWS header `typ` (checked by core/plan.ts BEFORE this
+ * call) separates bundle, account and offer documents. `signingInput` is the ASCII `header.payload`
+ * of the compact JWS, exactly as received.
+ *
+ * Returns false for a bad signature; THROWS for an unknown/expired/revoked key or a wrong role, like
+ * the other verify helpers (callers treat both as "document not trusted").
+ */
+export async function verifyPlanDocumentSignature(
+  signingInput: Uint8Array,
+  signatureB64url: string,
+  kid: string,
+): Promise<boolean> {
+  const cryptoKey = await resolveAndImportKey(kid, 'bundle');
+  const signatureBytes = Buffer.from(signatureB64url, 'base64url');
+  // WHY the cast: see verifyBundleEnvelopeSignature (Node Buffer is never SharedArrayBuffer-backed).
+  return globalThis.crypto.subtle.verify(
+    'Ed25519',
+    cryptoKey,
+    signatureBytes as unknown as Uint8Array<ArrayBuffer>,
+    signingInput as unknown as Uint8Array<ArrayBuffer>,
+  );
+}

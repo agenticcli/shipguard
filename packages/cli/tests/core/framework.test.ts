@@ -37,10 +37,10 @@ describe('detectFramework', () => {
     expect(detectFramework(dir)).toEqual({ framework: 'express', version: '4.18.0' });
   });
 
-  it('detects fastify', () => {
+  it('does not detect stacks that have no rule of their own (fastify, drizzle)', () => {
     const dir = join(BASE, 'fastify');
-    writePackageJson(dir, { fastify: '^4.0.0' });
-    expect(detectFramework(dir)).toEqual({ framework: 'fastify', version: '4.0.0' });
+    writePackageJson(dir, { fastify: '^4.0.0', 'drizzle-orm': '^0.30.0' });
+    expect(detectFramework(dir)).toEqual({ framework: 'generic' });
   });
 
   it('returns generic when no known framework found', () => {
@@ -84,6 +84,50 @@ describe('detectFrameworks', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sg-fw-'));
     const result = detectFrameworks(dir);
     expect(result.frameworks).toEqual([{ name: 'generic' }]);
+    rmSync(dir, { recursive: true });
+  });
+});
+
+describe('detectFrameworks: React and Firebase', () => {
+  it('detects React from react or react-dom, with the version', () => {
+    const a = createTempProject({ react: '^19.0.0' });
+    const b = createTempProject({ 'react-dom': '~18.3.1' });
+    expect(detectFrameworks(a).frameworks).toEqual([{ name: 'react', version: '19.0.0' }]);
+    expect(detectFrameworks(b).frameworks).toEqual([{ name: 'react', version: '18.3.1' }]);
+    rmSync(a, { recursive: true });
+    rmSync(b, { recursive: true });
+  });
+
+  it('a Next.js app reports both nextjs and react', () => {
+    const dir = createTempProject({ next: '^15.0.0', react: '^19.0.0', 'react-dom': '^19.0.0' });
+    expect(detectFrameworks(dir).frameworks.map((f) => f.name)).toEqual(['nextjs', 'react']);
+    rmSync(dir, { recursive: true });
+  });
+
+  it('detects Firebase from firebase, firebase-admin or firebase-functions', () => {
+    for (const dep of ['firebase', 'firebase-admin', 'firebase-functions']) {
+      const dir = createTempProject({ [dep]: '^11.0.0' });
+      expect(detectFrameworks(dir).frameworks).toEqual([{ name: 'firebase', version: '11.0.0' }]);
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it('detects a rules-only Firebase repo (no package.json) from firebase.json or firestore.rules', () => {
+    for (const file of ['firebase.json', 'firestore.rules']) {
+      const dir = mkdtempSync(join(tmpdir(), 'sg-fw-'));
+      writeFileSync(join(dir, file), '{}');
+      expect(detectFrameworks(dir).frameworks).toEqual([{ name: 'firebase' }]);
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it('every detectable stack name is lower-case and matches a rule-id prefix', () => {
+    const dir = createTempProject({
+      next: '1', express: '1', '@prisma/client': '1', '@supabase/supabase-js': '1', react: '1', firebase: '1',
+    });
+    expect(detectFrameworks(dir).frameworks.map((f) => f.name).sort()).toEqual(
+      ['express', 'firebase', 'nextjs', 'prisma', 'react', 'supabase'],
+    );
     rmSync(dir, { recursive: true });
   });
 });

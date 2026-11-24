@@ -1,7 +1,7 @@
 {
   "name": "@agenticcli/shipguard",
-  "version": "0.8.1",
-  "description": "CLI-first release gate for AI-built apps",
+  "version": "0.13.1",
+  "description": "Open source CLI that scans AI-written code for secrets, auth, webhook and deploy flaws. For Claude Code, Codex, Cursor.",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
@@ -12,7 +12,9 @@
     "rules",
     "templates",
     "docs",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsup",
@@ -26,14 +28,17 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@noble/hashes": "^2.2.0",
+    "@noble/hashes": "^2.4.0",
     "chalk": "^5.4.0",
     "commander": "^13.1.0",
     "fast-glob": "^3.3.0",
-    "jose": "^6.2.3",
-    "minimatch": "^10.2.5",
-    "re2js": "2.8.3",
-    "yaml": "^2.7.0"
+    "minimatch": "^11.0.1",
+    "re2js": "2.8.7",
+    "yaml": "^2.9.1"
+  },
+  "overrides": {
+    "picomatch@^2": "2.3.2",
+    "picomatch@^4": "4.0.4"
   },
   "devDependencies": {
     "@agenticcli/matcher-contract": "workspace:*",
@@ -49,21 +54,35 @@
   "keywords": [
     "shipguard",
     "agenticcli",
-    "release-gate",
-    "ai-code",
-    "security",
-    "cli",
-    "ai-agents",
+    "open-source",
+    "security-scanner",
+    "secret-scanner",
+    "secret-detection",
     "claude-code",
-    "cursor",
+    "claude-code-security",
     "codex",
-    "agentic",
-    "pre-deploy-check",
-    "secrets-scanner",
-    "llm-generated-code"
+    "codex-cli",
+    "codex-security",
+    "cursor",
+    "ai-agents",
+    "ai-coding-agent",
+    "ai-agent-security",
+    "ai-generated-code",
+    "ai-code",
+    "security-review",
+    "pre-commit",
+    "pre-commit-hook",
+    "github-actions",
+    "ci",
+    "nextjs",
+    "stripe-webhook",
+    "leaked-api-key"
   ],
-  "license": "Elastic-2.0",
-  "author": "agenticcli",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "AgenticCLI",
+    "url": "https://agenticcli.dev"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agenticcli/shipguard.git"
