@@ -1,5 +1,5 @@
 // Types for the signed plan block and the public offer (contract: docs/contracts/plan-v2.json).
-// P0 STUB: types only, no logic. W1a owns this file from here (verify, safe-text, hint, nag, offer cache).
+// Types only, no logic (verify, safe-text, hint, nag and offer cache build on them).
 // HARD RULE: the CLI holds no plan facts: nothing in this file may be a price, count, pack size, trial
 // length, plan name or limit. Every value below arrives from the server, signed, and is shown verbatim.
 
@@ -7,7 +7,7 @@
 export type AccountStatus = 'active' | 'trialing' | 'pending' | 'past_due' | 'ending' | 'lapsed' | 'none' | 'unsupported';
 /** Usage states: ok = no notice, warn and used = the capped allowance notice. Unknown = ok. */
 export type UsageState = 'ok' | 'warn' | 'used';
-/** Why plan data is unavailable (spec 02, "The plan block"). */
+/** Why plan data is unavailable. */
 export type PlanUnavailableReason = 'OFFLINE' | 'NOT_FETCHED' | 'SERVER_NO_PLAN' | 'FETCH_FAILED' | 'PLAN_UNVERIFIED';
 
 export interface PlanServerBlock {

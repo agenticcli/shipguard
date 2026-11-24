@@ -33,7 +33,7 @@ export function probeGate(cwd: string): GateProbe {
   return { state: 'none', label: null }
 }
 
-/** Which agent should a setup suggestion name? The one running the scan, else repo signals (spec 07). */
+/** Which agent should a setup suggestion name? The one running the scan, else repo signals. */
 export function detectNextAgent(cwd: string, env: NodeJS.ProcessEnv = process.env): NextAgent | null {
   const a = detectAgent(env)
   if (a === 'claude_code') return 'claude'

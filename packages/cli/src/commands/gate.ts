@@ -52,7 +52,7 @@ import {
 } from '../core/gate-text.js'
 
 /**
- * `shipguard gate --host claude|git|ci|codex|cursor` — the one gate every hook runs (spec 03).
+ * `shipguard gate --host claude|git|ci|codex|cursor` — the one gate every hook runs.
  *
  * It decides which directory and which commit the hooked command targets, scans exactly that commit
  * (never the working tree), and answers with one text for every host. Only the exit code and the

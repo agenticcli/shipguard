@@ -1,6 +1,6 @@
 /**
  * setup-templates.ts: the text `shipguard setup` writes that is NOT a hook script (hook scripts are
- * core/hook-templates.ts): the CLAUDE.md / AGENTS.md managed block and the CI workflow (spec 07).
+ * core/hook-templates.ts): the CLAUDE.md / AGENTS.md managed block and the CI workflow.
  * Pure strings, no filesystem. No plan facts and no prices here (the CLI holds none).
  */
 import { ACTION_CHECKOUT, ACTION_SETUP_NODE, HOOK_MARKER_END, HOOK_MARKER_START, NPX_SPEC } from './hook-templates.js'

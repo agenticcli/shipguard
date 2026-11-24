@@ -132,6 +132,17 @@ describe('this repository', () => {
   // The npm description is the short "Open source CLI ..." line (owner decision 2026-11-23, licence switch),
   // so the core line now lives in the npm README, which is the package page.
   it('the package README carries the core line', () => {
-    expect(readFileSync(join(CLI, 'README.md'), 'utf-8')).toContain('Review code with a rulebook to build secure code')
+    expect(readFileSync(join(CLI, 'README.md'), 'utf-8')).toContain('Check code against a rulebook before you ship')
+  })
+  it('the tagline is one line everywhere: source constant, both READMEs, and the old line is gone', () => {
+    const NEW = 'Check code against a rulebook before you ship'
+    const OLD = 'Review code with a rulebook to build secure code'
+    expect(readFileSync(join(CLI, 'src/core/outcome.ts'), 'utf-8')).toContain(`CORE_LINE = '${NEW}'`)
+    for (const f of [join(ROOT, 'README.md'), join(CLI, 'README.md'), join(CLI, 'src/core/outcome.ts'), join(CLI, 'docs/llms.txt')]) {
+      const t = readFileSync(f, 'utf-8')
+      expect(t, f).not.toContain(OLD)
+    }
+    expect(readFileSync(join(ROOT, 'README.md'), 'utf-8')).toContain(NEW)
+    expect(readFileSync(join(CLI, 'docs/llms.txt'), 'utf-8')).toContain(NEW)
   })
 })

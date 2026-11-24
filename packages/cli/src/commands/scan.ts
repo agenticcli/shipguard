@@ -402,7 +402,7 @@ ${LEARN_MORE}`)
     })
 }
 
-/** The one repeat sentence above `Next:` (spec 04 "Fix loop"): states only what was measured. */
+/** The one repeat sentence above `Next:`: states only what was measured. */
 function repeatLineFor(since: SinceLastRun, blockingCount: number): string | null {
   if (blockingCount === 0) return null
   const runs = maxRepeatRuns(since)
@@ -416,7 +416,7 @@ function stepErrorEnvelope(err: StepError, ctx: { scanId: string; planEnv: Retur
   const code: ErrorCode = err.code
   const calm = err.proErrorCode === 'PLATFORM_UNAVAILABLE' || err.proErrorCode === 'FRESHNESS_EXPIRED'
   const signedOutPro = code === 'LOGIN_REQUIRED' && err.message.startsWith('--pro uses')
-  // The pointer to `upgrade` is left off in CI and when promotion is muted (spec 05).
+  // The pointer to `upgrade` is left off in CI and when promotion is muted.
   const pointer = ctx.planEnv.ci || process.env.SHIPGUARD_NO_PROMO === '1' ? '' : '   (what the full rulebook adds for this repo: shipguard upgrade)'
   return buildErrorEnvelope({
     code,
@@ -436,7 +436,7 @@ function stepErrorEnvelope(err: StepError, ctx: { scanId: string; planEnv: Retur
 
 const MANIFESTS = ['package.json', 'pyproject.toml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'Gemfile', 'composer.json', 'pom.xml', 'build.gradle']
 
-/** The manifest that made this folder a project (spec 06 "unsupported stack"), or null when none is known. */
+/** The manifest that made this folder a project, or null when none is known. */
 function firstManifest(dir: string): string | null {
   return MANIFESTS.find((m) => existsSync(join(dir, m))) ?? null
 }
@@ -589,7 +589,7 @@ async function runScan(ctx: {
     logger.divider()
   }
 
-  // ---- how this scan gets its rules (spec 02 "One rule for the rulebook did not run") ----
+  // ---- how this scan gets its rules ----
   // One decision for every cause: general rules + what ran, or exit 3 for an explicit --pro. The rulebook is used only
   // when the server serves a verified, attested bundle; the plan block is display data and unlocks nothing.
   const explicitPro = Boolean(opts.pro)
@@ -793,7 +793,7 @@ async function runScan(ctx: {
   const notScannedSummary = collectNotScanned(result, { cwd, maxFileSizeBytes: policy.limits?.maxFileSizeBytes })
   const detectedStackNames = detectedFrameworks.map((f) => f.name)
   const ignoredTestValues = result.coverage?.ignoredTestValues ?? 0
-  // W5 masking: the one masked text `<type>, <length> characters, value hidden` is read back for the screen and the report.
+  // Masking: the one masked text `<type>, <length> characters, value hidden` is read back for the screen and the report.
   const maskedOf = (f: Finding) => (f.evidence ? parseMaskedSecret(f.evidence) : undefined)
   const secretLabel = (f: Finding): string | null => {
     const m = maskedOf(f)
@@ -824,7 +824,7 @@ async function runScan(ctx: {
   const notSafe = result.riskScore.blockingCount > 0 || effectiveRecommendation(result) === 'DO_NOT_SHIP'
   publicResult.exitMeaning = exitMeaning({ exitCode, strict: scanOptions.strict, notSafe, regressionBlocks })
 
-  // The loop state (spec 04 "Fix loop"): how many runs in a row still show the same blocking rule + file.
+  // The loop state: how many runs in a row still show the same blocking rule + file.
   // Partial (--changed) scans never count: a blocker outside the changed files would look "fixed".
   let sinceLastRun: SinceLastRun | null = null
   if (!changedOnly) {
@@ -886,7 +886,7 @@ async function runScan(ctx: {
   const degradedJson = buildDegradedReasons(reasons, result.coverage)
   const notScanned = buildNotScanned(result.coverage, reasons)
   const blockingFindings = result.findings.filter((f) => f.blocking && !f.suppressed)
-  // Gate health (spec 03): a stale hook and a gate the host killed are reported on every run, outside the gate too.
+  // Gate health: a stale hook and a gate the host killed are reported on every run, outside the gate too.
   const healthWarnings = gateHealthWarnings(cwd)
   const warnings: Array<{ code: string; message: string; command: string | null }> = healthWarnings.map((w) => ({ code: w.code, message: w.message, command: w.command }))
   const gate = probeGate(cwd)
@@ -1021,7 +1021,7 @@ async function runScan(ctx: {
     }
   }
 
-  // Warnings that carry a command go to stderr, one line each (spec 01, 03): stdout line 1 stays the verdict. The JSON
+  // Warnings that carry a command go to stderr, one line each: stdout line 1 stays the verdict. The JSON
   // and SARIF outputs keep stderr quiet: the same facts are in warnings[]. The gate's own child run is a JSON run.
   if (!opts.sarif && !scanOptions.json && !isHookOrGate()) {
     for (const w of healthWarnings) process.stderr.write(`${healthWarningLine(w)}\n`)
@@ -1038,7 +1038,7 @@ async function runScan(ctx: {
     if (acctId !== null && marks.usage) markMoment(nctx, 'usageJson', acctId)
     if (acctId !== null && marks.receipt) markMoment(nctx, 'receiptJson', acctId)
   } else if (quiet) {
-    // --quiet mode: one `key=value` line (spec 01); nothing else on stdout.
+    // --quiet mode: one `key=value` line; nothing else on stdout.
     console.log(renderQuietLine({
       result,
       agentAction,
@@ -1049,7 +1049,7 @@ async function runScan(ctx: {
     }))
   } else {
     // -----------------------------------------------------------------------
-    // Human screen (spec 01): verdict first, at most 25 lines, same bytes piped or on a terminal.
+    // Human screen: verdict first, at most 25 lines, same bytes piped or on a terminal.
     // -----------------------------------------------------------------------
     const elapsedMs = Date.now() - startTime
     const nctx = nagCtx(planEnv)
@@ -1071,7 +1071,7 @@ async function runScan(ctx: {
     const receiptOut = receiptOpen && receipt ? receiptLines(receipt, plan) : []
     const setupDue = momentDue(nag, 'setupHint', rk, planEnv.now)
 
-    // The screen marks a finding from a downloaded rulebook rule with `[<plan> rule]` (spec 05): hand it the origin the JSON already carries.
+    // The screen marks a finding from a downloaded rulebook rule with `[<plan> rule]`: hand it the origin the JSON already carries.
     const screenResult: typeof result = rulebookRuleIds.size > 0
       ? { ...result, findings: result.findings.map((f) => (rulebookRuleIds.has(f.id) ? { ...f, origin: 'rulebook' } : f)) }
       : result

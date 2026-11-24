@@ -75,7 +75,7 @@ export function exitWhenDrained(): void {
 }
 
 /**
- * The ONE error exit for every command (spec 06 template + spec 02 envelope):
+ * The ONE error exit for every command:
  * the error template on stderr always; with a machine output (`--json`, `--sarif`) the envelope as the one
  * JSON object on stdout; then the exit code. The caller must
  * `return` right after it (see setExitCode).

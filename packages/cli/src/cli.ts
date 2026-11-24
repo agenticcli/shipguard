@@ -97,14 +97,14 @@ Learn more:
 
 // First command on an install: one `cli_first_run` event (opt-outs, CI and dev-build rules live in
 // sendLifecycleEvent; it never throws and is bounded). Skipped for `telemetry` so a user can opt out first.
-// Safe mode (spec 06): the global flag is registered here so commander accepts it; the decision itself lives in
-// core/telemetry-config.ts (isSafeMode, W0 PR #39). announceSafeMode prints SAFE_MODE_LINE as the FIRST stderr line.
+// Safe mode: the global flag is registered here so commander accepts it; the decision itself lives in
+// core/telemetry-config.ts (isSafeMode). announceSafeMode prints SAFE_MODE_LINE as the FIRST stderr line.
 program.option('--safe-mode', 'No usage pings and no writes outside the project except the sign-in token')
 program.hook('preAction', () => {
   announceSafeMode()
 })
 program.hook('preAction', () => {
-  // Which gate runs this process (W0 ping field). Only the three known values count; the setter ignores
+  // Which gate runs this process. Only the three known values count; the setter ignores
   // anything else, so the kind stays "none".
   const kind = process.env.SHIPGUARD_GATE_KIND
   if (kind) setGateKind(kind)
@@ -169,7 +169,7 @@ program.addCommand(
   new Command('help')
     .description('Show the command list (same as --help)')
     .action(() => {
-      // Same table as `--help` (spec 07 "Help and docs drift"): one generator, no hand-written list.
+      // Same table as `--help`: one generator, no hand-written list.
       program.outputHelp()
     })
 )
@@ -205,8 +205,8 @@ function levenshtein(a: string, b: string): number {
   return dp[m][n]
 }
 
-// The commands of 0.13. The six in NEW_COMMAND_NAMES (core/command-names.ts, one list for every stream) are
-// registered by their own streams; a name here without a registered command answers UNKNOWN_COMMAND until then.
+// The commands of 0.13. The six in NEW_COMMAND_NAMES (core/command-names.ts, one list for every command) are
+// registered by their own modules; a name here without a registered command answers UNKNOWN_COMMAND until then.
 const ALL_COMMAND_NAMES: readonly string[] = [
   'scan', 'init', 'login', 'logout', 'history', 'hook', 'schema', 'feedback', 'rate', 'telemetry', 'help',
   ...NEW_COMMAND_NAMES,
@@ -245,7 +245,7 @@ function closestCommand(input: string): string | undefined {
 // Parse — catch Commander errors for unknown commands / options
 // ---------------------------------------------------------------------------
 ;(async () => {
-  // With CI set every stderr line starts with `shipguard: ` (spec 01 rule 9); before any output.
+  // With CI set every stderr line starts with `shipguard: `; before any output.
   installCiStderrPrefix()
   // Pre-parse check: if first non-flag token is not a known command name
   // and is not a flag, it's an unknown command — intercept before Commander

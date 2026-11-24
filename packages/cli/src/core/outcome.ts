@@ -1,5 +1,5 @@
 /**
- * The agent contract (spec 02): schemaVersion "7" envelope, `agentAction`, `nextSteps`, the ONE error-code
+ * The agent contract: schemaVersion "7" envelope, `agentAction`, `nextSteps`, the ONE error-code
  * table and the ONE error template. Pure functions (no I/O except the small last-run loop-state file
  * helpers at the bottom): scan.ts, schema.ts and utils/exit.ts call these, and the tables below are the
  * single source `shipguard schema --json` is generated from.
@@ -19,12 +19,12 @@ import type { AccountStatus, PlanBlock } from './plan-types.js'
 import type { DegradeReason, Finding, Recommendation, RiskScore, ScanCoverage } from '@agenticcli/shared'
 
 export const SCHEMA_VERSION = '7'
-export const CORE_LINE = 'Review code with a rulebook to build secure code'
+export const CORE_LINE = 'Check code against a rulebook before you ship'
 
 export type AgentAction = 'proceed' | 'fix_and_rerun' | 'retry' | 'ask_human' | 'stop'
 
 // ---------------------------------------------------------------------------
-// Error codes: THE single table (spec 02 "Code table"). Exit semantics: 2 = fix your command or config,
+// Error codes: THE single table. Exit semantics: 2 = fix your command or config,
 // 3 = environment, network, sign-in or internal, 130 = cancelled. `gate` codes carry the host values.
 // ---------------------------------------------------------------------------
 export interface ErrorCodeEntry {
@@ -94,7 +94,7 @@ export function mapProFetchCode(code: string, message = ''): ErrorCode {
 }
 
 // ---------------------------------------------------------------------------
-// Outcomes (spec 02 "Outcomes and agent actions"): the one decision table. `schema --json` prints it.
+// Outcomes: the one decision table. `schema --json` prints it.
 // ---------------------------------------------------------------------------
 export const OUTCOMES = [
   { precedence: 1, outcome: 'error: bad command or config, sign-in, network, plan, internal, gate failure, cancel', exit: '2 / 3 / 130', agentAction: 'per the code table', nextStep: 'error.command when set' },
@@ -116,7 +116,7 @@ export const WARNING_CODES = {
 } as const
 
 // ---------------------------------------------------------------------------
-// Degraded (incomplete-scan) reasons: one fix text per code (spec 06 "Skipped files").
+// Degraded (incomplete-scan) reasons: one fix text per code.
 // ---------------------------------------------------------------------------
 interface DegradedInfo { fix: string; askUser: boolean; coverageKey?: keyof ScanCoverage['files'] }
 const IGNORE_HINT = 'shipguard ignore <file> --reason "<why: what this file is>"'
@@ -150,12 +150,12 @@ const DEGRADED_CODE_RENAME: Record<string, string> = { UNREADABLE_FILE: 'FILE_UN
 const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
 const CONFIDENCE_RANK: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
 
-/** The key of ONE finding: first 12 hex of SHA-256 over rule id and repo-relative file, nothing else (spec 02). */
+/** The key of ONE finding: first 12 hex of SHA-256 over rule id and repo-relative file, nothing else. */
 export function occurrenceKey(ruleId: string, file: string): string {
   return createHash('sha256').update(`${ruleId}\0${file}`).digest('hex').slice(0, 12)
 }
 
-/** The one redaction text for a secret (spec 06): type and length, never any character of the value. */
+/** The one redaction text for a secret: type and length, never any character of the value. */
 export function secretEvidenceText(secretType: string, length: number | null): string {
   return length === null ? `${secretType}, value hidden` : `${secretType}, ${length} characters, value hidden`
 }
@@ -165,7 +165,7 @@ function secretTypeOf(f: Finding): string {
   return last.replace(/-/g, '_')
 }
 
-/** Optional length a masking step (W5 `redact`) attaches to a secret finding. */
+/** Optional length a masking step (`redact`) attaches to a secret finding. */
 function secretLengthOf(f: Finding): number | null {
   const n = (f as Finding & { secretLength?: unknown }).secretLength
   return typeof n === 'number' && Number.isFinite(n) ? n : null
@@ -223,7 +223,7 @@ export function buildFindingJson(f: Finding, ctx: FindingContext): Record<string
     fix: fixSummary,
     fixInfo: {
       summary: fixSummary,
-      // No stack-specific fix data ships yet: say so honestly (spec 04: generic when not known to be specific).
+      // No stack-specific fix data ships yet: say so honestly.
       certainty: 'generic',
       code: null,
       steps,
@@ -255,7 +255,7 @@ export function sortFindings(findings: Finding[]): Finding[] {
 }
 
 // ---------------------------------------------------------------------------
-// Loop state (spec 04 "Fix loop"): consecutive runs that still show the same blocking OCCURRENCE.
+// Loop state: consecutive runs that still show the same blocking OCCURRENCE.
 // ---------------------------------------------------------------------------
 export interface SinceLastRun {
   runId: string
@@ -497,7 +497,7 @@ export function buildNextSteps(i: OutcomeInput): NextStep[] {
     }
     const total = i.blockingFindings.length + steps.filter((s) => s.kind === 'coverage').length
     if (i.value === 'SAFE_TO_SHIP' && !incomplete) {
-      // A clean scan's first step comes from the agent and install state (spec 02 field notes).
+      // A clean scan's first step comes from the agent and install state.
       if (i.install?.hookStale) {
         // A HOOK_STALE warning already added this step (above); never twice.
         if (!steps.some((s) => s.kind === 'update_hook')) steps.unshift({ kind: 'update_hook', label: 'Update the installed hook', command: 'shipguard setup --agent claude', safe: false, blocking: false })
@@ -523,7 +523,7 @@ export function buildNextSteps(i: OutcomeInput): NextStep[] {
   return steps.map((s, idx) => ({ order: idx + 1, ...s }) as NextStep)
 }
 
-/** The one agentAction rule (spec 02 precedence): the FIRST row that applies, top to bottom. */
+/** The one agentAction rule: the FIRST row that applies, top to bottom. */
 export function decideAgentAction(i: {
   value: Recommendation
   blockingCount: number
@@ -577,7 +577,7 @@ export function buildVerdictJson(i: {
   }
 }
 
-// ---- plan block: the verified server block (W1a modules) rendered once for JSON ----
+// ---- plan block: the verified server block  rendered once for JSON ----
 
 const STACK_DISPLAY: Record<string, string> = {
   nextjs: 'Next.js', express: 'Express', fastify: 'Fastify', prisma: 'Prisma', drizzle: 'Drizzle', supabase: 'Supabase', react: 'React', firebase: 'Firebase',
@@ -701,7 +701,7 @@ export function buildErrorEnvelope(input: {
 }
 
 /**
- * The one error template (spec 06), printed to stderr for every error of every command:
+ * The one error template, printed to stderr for every error of every command:
  *   ✗ <CODE>: <what happened>
  *     Cause: <why>
  *     Fix: <one concrete step>

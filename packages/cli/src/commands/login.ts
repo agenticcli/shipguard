@@ -67,7 +67,7 @@ function fail(code: ErrorCode, message: string, opts: { json: boolean; cause?: s
   }), { machine: opts.json })
 }
 
-/** What the account service said about the plan after sign-in: the success lines (spec 06 "Login"). */
+/** What the account service said about the plan after sign-in: the success lines. */
 function successLines(fresh: FreshPlan, scanCommand: string): string[] {
   const p = fresh.plan
   const head = '✓ Signed in.'

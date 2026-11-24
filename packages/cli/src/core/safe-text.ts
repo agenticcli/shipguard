@@ -1,11 +1,11 @@
 /**
  * safe-text.ts: the ONE function every server-provided string passes before it is printed or put in JSON
- * (spec 02 "Safe display", design 3.5). The server is trusted to word things, never to control the
+ *. The server is trusted to word things, never to control the
  * terminal: no escape sequences, no control or invisible characters, no links, bounded length.
  * Colour is added by the CLI around the text, never inside it.
  */
 
-/** Length caps in characters (spec 02 "Safe display"). Display limits only, not plan facts. */
+/** Length caps in characters. Display limits only, not plan facts. */
 export const TEXT_CAPS = {
   offer: 300,
   usage: 120,

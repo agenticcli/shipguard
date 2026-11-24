@@ -10,7 +10,7 @@ import type { NotScannedSummary } from './not-scanned.js'
 import { assertCwdAlive } from '../utils/cwd-guard.js'
 
 // ---------------------------------------------------------------------------
-// USER VIEW: .shipguard/reports/latest.md (spec 01 "report layout", spec 04 record)
+// USER VIEW: .shipguard/reports/latest.md
 //
 // Same field names and order as the screen; the same one-line fix text as the screen, word for
 // word. Secrets are never printed: the evidence line for a secret says `value hidden`.
@@ -24,7 +24,7 @@ export interface ReportContext {
   rulesRan?: RulesRan
   notScanned?: NotScannedSummary
   ignoredTestValues?: number
-  /** W5 masking seam: `<type>, <n> characters, value hidden` for a secret finding. */
+  /** Masked text: `<type>, <n> characters, value hidden` for a secret finding. */
   secretEvidence?: (f: Finding) => string | null
   /** The schema-7 result object (the same one `--json` prints): written as the run's JSON record. Absent: the bare result. */
   agentJson?: unknown

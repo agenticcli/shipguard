@@ -2,7 +2,7 @@
 
 **The security scanner your coding agent runs before every commit. On your machine. Flat price, no seats.**
 
-Same code, same answer. Review code with a rulebook to build secure code.
+Same code, same answer. Check code against a rulebook before you ship.
 
 [![npm version](https://img.shields.io/npm/v/@agenticcli/shipguard)](https://www.npmjs.com/package/@agenticcli/shipguard)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)

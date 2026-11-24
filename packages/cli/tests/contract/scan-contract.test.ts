@@ -305,7 +305,7 @@ describe('schema --json', () => {
 describe('help and strings', () => {
   it('--help carries the core line; no flag or text is called --offline; no plugin text', async () => {
     const r = await runCli(['--help'], { env })
-    expect(r.stdout).toContain('Review code with a rulebook to build secure code')
+    expect(r.stdout).toContain('Check code against a rulebook before you ship')
     const scanHelp = await runCli(['scan', '--help'], { env })
     for (const text of [r.stdout, scanHelp.stdout]) {
       expect(text).not.toMatch(/--offline/)

@@ -1,5 +1,5 @@
 /**
- * gate-target.ts — which directory and which commit a hook command targets (owner decision A1).
+ * gate-target.ts — which directory and which commit a hook command targets.
  *
  * Pure: (command text, hook cwd) -> what the gate must scan. No filesystem, no git. The caller
  * resolves the directory and the refs.

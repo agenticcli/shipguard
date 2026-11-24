@@ -1,5 +1,5 @@
 /**
- * plan-client.ts: the call-site glue for the signed plan block (W1b). The pure modules (plan.ts, nag.ts,
+ * plan-client.ts: the call-site glue for the signed plan block. The pure modules (plan.ts, nag.ts,
  * hint.ts, offer-cache.ts, plan-lines.ts) decide and format; this file gathers the run facts (terminal, CI,
  * safe mode, tracking), makes the ONE fresh plan read used by `status`, `upgrade` and `login`
  * (GET /api/user/me with the client hello and a nonce), and records what a verified reply teaches the CLI
@@ -123,7 +123,7 @@ export function persistLivePlan(env: PlanEnv, read: PlanRead, acct: string | nul
   if (status !== undefined) recordAccountStatus(nagCtx(env), acct, status)
   // The server's "no plan" answer sets the hint (an hour at most); a pending payment never does (it may land any minute).
   const noPlan = status === 'none' || status === 'lapsed'
-  // `status`, `upgrade` and `login` clear the hint (spec 02): only a scan's "no plan" answer sets it.
+  // `status`, `upgrade` and `login` clear the hint: only a scan's "no plan" answer sets it.
   if (noPlan && opts.hint !== false) writeHint({ configDir: env.configDir, now: env.now, safeMode: env.safeMode }, acct)
   else clearHint(env.configDir)
 }
@@ -281,7 +281,7 @@ async function withCache(env: PlanEnv, nag: NagData, acct: string | null, failur
 }
 
 // ---------------------------------------------------------------------------
-// The gate's weekly gap line (spec 05 moment 1, hook column): first line only, read from the verified cache
+// The gate's weekly gap line: first line only, read from the verified cache
 // ---------------------------------------------------------------------------
 
 /**
@@ -366,7 +366,7 @@ export async function lastScanHere(dir: string): Promise<LastScan | null> {
 
 export const generalRuleCount = (): number => bundledRulesMeta().ruleCount
 
-/** Header fields every plan command's `--json` envelope shares (spec 05: same as a scan, exit keys null where not applicable). */
+/** Header fields every plan command's `--json` envelope shares. */
 export function planEnvelope(cliVersion: string, plan: Record<string, unknown>, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     schemaVersion: '7', cliVersion, runId: null, ok: true, agentAction: 'proceed',

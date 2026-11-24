@@ -20,7 +20,7 @@ import { DEFAULT_POLICY_PATH } from '@agenticcli/shared'
 import { logger } from '../utils/logger.js'
 
 /**
- * Safe mode (spec 06, owner decision A6): flag `--safe-mode` or environment `SHIPGUARD_SAFE_MODE=1`.
+ * Safe mode: flag `--safe-mode` or environment `SHIPGUARD_SAFE_MODE=1`.
  * THE one place it is decided: every other module calls isSafeMode(). It stops usage pings and every
  * new `~/.config/shipguard` write (install id, notice marker, hint, counters, offer cache, plan block)
  * and the weekly public fetch; the sign-in token is the only thing written outside the project.

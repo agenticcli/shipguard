@@ -1,4 +1,4 @@
-/** rules-ran.ts: the `Rules ran:` line and fallback sentences (spec 05). Pure; imports nothing heavy. */
+/** rules-ran.ts: the `Rules ran:` line and fallback sentences. Pure; imports nothing heavy. */
 
 /** What rules ran in this scan (the `Rules ran:` line and the fallback sentence under the header). */
 export type RulesRan =
@@ -11,7 +11,7 @@ export function generalRulesText(n: number | null): string {
   return n === null ? 'general rules' : `${n} general rules`
 }
 
-/** The `Rules ran:` line (spec 05) and, for a fallback, the sentence that goes under the header. */
+/** The `Rules ran:` line and, for a fallback, the sentence that goes under the header. */
 export function rulesRanLines(r: RulesRan | undefined, generalRuleCount: number | null, terminal = true): { runSentence: string | null; line: string } {
   const n = generalRulesText(generalRuleCount)
   if (!r || r.kind === 'general') return { runSentence: null, line: `Rules ran: ${n} (Free).` }

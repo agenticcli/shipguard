@@ -13,7 +13,7 @@ import { configFilePath, getConfigDir, noticeShown, readInstallId, resetInstallI
 
 const DOCS = goLink('telemetry')
 
-/** The requests besides the usage ping (spec 06 "Network calls"). The same list is in docs/privacy.md and REBUILD.md. */
+/** The requests besides the usage ping. The same list is in docs/privacy.md and REBUILD.md. */
 const OTHER_REQUESTS = [
   'weekly public offer fetch: a signed-out scan in a terminal, at most once every 7 days; sends your detected stack names only (no sign-in, no code, no paths); never in hooks, the gate, CI, --quiet, safe mode or with tracking off',
   'generic offer fetch by `shipguard setup`: once, no stack names, no project data; same 7-day counter; never with --dry-run, safe mode, tracking off, signed in or CI',

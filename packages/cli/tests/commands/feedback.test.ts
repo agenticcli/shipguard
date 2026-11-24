@@ -18,4 +18,29 @@ describe('feedbackCommand', () => {
     const cmd = rateCommand();
     expect(cmd.name()).toBe('rate');
   });
+
+  // 0.13.2: both commands only print where to send feedback. No network call, no login, no credentials read.
+  it.each([
+    ['feedback', ['some free text']],
+    ['feedback', ['some', 'free', 'text', 'unquoted']],
+    ['feedback', []],
+    ['rate', ['1', 'helpful']],
+    ['rate', []],
+  ])('%s %j makes no network call and points to GitHub issues', async (name, args) => {
+    const fetchSpy = vi.fn(() => { throw new Error('network call attempted') });
+    vi.stubGlobal('fetch', fetchSpy);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { feedbackCommand, rateCommand } = await import('../../src/commands/feedback.js');
+      const cmd = name === 'rate' ? rateCommand() : feedbackCommand();
+      await cmd.parseAsync(args, { from: 'user' });
+      const out = err.mock.calls.map((c) => c.join(' ')).join('\n');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(out).toContain('https://github.com/agenticcli/shipguard/issues');
+      expect(out).not.toMatch(/helpful|some free text|Not authenticated|login/i);
+    } finally {
+      err.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
 });

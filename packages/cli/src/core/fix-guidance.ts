@@ -1,10 +1,10 @@
 /**
- * fix-guidance.ts: the per-finding guidance record (spec 04). Bundled data, no network, no link.
+ * fix-guidance.ts: the per-finding guidance record. Bundled data, no network, no link.
  *
  * One canonical one-liner per finding (`summary`). The scan screen, the report and `--json` print
  * the same sentence word for word; `steps` adds detail, never a different instruction.
  *
- * Stack handling (spec 04):
+ * Stack handling:
  *  - the rule has a variant for a detected stack  -> that variant, certainty "stack-specific"
  *  - stack detected, no variant for it            -> generic text, ends "(generic: no <stack> variant yet)"
  *  - stack not detected                           -> generic text, ends "(generic: stack not detected; adapt to your framework)"
@@ -24,7 +24,7 @@ interface Variant {
 }
 
 interface GuidanceData {
-  /** Short "what is wrong" for the screen line (spec 01). */
+  /** Short "what is wrong" for the screen line. */
   what: string
   /** One plain sentence: why it matters (report). */
   why: string
@@ -177,7 +177,7 @@ export interface FixGuidance {
   /** Short "what is wrong" (screen line). */
   what: string
   why: string | null
-  /** The one canonical fix sentence (spec 04 `fix.summary`), suffix included. */
+  /** The one canonical fix sentence, suffix included. */
   summary: string
   steps: string[]
   certainty: 'stack-specific' | 'generic'
@@ -232,7 +232,7 @@ export function fixGuidance(f: Finding, stacks: readonly string[] | undefined): 
   const hit = detected.find((s) => data.variants[s] !== undefined)
   if (hit) {
     const v = data.variants[hit]
-    // Label names the matching framework and, when detected, supabase next to nextjs (spec sample).
+    // Label names the matching framework and, when detected, supabase next to nextjs.
     return {
       what: data.what,
       why: data.why,
@@ -270,7 +270,7 @@ const SEV_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low:
 const CAT_RANK: Record<string, number> = { secrets: 0, payments: 1, auth: 2 }
 
 /**
- * Order for screen, report and nextSteps (spec 04 "Order and grouping"):
+ * Order for screen, report and nextSteps:
  * 1 exposed secrets, 2 other blocking (critical then high; payments and auth first),
  * 3 non-blocking, 4 LOW-confidence last ("check by hand").
  */

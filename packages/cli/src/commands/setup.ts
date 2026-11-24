@@ -61,7 +61,7 @@ import { primeAllowed, primeOfferCache, type OfferAttempt, type OfferFetchGate }
 import { loadNag } from '../core/nag.js'
 
 /**
- * `shipguard setup`: one command per agent (spec 07). Detect, preview EVERY file it will write, ask once,
+ * `shipguard setup`: one command per agent. Detect, preview EVERY file it will write, ask once,
  * write, record each write with a hash in `.shipguard/installed.json`, then verify with a real check.
  *
  * Writes go only to the project and to the documented hook locations (the project's `.claude/`, the git hooks
@@ -550,7 +550,7 @@ function failClosedCheck(script: string, kind: 'claude' | 'git', env: NodeJS.Pro
   }
 }
 
-/** Spec 07 R11: run the installed hook script as Claude Code does, through this ShipGuard: a planted-key commit must block (2), a clean one pass (0). null = not runnable here. */
+/** Run the installed hook script as Claude Code does, through this ShipGuard: a planted-key commit must block (2), a clean one pass (0). null = not runnable here. */
 function gateSelfTest(script: string, env: NodeJS.ProcessEnv, cliEntry: string | undefined): { blocked: SelfTestRun; clean: SelfTestRun } | null {
   if (!cliEntry || !existsSync(cliEntry)) return null
   const root = mkdtempSync(join(tmpdir(), 'shipguard-selftest-'))
