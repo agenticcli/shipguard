@@ -16,9 +16,9 @@
       },
       "products": [
         {
-          "@id": "pkg:npm/%40agenticcli/shipguard@0.13.1",
+          "@id": "pkg:npm/%40agenticcli/shipguard@0.13.2",
           "identifiers": {
-            "purl": "pkg:npm/%40agenticcli/shipguard@0.13.1"
+            "purl": "pkg:npm/%40agenticcli/shipguard@0.13.2"
           },
           "subcomponents": [
             {

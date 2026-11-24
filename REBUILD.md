@@ -11,16 +11,16 @@ The npm package ships source maps (`dist/*.js.map`). From 0.13.0 the maps point 
 
 ```bash
 # needs node 24, pnpm 9.15.0, git, network
-git clone --depth 1 --branch v0.13.1 https://github.com/agenticcli/shipguard.git
+git clone --depth 1 --branch v0.13.2 https://github.com/agenticcli/shipguard.git
 cd shipguard
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm run build                                    # builds the shared packages the CLI bundles
 pnpm --filter @agenticcli/shipguard run build:publish
-npm pack @agenticcli/shipguard@0.13.1 && mkdir pub && tar -xzf agenticcli-shipguard-0.13.1.tgz -C pub
+npm pack @agenticcli/shipguard@0.13.2 && mkdir pub && tar -xzf agenticcli-shipguard-0.13.2.tgz -C pub
 node packages/cli/scripts/compare-dist.mjs pub/package/dist packages/cli/dist
 ```
 
-Or in one step: `bash scripts/rebuild-verify.sh 0.13.1` (does the same in a temp folder).
+Or in one step: `bash scripts/rebuild-verify.sh 0.13.2` (does the same in a temp folder).
 
 - `MATCH` = the SHA-256 of every `dist/*.js` and `dist/*.js.map` in the npm package equals your rebuild.
 - It must be `build:publish`, not `build`. The publish build sets one flag (`SHIPGUARD_PUBLISHED_BUILD=1`) that changes the bytes.
@@ -56,6 +56,5 @@ Nothing is sent about your code. Only product usage telemetry (first row) is on 
 | `src/commands/status.ts` | `GET <api>/api/user/me` | `shipguard status` |
 | `src/core/offer-cache.ts` | `GET <api>/api/cli/v1/offer?stacks=<names>` | a signed-out scan in a terminal, at most once every 7 days: public rule counts for your detected stack names (names only, no login, no code); `shipguard setup` makes the same request once with no names; never in hooks, the gate, CI, `--quiet`, `--dry-run`, safe mode, with `DO_NOT_TRACK` or tracking off, or when signed in |
 | `src/core/plan-client.ts` | `GET <api>/api/user/me` | `shipguard status`, `upgrade` and `login` read your account and plan; sends your login token, the CLI version and a random nonce, no files |
-| `src/commands/feedback.ts` | `POST <api>/api/feedback` | `shipguard feedback`, text you type |
 
 `<api>` is `https://agenticcli.dev` unless you set another; calls that carry a token refuse any host that is not https on agenticcli.dev (`src/utils/trust.ts`).

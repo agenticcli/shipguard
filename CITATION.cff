@@ -6,7 +6,7 @@ abstract: "The security scanner your coding agent runs before every commit. It c
 authors:
   - name: "AgenticCLI"
     website: "https://agenticcli.dev"
-version: 0.13.1
+version: 0.13.2
 date-released: 2026-11-24
 license: Apache-2.0
 url: "https://agenticcli.dev/shipguard"
