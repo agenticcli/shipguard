@@ -162,6 +162,8 @@ describe('release-facts.sh sync', () => {
     expect(r.code, r.out).toBe(0)
     expect(readFileSync(join(d, 'CITATION.cff'), 'utf-8')).toContain(`date-released: ${TODAY}`)
     expect(readFileSync(join(d, 'REBUILD.md'), 'utf-8')).toContain('--branch v0.14.0')
+    // regression (0.13.1): sed \2 hit the SEMVER prerelease group and dropped ".tgz"
+    expect(readFileSync(join(d, 'REBUILD.md'), 'utf-8')).toContain('tar -xzf agenticcli-shipguard-0.14.0.tgz')
     expect(readFileSync(join(d, 'REBUILD.md'), 'utf-8')).toContain('From 0.12.1 the package') // history untouched
     expect(readFileSync(join(d, 'README.md'), 'utf-8')).toContain('shipguard@0 scan')
     const again = run(['sync', '--tag', 'v0.14.0', '--root', d])
@@ -177,7 +179,7 @@ describe('release-facts.sh sync', () => {
 })
 
 describe('release-facts.sh emit (post-publish)', () => {
-  function fakeNpm(root: string, opts: { latest?: string; integrity?: string; provenance?: boolean }) {
+  function fakeNpm(root: string, opts: { latest?: string; integrity?: string; provenance?: boolean; staleCalls?: number }) {
     const bin = join(root, 'bin')
     mkdirSync(bin)
     const tgz = join(root, 'agenticcli-shipguard-0.13.0.tgz')
@@ -191,7 +193,7 @@ describe('release-facts.sh emit (post-publish)', () => {
     writeFileSync(join(root, 'time.json'), JSON.stringify({ '0.13.0': '2026-11-24T09:00:00.000Z' }))
     writeFileSync(
       join(bin, 'npm'),
-      `#!/usr/bin/env bash\nd="${root}"\ncase "$*" in\n  *dist-tags*) cat "$d/tags.json" ;;\n  *"@0.13.0 dist"*) cat "$d/dist.json" ;;\n  *" time "*) cat "$d/time.json" ;;\n  *) echo "fake npm: unexpected: $*" >&2; exit 9 ;;\nesac\n`,
+      `#!/usr/bin/env bash\nd="${root}"\ncase "$*" in\n  *dist-tags*) n=$(( $(cat "$d/calls" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$d/calls"; if [ "$n" -le ${opts.staleCalls ?? 0} ]; then echo '{"latest":"0.12.0"}'; else cat "$d/tags.json"; fi ;;\n  *"@0.13.0 dist"*) cat "$d/dist.json" ;;\n  *" time "*) cat "$d/time.json" ;;\n  *) echo "fake npm: unexpected: $*" >&2; exit 9 ;;\nesac\n`,
     )
     chmodSync(join(bin, 'npm'), 0o755)
     return { bin, tgz }
@@ -223,6 +225,37 @@ describe('release-facts.sh emit (post-publish)', () => {
     expect(f.changelogEntry).toContain('- Added: a thing.')
     expect(f.changelogEntry).not.toContain('0.12.0')
     expect(f.tarball).toMatchObject({ name: 'agenticcli-shipguard-0.13.0.tgz', bytes: 18 })
+  })
+
+  it('waits through a slow registry (0.13.1: propagation took longer than 2 min) and then succeeds', () => {
+    const d = fixture()
+    const { bin, tgz } = fakeNpm(d, { staleCalls: 6 })
+    const r = run(['emit', '--tag', 'v0.13.0', '--root', d, '--tarball', tgz, '--out', join(d, 'o.json')], {
+      PATH: `${bin}:${process.env.PATH}`,
+      RELEASE_FACTS_SLEEP: '0',
+    })
+    expect(r.code, r.out).toBe(0)
+    expect(r.out).toContain('waiting for 0.13.0 (6/13)')
+  })
+
+  it('default retry window is about 10 minutes with backoff (10s doubling, capped at 60s)', () => {
+    const d = fixture()
+    const { bin, tgz } = fakeNpm(d, { latest: '0.12.0' })
+    const fake = join(d, 'sleepbin')
+    mkdirSync(fake)
+    writeFileSync(join(fake, 'sleep'), `#!/usr/bin/env bash\necho "$1" >> "${d}/sleeps"\n`)
+    chmodSync(join(fake, 'sleep'), 0o755)
+    const r = run(['emit', '--tag', 'v0.13.0', '--root', d, '--tarball', tgz, '--out', join(d, 'o.json')], {
+      PATH: `${fake}:${bin}:${process.env.PATH}`,
+    })
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/expected 0\.13\.0 after 13 tries/)
+    const sleeps = readFileSync(join(d, 'sleeps'), 'utf-8').trim().split('\n').map(Number)
+    expect(sleeps.slice(0, 4)).toEqual([10, 20, 40, 60])
+    expect(Math.max(...sleeps)).toBe(60)
+    const total = sleeps.reduce((a, b) => a + b, 0)
+    expect(total).toBeGreaterThanOrEqual(600)
+    expect(total).toBeLessThanOrEqual(660)
   })
 
   it('fails when latest does not show the version yet', () => {
@@ -280,6 +313,11 @@ describe('.github/workflows/release.yml: W12 additions', () => {
     expect(job).not.toMatch(/id-token|contents: write|actions: write|pull-requests|secrets\.|github\.token|GH_TOKEN|GITHUB_TOKEN|NODE_AUTH_TOKEN/)
     expect(job).not.toMatch(/pnpm|npm (ci|install|publish|dist-tag)|gh (pr|api|release)/)
     expect(job).toContain('bash scripts/release-facts.sh emit --tag "$GITHUB_REF_NAME"')
+  })
+
+  it('release-facts job timeout covers the registry retry window (about 10 min) plus the other steps', () => {
+    const m = job.match(/timeout-minutes:\s*(\d+)/)
+    expect(Number(m?.[1])).toBeGreaterThanOrEqual(15)
   })
 
   it('the workflow as a whole has no secrets reference and only the publish job holds id-token', () => {
