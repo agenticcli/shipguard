@@ -1,0 +1,6 @@
+{
+  "version": "0.13.0",
+  "proScanSeconds": 9.32,
+  "measuredAt": "2026-11-23",
+  "method": "median wall time of a signed-in Pro scan of the sample repo on the release candidate"
+}

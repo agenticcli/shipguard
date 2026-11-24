@@ -16,8 +16,11 @@ DIST="$CLI_DIR/dist/cli.js"
 PKG="$CLI_DIR/package.json"
 
 # DRY RUN (RELEASE_GATE_DRY_RUN=1): run every gate against a local/dev build, report each result,
-# never stop at the first failure, skip only the published-provenance check, and NEVER write the
-# publish sentinel. Exit 1 if any gate failed. For rehearsals and CI — it can never authorise a release.
+# never stop at the first failure, and NEVER write the publish sentinel. Exit 1 if any gate failed. It
+# skips only what cannot run locally: the published-provenance check on a dev build (G2c) and the npm audit
+# when the registry is unreachable (G10); both print SKIP. Every input check a real run makes (the committed
+# Pro scan number in G9, release facts) runs in a dry run too. For rehearsals and CI — it can never
+# authorise a release.
 DRY_RUN="${RELEASE_GATE_DRY_RUN:-0}"
 GATE_FAILURES=0
 gate_fail() {
@@ -47,6 +50,19 @@ if [[ "$PKG_VERSION" != "$CLI_VERSION" ]]; then
   gate_fail
 fi
 echo "PASS [G2] version match: $PKG_VERSION"
+
+# Pre-flight (dry run only): the release.yml step "Release facts agree" runs before this script in CI, so a
+# rehearsal must run it too. Then list what only the CI release workflow can check.
+if [[ "$DRY_RUN" == "1" ]]; then
+  if bash "$(git rev-parse --show-toplevel)/scripts/release-facts.sh" check --tag "v$PKG_VERSION" >&2; then
+    echo "PASS [pre-flight] release facts agree for v$PKG_VERSION"
+  else
+    echo "FAIL [pre-flight] release facts disagree for v$PKG_VERSION (see the lines above)" >&2
+    gate_fail
+  fi
+  echo "NOTE [pre-flight] CI only, not checked here: tag commit is an ancestor of origin/main; tag == package.json version; npm >= 11.5.1;"
+  echo "     OIDC trusted publishing + provenance (publish job, environment npm-publish); tarball sha256 hand-off; release-facts emit (registry)."
+fi
 
 # Gate 2b: cli-facts.json must exist, parse as valid JSON, and match package.json version
 CLI_FACTS="$CLI_DIR/dist/cli-facts.json"
@@ -216,12 +232,11 @@ echo "PASS [G8] shipped-tree self-scan: no blocking findings, --strict exit 0"
 
 # Gate 9: size, speed and network budgets (plan W0). Tarball <= 800 KB, unpacked <= 3 MB, install <= 7 MB,
 # direct runtime deps <= 7 and none new, --version <= 250 ms, 812-file scan <= 8 s Free (Pro <= 10 s is
-# measured by the dev run and passed in as RELEASE_GATE_PRO_SCAN_SECONDS), RSS <= 300 MB, and 0 public
+# measured on the release candidate and committed in release/pro-scan-measure.json), RSS <= 300 MB, and 0 public
 # fetches in CI, quiet, safe mode and DO_NOT_TRACK. Logic + tests: scripts/check-budgets.mjs, tests/release/budgets.test.ts.
-# A real release (not a dry run) REQUIRES the Pro scan number: a missing RELEASE_GATE_PRO_SCAN_SECONDS fails.
-BUDGET_ARGS=()
-[[ "$DRY_RUN" == "1" ]] || BUDGET_ARGS+=(--require-pro)
-if ! node "$CLI_DIR/scripts/check-budgets.mjs" "${BUDGET_ARGS[@]}"; then
+# The Pro scan number is REQUIRED, dry run included: a missing file, a file for another version or a value
+# over budget fails (RELEASE_GATE_PRO_SCAN_SECONDS overrides the file).
+if ! node "$CLI_DIR/scripts/check-budgets.mjs" --require-pro; then
   echo "FAIL [G9] a size, speed or network budget was breached (or could not be measured)" >&2
   gate_fail
 else

@@ -150,9 +150,10 @@ describe('.github/workflows/release.yml', () => {
     expect(wf).toContain('https://docs.npmjs.com/trusted-publishers')
     expect(wf).toContain('Allow npm dist-tag')
   })
-  it('the release gate requires the Pro scan number on a real release only', () => {
+  it('the release gate requires the Pro scan number in a dry run too, so a rehearsal catches a missing one', () => {
     const gate = readFileSync(join(ROOT, 'scripts', 'release-gate.sh'), 'utf-8')
-    expect(gate).toMatch(/\[\[ "\$DRY_RUN" == "1" \]\] \|\| BUDGET_ARGS\+=\(--require-pro\)/)
+    expect(gate).toMatch(/check-budgets\.mjs" --require-pro\)?/)
+    expect(gate).not.toMatch(/DRY_RUN.*--require-pro/)
   })
   it('runs the release gate before packing', () => {
     expect(wf.indexOf('bash scripts/release-gate.sh')).toBeGreaterThan(0)
