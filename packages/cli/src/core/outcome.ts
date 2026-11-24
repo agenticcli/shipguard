@@ -19,7 +19,7 @@ import type { AccountStatus, PlanBlock } from './plan-types.js'
 import type { DegradeReason, Finding, Recommendation, RiskScore, ScanCoverage } from '@agenticcli/shared'
 
 export const SCHEMA_VERSION = '7'
-export const CORE_LINE = 'Review code with a rulebook to build secure code'
+export const CORE_LINE = 'Check code against a rulebook before you ship'
 
 export type AgentAction = 'proceed' | 'fix_and_rerun' | 'retry' | 'ask_human' | 'stop'
 

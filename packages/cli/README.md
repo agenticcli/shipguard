@@ -2,7 +2,7 @@
 
 **The security scanner your coding agent runs before every commit. On your machine. Flat price, no seats.**
 
-Review code with a rulebook to build secure code. Same code, same answer: same diff, same verdict, a real exit code your agent can read.
+Check code against a rulebook before you ship. Same code, same answer: same diff, same verdict, a real exit code your agent can read.
 
 Checks for leaked secrets, auth gaps, payment webhook risks, destructive migrations, and deployment misconfigurations — before your code ships.
 
