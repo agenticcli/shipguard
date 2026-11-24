@@ -9,7 +9,7 @@
 #   sync --tag vX.Y.Z [--root DIR]
 #       Rewrites those places from package.json + the CHANGELOG date (stable versions only), then runs check.
 #   emit --tag vX.Y.Z --tarball FILE --out FILE [--root DIR]
-#       Post-publish. Waits for the registry dist-tag (latest; next for a prerelease) to show the version,
+#       Post-publish. Waits (backoff, ~10 min) for the registry dist-tag (latest; next for a prerelease) to show the version,
 #       checks the registry integrity equals the sha512 of the tarball the build job made and that a provenance
 #       attestation exists, then writes release-facts.json (version, dates, CHANGELOG entry, tarball size,
 #       provenance) and, in CI, appends it to the job summary.
@@ -167,7 +167,7 @@ run_sync() {
       -e "s#(--branch v)$SEMVER#\1$VERSION#g" \
       -e "s#(rebuild-verify\.sh )$SEMVER#\1$VERSION#g" \
       -e "s#($PKG_NAME@)$SEMVER#\1$VERSION#g" \
-      -e "s#(agenticcli-shipguard-)$SEMVER(\.tgz)#\1$VERSION\2#g" "$f"
+      -e "s#(agenticcli-shipguard-)$SEMVER\.tgz#\1$VERSION.tgz#g" "$f"
   done < <(doc_files)
   echo "release-facts: synced version $VERSION and date $CL_DATE"
   run_check
@@ -189,9 +189,13 @@ run_emit() {
     seen="$(node -e 'try{const d=JSON.parse(process.argv[1]);process.stdout.write(String(d[process.argv[2]]||""))}catch(e){}' "$tags" "$EXPECT_TAG")"
     [[ "$seen" == "$VERSION" ]] && break
     tries=$((tries+1))
-    [[ "$tries" -lt "${RELEASE_FACTS_TRIES:-12}" ]] || die "registry dist-tag '$EXPECT_TAG' shows '${seen:-nothing}', expected $VERSION after $tries tries"
-    echo "release-facts: registry $EXPECT_TAG='${seen:-?}', waiting for $VERSION ($tries)" >&2
-    sleep "${RELEASE_FACTS_SLEEP:-10}"
+    [[ "$tries" -lt "${RELEASE_FACTS_TRIES:-13}" ]] || die "registry dist-tag '$EXPECT_TAG' shows '${seen:-nothing}', expected $VERSION after $tries tries"
+    # Backoff: SLEEP, 2x, 4x ... capped at SLEEP_MAX. Defaults 13 tries = 12 waits = 10+20+40+9x60 = 610 s (~10 min):
+    # npm can take more than 2 minutes to show a new version (0.13.1, 2026-11-24).
+    delay=$((${RELEASE_FACTS_SLEEP:-10} << (tries-1 > 10 ? 10 : tries-1)))
+    [[ "$delay" -le "${RELEASE_FACTS_SLEEP_MAX:-60}" ]] || delay="${RELEASE_FACTS_SLEEP_MAX:-60}"
+    echo "release-facts: registry $EXPECT_TAG='${seen:-?}', waiting for $VERSION ($tries/${RELEASE_FACTS_TRIES:-13}), next check in ${delay}s" >&2
+    sleep "$delay"
   done
   local dist time_v
   dist="$(npm view "$PKG_NAME@$VERSION" dist --json --registry=https://registry.npmjs.org/)" || die "npm view $PKG_NAME@$VERSION dist failed"
