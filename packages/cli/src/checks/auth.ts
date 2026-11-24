@@ -991,8 +991,9 @@ export const authCheck: CheckModule = {
     for (const file of files) {
       const { relativePath: rp, content } = file
 
-      // Skip webhook paths — user auth is not required for webhook receivers.
-      if (WEBHOOK_PATH_PATTERN.test(rp)) {
+      // Skip webhook paths — user auth is not required for webhook receivers. A sensitive PAGE under a
+      // `webhooks/` segment is the screen where a signed-in admin manages webhooks, not a receiver: still judged.
+      if (WEBHOOK_PATH_PATTERN.test(rp) && !(SENSITIVE_NEXTJS_PAGE_PATTERN.test(rp) && isPageFile(rp))) {
         continue
       }
 
