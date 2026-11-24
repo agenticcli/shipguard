@@ -5,7 +5,12 @@ name: Release
 # One-time npm setup: package Settings > Trusted publisher > GitHub Actions >
 #   owner agenticcli, repository shipguard, workflow release.yml, environment npm-publish.
 #
-# Four jobs, so that no dependency code ever runs in a job that can publish or write releases:
+# A release tag is only ever created by release-tag.yml, and only on a commit whose real release gate already
+# passed (release-preflight.yml). The first job here re-checks that and fails fast, before anything else, so a
+# tag pushed by hand on an unproven commit cannot publish. See RELEASING.md.
+#
+# Five jobs, so that no dependency code ever runs in a job that can publish or write releases:
+#   verify-preflight - actions: read + contents: read. Fails unless release-preflight passed for this exact SHA.
 #   build   - contents: read only, NO id-token. Installs (lifecycle scripts blocked), builds, tests,
 #             packs, uploads the tarball + its sha256. This is the only job that runs dependency code.
 #   publish - id-token: write, environment npm-publish. NO checkout, NO install, NO cache. Downloads the
@@ -18,6 +23,9 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  # release-tag.yml dispatches this workflow on the tag it just created: a tag pushed with the workflow token
+  # does not trigger the push event above (GitHub rule), a dispatch does. Must be run on a tag ref (checked below).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,8 +35,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify-preflight:
+    name: Release gate already passed for this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read          # list workflow runs; nothing else
+    steps:
+      - name: Must run on a release tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          [ "$REF_TYPE" = tag ] || { echo "::error::release.yml runs on a release tag only, not on $REF_TYPE $REF_NAME"; exit 1; }
+          printf '%s' "$REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+            || { echo "::error::$REF_NAME is not a release tag name"; exit 1; }
+
+      - name: Checkout (the preflight check script only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Preflight must have passed for this exact SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/check-preflight.sh "$GITHUB_SHA"
+
   build:
     name: Build, gate, pack
+    needs: verify-preflight
     runs-on: ubuntu-latest   # GitHub-hosted runner
     timeout-minutes: 30
     permissions:
@@ -49,76 +85,19 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
             || { echo "::error::tag $GITHUB_REF_NAME is not on main"; exit 1; }
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413  # v6.1.0
-        with:
-          version: '9.15.0'
-
-      # No `cache: pnpm`: a release build never restores a shared cache.
-      - name: Setup Node.js 24
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
-        with:
-          node-version: '24'
-
-      - name: Tag must equal the package version
-        run: |
-          ver="$(node -p "require('./packages/cli/package.json').version")"
-          test "v$ver" = "$GITHUB_REF_NAME" \
-            || { echo "::error::tag $GITHUB_REF_NAME != package.json version v$ver"; exit 1; }
-
-      # W12: before anything is installed or built, tag, package.json, the top CHANGELOG entry (version + date),
-      # CITATION.cff, the OpenVEX product purl and every pinned version in README/docs/REBUILD.md must agree.
-      - name: Release facts agree (fail closed)
-        run: bash scripts/release-facts.sh check --tag "$GITHUB_REF_NAME"
-
-      # pnpm 9 runs dependency lifecycle scripts by default; --ignore-scripts blocks them.
-      # Nothing in the lockfile needs a build script (esbuild ships prebuilt platform binaries
-      # as optional deps); if the build below ever fails for lack of one, add it deliberately.
-      - name: Install workspace deps (lifecycle scripts blocked)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Build, lint, test
-        run: |
-          pnpm run build
-          pnpm run lint
-          pnpm test
-
-      # release-gate.sh runs G1-G12: build checks, size/speed/network budgets (G9), npm audit (G10),
-      # picomatch pin (G11) and G-PLAN on the packed CLI (G12). It needs the npm registry (audit).
-      - name: Publish build + release gate
-        run: |
-          pnpm --filter @agenticcli/shipguard run build:publish
-          bash scripts/release-gate.sh
-
-      - name: Pack with pnpm and check the tarball
+      # The same composite action release-preflight.yml ran before the tag was allowed to exist: install,
+      # build, lint, test, release gate (real mode), pack. One definition, so the two cannot drift apart.
+      - name: Build, gate, pack (shared with release-preflight)
         id: pack
-        working-directory: packages/cli
-        run: |
-          out="$RUNNER_TEMP/tarball"
-          mkdir -p "$out"
-          pnpm pack --pack-destination "$out"
-          test "$(ls "$out" | wc -l)" = 1
-          tgz="$(ls "$out"/agenticcli-shipguard-*.tgz)"
-          tar -tzf "$tgz"
-          tar -xzOf "$tgz" package/package.json | node -e "
-            let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{
-              const p=JSON.parse(d);
-              if(!p.bin||!p.bin.shipguard){console.error('tarball lost bin.shipguard');process.exit(1)}
-              if(p.repository.url!=='git+https://github.com/agenticcli/shipguard.git'){console.error('repository.url mismatch');process.exit(1)}
-              if(JSON.stringify(p).includes('workspace:')){console.error('workspace: protocol left in tarball');process.exit(1)}
-            })"
-          sha="$(sha256sum "$tgz" | cut -d' ' -f1)"
-          name="$(basename "$tgz")"
-          echo "$sha  $name" > "$out/$name.sha256"
-          echo "tarball=$name" >> "$GITHUB_OUTPUT"
-          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
-          echo "packed $name sha256 $sha"
+        uses: ./.github/actions/release-build
+        with:
+          tag: ${{ github.ref_name }}
 
       - name: Upload tarball + sha256
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: shipguard-tarball
-          path: ${{ runner.temp }}/tarball/
+          path: ${{ steps.pack.outputs.pack-dir }}/
           if-no-files-found: error
           retention-days: 7
 

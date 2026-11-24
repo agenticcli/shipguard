@@ -264,11 +264,14 @@ describe('.github/workflows/release.yml: W12 additions', () => {
   const code = wf.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n')
   const job = code.slice(code.indexOf('\n  release-facts:'))
 
-  it('runs the check in the build job before install, build and pack', () => {
-    const at = code.indexOf('bash scripts/release-facts.sh check --tag "$GITHUB_REF_NAME"')
+  it('runs the check (in the shared release-build action the build job uses) before install, build and pack', () => {
+    expect(code).toContain('uses: ./.github/actions/release-build')
+    const act = readFileSync(join(ROOT, '.github', 'actions', 'release-build', 'action.yml'), 'utf-8')
+      .split('\n').filter((l) => !l.trim().startsWith('#')).join('\n')
+    const at = act.indexOf('bash scripts/release-facts.sh check --tag "$TAG"')
     expect(at).toBeGreaterThan(0)
-    expect(at).toBeLessThan(code.indexOf('pnpm install'))
-    expect(at).toBeLessThan(code.indexOf('Pack with pnpm'))
+    expect(at).toBeLessThan(act.indexOf('pnpm install'))
+    expect(at).toBeLessThan(act.indexOf('Pack with pnpm'))
   })
 
   it('release-facts job: after publish, contents: read only, no secret, no write, no install, no dist-tag', () => {

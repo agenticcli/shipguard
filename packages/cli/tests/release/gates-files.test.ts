@@ -155,8 +155,10 @@ describe('.github/workflows/release.yml', () => {
     expect(gate).toMatch(/check-budgets\.mjs" --require-pro\)?/)
     expect(gate).not.toMatch(/DRY_RUN.*--require-pro/)
   })
-  it('runs the release gate before packing', () => {
-    expect(wf.indexOf('bash scripts/release-gate.sh')).toBeGreaterThan(0)
-    expect(wf.indexOf('bash scripts/release-gate.sh')).toBeLessThan(wf.indexOf('Pack with pnpm'))
+  it('runs the release gate before packing (in the shared release-build action)', () => {
+    expect(wf).toContain('uses: ./.github/actions/release-build')
+    const act = readFileSync(join(ROOT, '.github', 'actions', 'release-build', 'action.yml'), 'utf-8')
+    expect(act.indexOf('bash scripts/release-gate.sh')).toBeGreaterThan(0)
+    expect(act.indexOf('bash scripts/release-gate.sh')).toBeLessThan(act.indexOf('Pack with pnpm'))
   })
 })
