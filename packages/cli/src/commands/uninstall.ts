@@ -34,7 +34,7 @@ import { getConfigDir } from '../core/telemetry-config.js'
 import { pathEscapeReason } from '../utils/paths.js'
 
 /**
- * `shipguard uninstall`: reverse exactly what `shipguard setup` wrote (spec 07), and nothing else.
+ * `shipguard uninstall`: reverse exactly what `shipguard setup` wrote, and nothing else.
  *
  * Safety rules, in order of importance:
  * - Only a fixed list of ShipGuard locations is ever looked at (the Claude hook entry and script, the CLAUDE.md

@@ -1,5 +1,5 @@
 /**
- * not-scanned.ts: the "Not scanned" block of the screen and report (spec 01 A3d, spec 06 "Skipped files").
+ * not-scanned.ts: the "Not scanned" block of the screen and report.
  *
  * Every file the scan could not read is NAMED, with a plain reason and one fix line. Reason lines are
  * never cut mid-word. One source string per code (the fix text is the same on screen and in the report).
@@ -29,7 +29,7 @@ export interface NotScannedSummary {
   fileCount: number
 }
 
-/** Quote a path for a copy-pasteable shell command (spec 01 rule 7: spaces and special characters). */
+/** Quote a path for a copy-pasteable shell command. */
 export function shellQuote(s: string): string {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s
   return `'${s.replace(/'/g, `'\\''`)}'`

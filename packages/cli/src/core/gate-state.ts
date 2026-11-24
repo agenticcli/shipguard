@@ -4,7 +4,7 @@
  * `.shipguard/gate-last.json` is written TWICE per run: a `running` record before the scan and a
  * finished record (`passed`, `blocked`, `timeout`) after. A `running` record that never finished is
  * the proof that the host (Claude Code) killed the hook, which lets the command run unchecked
- * (spec 03, "Host timeout"). The next gate, scan or status run reports it as GATE_UNFINISHED.
+ *. The next gate, scan or status run reports it as GATE_UNFINISHED.
  *
  * The same file carries the loop-stop counters. A blocking OCCURRENCE is the rule id plus the file
  * (never the line or the matched text, so moving or editing code does not reset it and no secret
@@ -81,7 +81,7 @@ export interface GateRecord {
   plan?: { server?: { usage?: { state?: string } | null } | null } | null
 }
 
-/** First 12 hex of a SHA-256 over the rule id and the repo-relative file; nothing else (spec 02). */
+/** First 12 hex of a SHA-256 over the rule id and the repo-relative file; nothing else. */
 export function occurrenceKey(id: string, file: string): string {
   return createHash('sha256').update(`${id}\n${file}`).digest('hex').slice(0, 12)
 }
@@ -288,7 +288,7 @@ export function detectStaleHook(dir: string): StaleHook | null {
 }
 
 // ---------------------------------------------------------------------------
-// Gate health outside the gate: `scan --json` warnings[] and `shipguard status` (spec 03, spec 07)
+// Gate health outside the gate: `scan --json` warnings[] and `shipguard status`
 // ---------------------------------------------------------------------------
 
 export interface HealthWarning {
@@ -308,7 +308,7 @@ export function gateHealthWarnings(dir: string, nowMs: number = Date.now()): Hea
   return out
 }
 
-/** `warn <CODE>: <text>`: one stderr line (spec 01), the same for quiet and the normal screen. */
+/** `warn <CODE>: <text>`: one stderr line, the same for quiet and the normal screen. */
 export function healthWarningLine(w: HealthWarning): string {
   return `warn ${w.code}: ${w.message.replace(/^WARNING: /, '')}`
 }
@@ -319,7 +319,7 @@ const stamp = (iso: string | undefined): string | null => {
 }
 
 /**
- * The three gate-health lines `shipguard status` prints (spec 07): what is installed here, when the gate last ran,
+ * The three gate-health lines `shipguard status` prints: what is installed here, when the gate last ran,
  * how strong the gate is. "Not confirmed" is the honest word for CI branch protection: it is never read.
  */
 export function gateHealthLines(dir: string, nowMs: number = Date.now()): string[] {

@@ -1,11 +1,11 @@
 /**
- * render.ts: pure rendering functions for the scan screen (spec 01) and the first-run text.
+ * render.ts: pure rendering functions for the scan screen and the first-run text.
  *
  * All functions return strings (never print directly), so they are unit-testable without mocking
  * process/console. ANSI colour via chalk only (chalk turns itself off when piped or with NO_COLOR, so
  * the bytes are the same piped or on a terminal, except colour). No new dependencies.
  *
- * The screen (spec 01): line 1 of stdout is the verdict; at most 25 lines; no box art, no emoji, no
+ * The screen: line 1 of stdout is the verdict; at most 25 lines; no box art, no emoji, no
  * bar charts, no tips. Plan facts never appear here: the Free-to-Pro lines come from screen-plan-lines.ts
  * and are built from the one verified server block.
  */
@@ -37,11 +37,11 @@ export const SITE_URL = goLink('site')
 export const PRICING_URL = goLink('pricing')
 const ISSUES_URL = 'https://github.com/agenticcli/shipguard/issues'
 
-/** Hard budget for the human screen (spec 01 rule 5). */
+/** Hard budget for the human screen. */
 export const SCREEN_MAX_LINES = 25
 
 /**
- * The ONE shared data-flow line (spec 06). Every setup, status and first-run screen uses it by
+ * The ONE shared data-flow line. Every setup, status and first-run screen uses it by
  * reference; no screen keeps its own wording.
  */
 export const DATA_FLOW_LINE =
@@ -110,7 +110,7 @@ export function shouldShowProgress(gates: ProgressGates): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// The scan screen (spec 01)
+// The scan screen
 // ---------------------------------------------------------------------------
 
 export interface NextContext {
@@ -129,7 +129,7 @@ export interface ScanScreenInput {
   strict: boolean
   /** Process exit code of this run; 1 adds the last-line contract under --strict. */
   exitCode?: number
-  /** The one re-run command (spec 01 rule 7); defaults to the bare form. */
+  /** The one re-run command; defaults to the bare form. */
   rerunCommand?: string
   /** Display path of the report; null/undefined = no report line. */
   reportPath?: string | null
@@ -146,15 +146,15 @@ export interface ScanScreenInput {
   planLines?: readonly string[]
   /** Name of the plan for the `[<plan> rule]` tag; null = `[rulebook rule]`. */
   planLabel?: string | null
-  /** Test values ignored in this scan (W5 counts them). */
+  /** Test values ignored in this scan. */
   ignoredTestValues?: number
   /** Firebase web config apiKeys noted (public identifiers, not findings). */
   publicIdentifiers?: number
-  /** Fix loop (spec 04): the "since the last run" header and the repeat line above `Next:`. */
+  /** Fix loop: the "since the last run" header and the repeat line above `Next:`. */
   fixLoop?: { fixed: number; added: number; repeatLine?: string | null }
   /** Terminal width when stdout is a terminal; undefined = piped (no wrapping at all). */
   columns?: number | null
-  /** W5 masking seam: `32 chars, value hidden` for a secret finding; null = just `value hidden`. */
+  /** Masked text: `32 chars, value hidden` for a secret finding; null = just `value hidden`. */
   secretLabel?: (f: Finding) => string | null
   /** `--changed` found nothing changed. */
   nothingToCheck?: boolean
@@ -189,7 +189,7 @@ function tokens(text: string): string[] {
 }
 
 /**
- * Terminal width rule (spec 01 rule 8): wrap prose at word boundaries with a 4-space hanging indent;
+ * Terminal width rule: wrap prose at word boundaries with a 4-space hanging indent;
  * a path, `file:line` or command word is never split. Piped (`columns` undefined): never wrap.
  */
 export function wrapLine(line: string, columns: number | null | undefined): string[] {
@@ -428,7 +428,7 @@ function buildScreen(input: ScanScreenInput, lim: ScreenLimits): string[] {
 }
 
 /**
- * Render the human scan screen. At most 25 lines (spec 01 rule 5): when the first cut is longer, the
+ * Render the human scan screen. At most 25 lines: when the first cut is longer, the
  * detail is trimmed in a fixed order (Also found, then Not scanned files, then Fix first items) and a
  * `+N more` line says what was left to the report.
  */
@@ -450,7 +450,7 @@ export function renderScanScreen(input: ScanScreenInput): string {
 }
 
 /**
- * The one quiet line (spec 01, "Quiet mode"): pure `key=value` pairs after the fixed prefix.
+ * The one quiet line: pure `key=value` pairs after the fixed prefix.
  * Key order is fixed: verdict blocking findings incomplete notScanned fallback agentAction run report.
  */
 export function renderQuietLine(input: {
@@ -477,7 +477,7 @@ export function renderQuietLine(input: {
   return `shipguard: ${parts.join(' ')}`
 }
 
-/** Fallback `agentAction` for the quiet line until W2b's outcome table supplies the real one. */
+/** Fallback `agentAction` for the quiet line until the outcome table supplies the real one. */
 function simpleAgentAction(r: ScanResult): string {
   if (r.riskScore.blockingCount > 0) return 'fix_and_rerun'
   if (r.degraded === true) return 'ask_human'
@@ -485,7 +485,7 @@ function simpleAgentAction(r: ScanResult): string {
 }
 
 // ---------------------------------------------------------------------------
-// First-run write notice (stderr, once; spec 06 "Silent writes become announced writes")
+// First-run write notice (stderr, once)
 // ---------------------------------------------------------------------------
 
 function getShipguardConfigDir(): string {
@@ -494,16 +494,16 @@ function getShipguardConfigDir(): string {
 
 /**
  * The ONE shared write notice, returned once on the first ever run (the caller prints it on STDERR:
- * line 1 of stdout is the verdict, spec 01 rule 1 and 6).
+ * line 1 of stdout is the verdict).
  *
  * @param configDir  - override the config dir (used in tests)
  * @returns text (non-empty on first call; empty string thereafter)
  */
-/** The one shared write notice (spec 06). */
+/** The one shared write notice. */
 export const WRITE_NOTICE = 'wrote .shipguard/ (reports, history; ignored by git) and ~/.config/shipguard/ (usage-ping id)'
 
 export function welcomeBanner(configDir?: string): string {
-  // Safe mode writes nothing under ~/.config (spec 06): no marker, and no banner either.
+  // Safe mode writes nothing under ~/.config: no marker, and no banner either.
   if (isSafeMode()) return ''
   const dir = configDir ?? getShipguardConfigDir()
   const marker = join(dir, '.welcomed')

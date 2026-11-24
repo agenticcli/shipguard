@@ -1,5 +1,5 @@
 /**
- * gate-text.ts — every word the gate prints, as pure functions (spec 03).
+ * gate-text.ts — every word the gate prints, as pure functions.
  *
  * One code path builds the text for every host; only the exit code and the output channel differ
  * (decided by commands/gate.ts). The last line of every text is the machine line:
@@ -119,7 +119,7 @@ export function firstSentence(text: string): string {
 
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info']
 
-/** Order from spec 04: exposed secrets first, then critical and high, payments and auth before the rest. */
+/** Order: exposed secrets first, then critical and high, payments and auth before the rest. */
 export function orderBlocking(findings: GateFinding[]): GateFinding[] {
   const isSecret = (f: GateFinding): boolean => f.category === 'secrets' || /(^|\.)secrets?(\.|$)/.test(f.id)
   const isMoney = (f: GateFinding): boolean => f.category === 'payments' || f.category === 'auth'
@@ -177,7 +177,7 @@ function trim(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }
 
-/** The repeat string from spec 04 "Fix loop"; null on a first sighting. */
+/** The repeat string of the fix loop; null on a first sighting. */
 export function repeatString(maxRuns: number, sameCommit: boolean, reportPath: string | null): string | null {
   if (maxRuns >= 2) {
     return 'Repeated blocking result. Stop and ask the user; do not ignore or bypass it (shipguard ignore, --no-verify) on your own.'
@@ -276,7 +276,7 @@ export interface FailClosed {
   agentAction: AgentAction
   /** Sentence(s) after "did not run.", plain words. */
   what: string
-  /** The lines under it (`Cause:`, `Fix:`, ...), as written in spec 03. */
+  /** The lines under it (`Cause:`, `Fix:`, ...). */
   lines: string[]
   /** True when the machine line carries the re-run command. */
   withRerun?: boolean

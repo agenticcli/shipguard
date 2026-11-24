@@ -5,7 +5,7 @@
  * extension may influence the result (a text file called `secret.png` is read, a blob called
  * `creds.bin` with no real-binary evidence is not trusted).
  *
- * Order (plan A1, round 3):
+ * Order:
  *   1. Empty => text.
  *   2. detectBinary false (no NUL, low control density) => strict UTF-8; failure => invalid-text.
  *      Magic bytes are NEVER consulted here.
@@ -163,7 +163,7 @@ function validUtf8WithCutTail(b: Uint8Array): boolean {
 }
 
 /**
- * Head-read shortcut for a file OVER the size cap (judge R3 MAJOR 1). True only when the head
+ * Head-read shortcut for a file OVER the size cap. True only when the head
  * (a) matches a magic value AND (b) FAILS a strict UTF-8 decode taken AFTER the magic bytes.
  * Many magic values start with a non-UTF-8 byte, so including them would make every head "fail".
  * A head of NULs and ASCII is valid UTF-8, so "PNG magic + NUL-heavy head + secret later" is not a

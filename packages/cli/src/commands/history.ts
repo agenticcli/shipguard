@@ -22,7 +22,7 @@ function shortenMiddle(text: string, max: number): string {
 }
 
 /**
- * The history table (spec 01): same names and order as the screen, identical piped; newest first.
+ * The history table: same names and order as the screen, identical piped; newest first.
  * Rows written before schema 4 show `-` for the facts they never kept.
  */
 export function renderHistoryTable(scans: readonly HistoryRow[], columns?: number): string {
@@ -109,7 +109,7 @@ export function historyCommand(): Command {
               historyPath,
               repoId: identity.repoId,
               repoIdKind: identity.repoIdKind,
-              // Old keys keep their meaning; the field-vocabulary names (spec 01) are added beside them.
+              // Old keys keep their meaning; the field-vocabulary names are added beside them.
               scans: scans.map((s) => ({
                 ...s,
                 runId: s.scanId,

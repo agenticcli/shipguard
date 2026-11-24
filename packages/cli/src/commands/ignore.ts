@@ -11,7 +11,7 @@ import { readGateRecord } from '../core/gate-state.js'
 import { buildIgnoreRules, classifyIgnored, type IgnoreEntry } from '../core/ignore.js'
 
 /**
- * `shipguard ignore <finding-id|path> [--file <path>] --reason "<why>"` (spec 03, 04).
+ * `shipguard ignore <finding-id|path> [--file <path>] --reason "<why>"`.
  *
  * The only sanctioned way past a gate block. It records ONE reasoned exception in
  * `shipguard.policy.yml`; the reason is required and is shown in the report. Rules:

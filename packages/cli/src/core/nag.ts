@@ -1,5 +1,5 @@
 /**
- * nag.ts: the display counters (~/.config/shipguard/nag.json, spec 02 "Moments and bounds"). They decide
+ * nag.ts: the display counters (~/.config/shipguard/nag.json). They decide
  * only HOW OFTEN a Free-to-Pro line, a usage notice or the first-Pro receipt may be shown. They hold no plan
  * facts. The file lives outside the scanned folder, so a cloned repo cannot reset, fill or read it.
  *

@@ -111,7 +111,7 @@ function unclosedOpenerLine(text: string, end: number): { line: number; char: '[
 
 /**
  * The first YAML error of a policy file in OUR words, with the line it belongs to, or null when the YAML parses.
- * Used by the scan, `schema` and the gate so the same file gets the same message everywhere (spec 06 "INVALID_POLICY").
+ * Used by the scan, `schema` and the gate so the same file gets the same message everywhere.
  * An unclosed `[` or `{` is reported at the line that opened it, not at the end of the file where the parser notices.
  */
 export function explainPolicyYamlError(text: string): { line: number | null; cause: string } | null {

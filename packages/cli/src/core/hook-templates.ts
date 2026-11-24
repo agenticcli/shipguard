@@ -5,7 +5,7 @@
  * Kept separate from commands/hook.ts so the templates are unit-testable as pure strings, with no
  * filesystem involved.
  *
- * 0.13 shape (spec 03): every host (Claude Code hook, git hooks) runs the SAME small POSIX shim.
+ * 0.13 shape: every host (Claude Code hook, git hooks) runs the SAME small POSIX shim.
  * The shim is not `shipguard` itself: if ShipGuard is missing the shell would exit 127, Claude Code
  * treats any exit other than 2 as non-blocking, and the push would go through unchecked. The shim
  * guarantees a block (exit 2 on Claude, 1 on git) with a text that says why, and bounds every step
@@ -14,7 +14,7 @@
  * The shim only ever runs a binary that answers `gate --supports` (0.13 or later); an older binary
  * is skipped, so a 0.12 "unknown command" can never be read as a block it did not decide.
  *
- * Names exported here are the contract W4a (`shipguard setup`) builds on: SHIM_RELATIVE_PATH,
+ * Names exported here are the contract `shipguard setup` builds on: SHIM_RELATIVE_PATH,
  * CLAUDE_HOOK_COMMAND, CLAUDE_HOOK_TIMEOUT_SECONDS, SHIM_VERSION, claudeShimScript(), gitHookScript().
  */
 
@@ -228,7 +228,7 @@ jobs:
 /**
  * Which layer binds whom — printed by the command itself on every install, not only buried in
  * docs. Overstating what a git hook guarantees would be the same class of defect as a false
- * SAFE_TO_SHIP. (The old "the agent cannot argue past it" claim is gone, spec 07.)
+ * SAFE_TO_SHIP. (The old "the agent cannot argue past it" claim is gone.)
  */
 export const BINDING_NOTES: Record<HookTarget, string> = {
   git:

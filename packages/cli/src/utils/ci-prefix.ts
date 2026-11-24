@@ -1,4 +1,4 @@
-/** With CI set every stderr line starts with `shipguard: ` (spec 01 rule 9); stdout is unchanged. Lines already carrying a fixed prefix (the quiet line, the gate's `shipguard-gate: ` line) keep it. */
+/** With CI set every stderr line starts with `shipguard: `; stdout is unchanged. Lines already carrying a fixed prefix (the quiet line, the gate's `shipguard-gate: ` line) keep it. */
 import { detectCi } from '../core/telemetry.js'
 
 const PREFIX = 'shipguard: '

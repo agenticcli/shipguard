@@ -200,7 +200,7 @@ export function capReached(
 
 /**
  * Read, classify and record ONE file. The single place where bytes become text, so the full scan
- * and the `--changed` scan cannot drift apart again (plan A2). Never throws: a read failure is
+ * and the `--changed` scan cannot drift apart again. Never throws: a read failure is
  * recorded under unreadableFiles (DEGRADED, never silently skipped).
  */
 /** True when a root .gitignore holds only the line(s) ShipGuard's history store adds (`.shipguard/`). */
@@ -284,7 +284,7 @@ export async function readCandidate(state: ReadFilesResult, c: Candidate, maxFil
 }
 
 // ---------------------------------------------------------------------------
-// File names that are not valid UTF-8 (judge R3 MAJOR 3)
+// File names that are not valid UTF-8
 // ---------------------------------------------------------------------------
 
 /**

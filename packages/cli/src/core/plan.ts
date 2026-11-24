@@ -1,6 +1,5 @@
 /**
- * plan.ts: verify, map and cache the signed plan block (contract: docs/contracts/plan-v2.json, spec 02
- * "The plan block", 05).
+ * plan.ts: verify, map and cache the signed plan block (contract: docs/contracts/plan-v2.json).
  *
  * HARD RULES (the CLI repo is public):
  *   - No plan fact lives here: no price, count, pack, trial length, plan name or limit. Every value arrives
@@ -61,7 +60,7 @@ const DOC_RULES = {
   },
 } as const
 
-/** `refreshAfter` is clamped to this range (design 3.4); the server cannot make the CLI skip calls for longer. */
+/** `refreshAfter` is clamped to this range; the server cannot make the CLI skip calls for longer. */
 const REFRESH_MIN_SECONDS = 60
 const REFRESH_MAX_SECONDS = 6 * 3600
 
@@ -186,7 +185,7 @@ export async function verifyPlanDocument(kind: PlanDocKind, token: unknown, ctx:
         if (!isRecord(binding) || binding['scanId'] !== ctx.scanId) return fail('scanId mismatch')
       }
     }
-    // Time window: live replies AND cached copies (plan section 10 item 13(c), spec 02: an expired plan block is
+    // Time window: live replies AND cached copies (an expired plan block is
     // plain Free, whether it just arrived or was kept). A signed reply that is already past exp, or issued in the
     // future, is never trusted.
     const nowSeconds = Math.floor(ctx.now / 1000)
@@ -414,7 +413,7 @@ export async function readAccountCache(configDir: string, req: { acct: string | 
   return { block: planBlockFrom(mapAccountPayload(result.payload), 'cached'), token, live: false }
 }
 
-/** Does a cached block tell the CLI it may skip a rulebook call right now? (design 3.4; only for a verified, fresh block) */
+/** Does a cached block tell the CLI it may skip a rulebook call right now? (only for a verified, fresh block) */
 export function cacheMaySkipRulebookCall(block: PlanBlock, now: number, opts: { explicitPro: boolean }): boolean {
   if (opts.explicitPro || block.status !== 'cached' || block.server === null) return false
   const s = block.server
@@ -430,7 +429,7 @@ export function cacheMaySkipRulebookCall(block: PlanBlock, now: number, opts: { 
 }
 
 // ---------------------------------------------------------------------------
-// The one rule for "the rulebook did not run" (spec 02, 05). Pure decisions; call sites wire them.
+// The one rule for "the rulebook did not run". Pure decisions; call sites wire them.
 // ---------------------------------------------------------------------------
 
 export type RulebookFallbackCode = 'RULEBOOK_WITHHELD' | 'RULEBOOK_UNREACHABLE' | 'RULEBOOK_PARTIAL' | 'PLAN_INACTIVE'
@@ -480,7 +479,7 @@ export function decideRulebookUse(input: {
 }
 
 /**
- * Is a failed rulebook run a "fallback" worth telling the user about (spec 02 moment 4)? Only for an account that
+ * Is a failed rulebook run a "fallback" worth telling the user about? Only for an account that
  * has a plan (current verified status) or whose LAST verified status was an active one, so a paying user who is
  * offline or expired is told what ran. A signed-in account without a plan (none, pending, unsupported, never
  * verified) is a plain Free run: no notice, `rules.fallback` null. PLAN_INACTIVE is for a lapsed plan.

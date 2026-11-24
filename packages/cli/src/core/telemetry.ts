@@ -348,8 +348,7 @@ export function decideTelemetry(
 }
 
 /**
- * The one-line stderr notice printed before the first ping on an install (spec 06 "Usage-ping notice";
- * this is the ONE shared string). "or gate" added to the spec's wording because the v5 ping carries
+ * The one-line stderr notice printed before the first ping on an install (this is the ONE shared string). "or gate" added to the wording because the v5 ping carries
  * which gate ran the scan.
  */
 export const NOTICE_TEXT =

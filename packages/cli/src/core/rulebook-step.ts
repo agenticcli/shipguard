@@ -1,6 +1,6 @@
 /**
  * rulebook-step.ts: the ONE place that decides how a scan gets its rules and what the plan block says about it
- * (spec 02 "One rule for the rulebook did not run", 05 "Explicit --pro"). scan.ts hands it the facts of the run
+ *. scan.ts hands it the facts of the run
  * and gets back: the rules to run, the plan block, the fallback (if any) or the error to exit with.
  *
  * HARD RULES (public repo): no plan fact lives here; the rulebook is used ONLY when the server serves a verified,
@@ -182,7 +182,7 @@ export async function runRulebookStep(i: RulebookStepInput): Promise<RulebookSte
   })
 }
 
-/** The rulebook request failed: one rule for every cause (spec 02). */
+/** The rulebook request failed: one rule for every cause. */
 async function failedRequest(i: RulebookStepInput, raw: unknown, acctPre: string | null, nag: ReturnType<typeof loadNagFor>): Promise<RulebookStepResult> {
   const { env } = i
   const err = raw as ProFetchError

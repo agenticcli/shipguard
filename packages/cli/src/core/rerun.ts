@@ -1,7 +1,7 @@
 import { relative, resolve } from 'node:path'
 
 /**
- * THE one re-run command builder (spec 01 rule 7). The screen `Next:` line, `nextSteps`,
+ * THE one re-run command builder. The screen `Next:` line, `nextSteps`,
  * `fix.verify.command`, the report and the gate all call this and print its string word for word.
  *
  *   shipguard scan [<target>] --strict [<options>]
