@@ -1,0 +1,96 @@
+name: Release tag
+
+# The ONLY way a release tag (vX.Y.Z) is created. Humans and sessions never push release tags by hand.
+# It refuses unless main HEAD has a green release-preflight run for its exact SHA and package.json says the
+# requested version, then creates the annotated tag and starts release.yml on it.
+#   gh workflow run release-tag.yml --ref main -f version=0.13.1
+# Tags are protected (no delete, no move), so a tag on a commit that cannot pass the gate is a burned version:
+# that is why the gate runs first. Needs contents: write (the tag) and actions: write (start release.yml).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag, as in packages/cli/package.json (for example 0.13.1, no leading v)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag main HEAD after a green preflight
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write        # create the tag
+      actions: write         # start release.yml on it (a tag made with the workflow token fires no push event)
+    steps:
+      - name: Checkout main at the dispatched commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Version must be well formed
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+            || { echo "::error::version '$VERSION' is not X.Y.Z or X.Y.Z-pre (no leading v)"; exit 1; }
+
+      - name: package.json version must equal the request
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          ver="$(node -p "require('./packages/cli/package.json').version")"
+          test "$ver" = "$VERSION" \
+            || { echo "::error::package.json version is $ver, you asked for $VERSION"; exit 1; }
+
+      - name: Dispatched commit must still be main HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          test "$head" = "$GITHUB_SHA" \
+            || { echo "::error::main moved ($head); this run is for $GITHUB_SHA. Re-run preflight on the new HEAD."; exit 1; }
+
+      - name: Preflight must have passed for this exact SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/check-preflight.sh "$GITHUB_SHA"
+
+      - name: Tag must not exist yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag v$VERSION already exists (tags are immutable); bump the version"; exit 1
+          fi
+
+      # Annotated tag through the API: tag object first, then the ref. Creating a ref is not blocked by the
+      # "release tags are immutable" ruleset (it blocks delete, move and update only).
+      - name: Create the annotated tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          obj="$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f tag="v$VERSION" -f message="ShipGuard v$VERSION" -f object="$GITHUB_SHA" -f type=commit \
+            -f 'tagger[name]=github-actions[bot]' -f 'tagger[email]=41898282+github-actions[bot]@users.noreply.github.com' \
+            --jq .sha)"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$obj" --jq .ref
+          echo "created tag v$VERSION on $GITHUB_SHA"
+
+      - name: Start release.yml on the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "v$VERSION"
+          echo "release.yml started on v$VERSION: watch it in the Actions tab"
