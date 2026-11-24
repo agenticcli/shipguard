@@ -20,7 +20,7 @@ function printWhereToSend(): void {
 export function feedbackCommand(): Command {
   return new Command('feedback')
     .description('Tell us what you think: prints where to send feedback (no network call)')
-    .argument('[text]', 'Ignored. Feedback is not sent from the CLI; open an issue instead')
+    .argument('[text...]', 'Ignored (any number of words). Feedback is not sent from the CLI; open an issue instead')
     .action(printWhereToSend);
 }
 

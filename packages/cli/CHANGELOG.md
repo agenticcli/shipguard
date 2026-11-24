@@ -2,7 +2,7 @@
 
 ## 0.13.2 - 2026-11-24
 
-- Fixed: `shipguard rate` no longer calls a server address that does not exist (it failed with a 404 after asking you to log in). Like `shipguard feedback`, it now makes no network call and only prints where to send feedback: https://github.com/agenticcli/shipguard/issues. Your arguments are never sent or stored.
+- Fixed: `shipguard rate` no longer calls a server address that does not exist (it failed with a 404 after asking you to log in). Like `shipguard feedback`, it now makes no network call and only prints where to send feedback: https://github.com/agenticcli/shipguard/issues. `shipguard feedback` now also accepts your message as several words without quotes. Your words are never sent or stored.
 - Fixed: the sign-in check now also judges a sensitive page whose path has a `webhooks` folder (for example `app/admin/webhooks/page.tsx`). Webhook receivers stay skipped, as before.
 - Tidied: comments in the published source no longer mention internal planning or review notes. The telemetry commands (`status`, `enable`, `disable`, `reset`) now have a test that locks in that they work and make no request.
 

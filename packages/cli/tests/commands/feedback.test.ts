@@ -22,6 +22,7 @@ describe('feedbackCommand', () => {
   // 0.13.2: both commands only print where to send feedback. No network call, no login, no credentials read.
   it.each([
     ['feedback', ['some free text']],
+    ['feedback', ['some', 'free', 'text', 'unquoted']],
     ['feedback', []],
     ['rate', ['1', 'helpful']],
     ['rate', []],
