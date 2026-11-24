@@ -2,12 +2,12 @@
  * Release gate G9 (plan W0): the budget rules, tested with fake measurements. The real measuring is
  * run by scripts/release-gate.sh on the built CLI.
  */
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error plain .mjs script, no types
-import { BASELINE_DEPS, BUDGETS, evaluateBudgets, measureInstallBytes } from '../../scripts/check-budgets.mjs'
+import { BASELINE_DEPS, BUDGETS, PRO_MEASURE_FILE, evaluateBudgets, measureInstallBytes, readProMeasurement } from '../../scripts/check-budgets.mjs'
 
 const GOOD = {
   tarballBytes: 530_000,
@@ -90,6 +90,73 @@ describe('evaluateBudgets', () => {
   it('Pro scan speed is reported as skipped (not a pass) when it was not measured', () => {
     const r = (evaluateBudgets({ ...GOOD, proScanSeconds: undefined }) as Array<{ id: string; skipped?: boolean }>).find((x) => x.id === 'pro-scan-time')
     expect(r?.skipped).toBe(true)
+  })
+})
+
+describe('the committed Pro scan measurement (release/pro-scan-measure.json)', () => {
+  const withFile = (content: string | null, fn: (file: string) => void): void => {
+    const dir = mkdtempSync(join(tmpdir(), 'sg-pro-'))
+    try {
+      const file = join(dir, 'pro-scan-measure.json')
+      if (content !== null) writeFileSync(file, content)
+      fn(file)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  const rec = (patch: object = {}): string => JSON.stringify({ version: '0.13.0', proScanSeconds: 9.32, measuredAt: '2026-11-23', method: 'm', ...patch })
+  const gate = (r: { seconds?: number; error?: string }, requirePro = true): Array<{ id: string; ok: boolean; detail: string }> =>
+    evaluateBudgets({ ...GOOD, proScanSeconds: r.seconds }, BUDGETS, BASELINE_DEPS, { requirePro, proError: r.error })
+
+  it('a valid file for this version passes the gate', () => {
+    withFile(rec(), (f) => {
+      const r = readProMeasurement(f, '0.13.0')
+      expect(r).toEqual({ seconds: 9.32 })
+      expect(gate(r).every((x) => x.ok)).toBe(true)
+    })
+  })
+  it('a missing file fails the release gate (requirePro) and is only a skip without it', () => {
+    withFile(null, (f) => {
+      const r = readProMeasurement(f, '0.13.0')
+      expect(r).toEqual({})
+      const line = gate(r).find((x) => x.id === 'pro-scan-time')
+      expect(line?.ok).toBe(false)
+      expect(line?.detail).toContain(PRO_MEASURE_FILE)
+      expect(gate(r, false).find((x) => x.id === 'pro-scan-time')).toMatchObject({ ok: true, skipped: true })
+    })
+  })
+  it('a file for another version fails, even without requirePro (a stale number cannot carry over)', () => {
+    withFile(rec({ version: '0.12.0' }), (f) => {
+      const r = readProMeasurement(f, '0.13.0')
+      expect(r.error).toMatch(/0\.12\.0.*0\.13\.0/)
+      for (const requirePro of [true, false]) expect(gate(r, requirePro).filter((x) => !x.ok).map((x) => x.id)).toEqual(['pro-scan-time'])
+    })
+  })
+  it('a value over the 10 s budget fails', () => {
+    withFile(rec({ proScanSeconds: 10.01 }), (f) => {
+      const r = readProMeasurement(f, '0.13.0')
+      expect(gate(r).filter((x) => !x.ok).map((x) => x.id)).toEqual(['pro-scan-time'])
+    })
+  })
+  it.each([
+    ['not JSON', '{nope'],
+    ['no number', rec({ proScanSeconds: undefined })],
+    ['a string', rec({ proScanSeconds: '9.32' })],
+    ['zero', rec({ proScanSeconds: 0 })],
+    ['null', 'null'],
+  ])('an unusable file (%s) fails', (_n, content) => {
+    withFile(content, (f) => {
+      const r = readProMeasurement(f, '0.13.0')
+      expect(r.error).toBeTruthy()
+      expect(gate(r, false).filter((x) => !x.ok).map((x) => x.id)).toEqual(['pro-scan-time'])
+    })
+  })
+  it('the committed file is for the current package.json version and inside the budget', () => {
+    const cli = resolve(__dirname, '..', '..')
+    const version = JSON.parse(readFileSync(join(cli, 'package.json'), 'utf-8')).version
+    const r = readProMeasurement(join(cli, '..', '..', PRO_MEASURE_FILE), version)
+    expect(r.error).toBeUndefined()
+    expect(r.seconds).toBeLessThanOrEqual(BUDGETS.proScanSeconds)
   })
 })
 

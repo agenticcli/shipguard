@@ -5,9 +5,12 @@
 //
 //   node scripts/check-budgets.mjs [--json] [--pro-scan-seconds N] [--require-pro]
 //
-// Pro scan speed needs a signed-in account and a real rulebook, so it is measured by the dev run (W11)
-// and handed in with --pro-scan-seconds (or RELEASE_GATE_PRO_SCAN_SECONDS); without it that line is
-// reported as SKIP on a dry run; with --require-pro (a real release) a missing number FAILS.
+// Pro scan speed needs a signed-in account and a real rulebook, so it is measured on the release candidate
+// and committed in release/pro-scan-measure.json (version, proScanSeconds, measuredAt, method). An explicit
+// --pro-scan-seconds (or RELEASE_GATE_PRO_SCAN_SECONDS) overrides the file. A file whose version is not the
+// package.json version, or an unreadable one, always FAILS (a stale number cannot carry into the next
+// release). Without any number the line is SKIP, but with --require-pro (the release gate, dry run included)
+// a missing number FAILS.
 // NOT measured here (covered by tests in the stream that builds the behaviour): "signed-out Free scan:
 // at most 1 public fetch per 7 days" (W1a fake-clock test) and "signed-in Free hook with a hint = 0
 // server calls" (W1a). This gate measures the zero-fetch modes (CI, quiet, safe mode, DO_NOT_TRACK).
@@ -43,9 +46,10 @@ export const BASELINE_DEPS = ['@noble/hashes', 'chalk', 'commander', 'fast-glob'
  * m = { tarballBytes, unpackedBytes, installBytes, dependencies: string[], versionMs, freeScanSeconds,
  *       proScanSeconds?: number, rssMb, fetches: { [mode]: number } }
  * Returns [{ id, ok, skipped?, detail }]. A missing measurement is a failure (never a silent pass),
- * except proScanSeconds, which is skipped on a dry run and a failure when requirePro is set (a real release).
+ * except proScanSeconds, which is skipped unless requirePro is set (the release gate). proError (an invalid
+ * or stale measurement file) fails the line whatever requirePro says.
  */
-export function evaluateBudgets(m, budgets = BUDGETS, baselineDeps = BASELINE_DEPS, { requirePro = false } = {}) {
+export function evaluateBudgets(m, budgets = BUDGETS, baselineDeps = BASELINE_DEPS, { requirePro = false, proError = '' } = {}) {
   const out = []
   const num = (v) => typeof v === 'number' && Number.isFinite(v)
   const max = (id, v, limit, unit) => {
@@ -66,14 +70,46 @@ export function evaluateBudgets(m, budgets = BUDGETS, baselineDeps = BASELINE_DE
   max('free-scan-time', m.freeScanSeconds, budgets.freeScanSeconds, 's')
   max('rss', m.rssMb, budgets.rssMb, 'MB')
   if (num(m.proScanSeconds)) max('pro-scan-time', m.proScanSeconds, budgets.proScanSeconds, 's')
-  else if (requirePro) out.push({ id: 'pro-scan-time', ok: false, detail: 'not measured: a real release needs RELEASE_GATE_PRO_SCAN_SECONDS (--pro-scan-seconds) from the dev run' })
-  else out.push({ id: 'pro-scan-time', ok: true, skipped: true, detail: 'SKIP: measured by the dev run (W11), pass --pro-scan-seconds' })
+  else if (proError) out.push({ id: 'pro-scan-time', ok: false, detail: `not measured: ${proError}` })
+  else if (requirePro) out.push({ id: 'pro-scan-time', ok: false, detail: `not measured: the release gate needs ${PRO_MEASURE_FILE} for this version (or RELEASE_GATE_PRO_SCAN_SECONDS / --pro-scan-seconds)` })
+  else out.push({ id: 'pro-scan-time', ok: true, skipped: true, detail: `SKIP: no Pro scan number (${PRO_MEASURE_FILE}, --pro-scan-seconds)` })
   const modes = m.fetches && typeof m.fetches === 'object' ? Object.entries(m.fetches) : []
   if (modes.length === 0) out.push({ id: 'zero-fetch-modes', ok: false, detail: 'not measured' })
   for (const [mode, n] of modes) {
     out.push({ id: `fetches-${mode}`, ok: num(n) && n <= budgets.zeroFetchModes, detail: `${n} non-ping fetches (budget ${budgets.zeroFetchModes})` })
   }
   return out
+}
+
+/** Repo-relative path of the committed Pro scan measurement for the release candidate. */
+export const PRO_MEASURE_FILE = 'release/pro-scan-measure.json'
+
+/**
+ * Reads the committed Pro scan measurement for `version`. Returns { seconds } when valid, {} when the file
+ * does not exist (the caller decides whether that fails), { error } when it exists but is unreadable, for
+ * another version, or holds no positive finite number.
+ */
+export function readProMeasurement(file, version) {
+  let raw
+  try {
+    raw = readFileSync(file, 'utf-8')
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return {}
+    return { error: `${PRO_MEASURE_FILE} is unreadable: ${err.message}` }
+  }
+  let rec
+  try {
+    rec = JSON.parse(raw)
+  } catch (err) {
+    return { error: `${PRO_MEASURE_FILE} is not valid JSON: ${err.message}` }
+  }
+  if (!rec || typeof rec !== 'object' || rec.version !== version) {
+    return { error: `${PRO_MEASURE_FILE} is for version ${JSON.stringify(rec && rec.version)}, package.json is ${version}: measure again on this release candidate` }
+  }
+  if (typeof rec.proScanSeconds !== 'number' || !Number.isFinite(rec.proScanSeconds) || rec.proScanSeconds <= 0) {
+    return { error: `${PRO_MEASURE_FILE} has no positive number in proScanSeconds` }
+  }
+  return { seconds: rec.proScanSeconds }
 }
 
 const round = (n) => (Number.isInteger(n) ? n : Math.round(n * 100) / 100)
@@ -225,10 +261,18 @@ async function main() {
   const json = args.includes('--json')
   const i = args.indexOf('--pro-scan-seconds')
   const proRaw = i >= 0 ? args[i + 1] : process.env.RELEASE_GATE_PRO_SCAN_SECONDS
-  const proScanSeconds = proRaw === undefined || proRaw === '' ? undefined : Number(proRaw)
+  let proScanSeconds = proRaw === undefined || proRaw === '' ? undefined : Number(proRaw)
   if (proScanSeconds !== undefined && !Number.isFinite(proScanSeconds)) {
     console.error('FAIL [budgets] --pro-scan-seconds must be a number')
     process.exit(2)
+  }
+  // No explicit number: use the measurement committed with the release commit.
+  let proError = ''
+  if (proScanSeconds === undefined) {
+    const pkgVersion = JSON.parse(readFileSync(join(cliDir, 'package.json'), 'utf-8')).version
+    const rec = readProMeasurement(join(cliDir, '..', '..', PRO_MEASURE_FILE), pkgVersion)
+    proScanSeconds = rec.seconds
+    proError = rec.error ?? ''
   }
   let m
   try {
@@ -237,7 +281,7 @@ async function main() {
     console.error(`FAIL [budgets] could not measure: ${err instanceof Error ? err.message : String(err)}`)
     process.exit(2)
   }
-  const results = evaluateBudgets(m, BUDGETS, BASELINE_DEPS, { requirePro: args.includes('--require-pro') })
+  const results = evaluateBudgets(m, BUDGETS, BASELINE_DEPS, { requirePro: args.includes('--require-pro'), proError })
   if (json) console.log(JSON.stringify({ measurements: m, results }, null, 2))
   else for (const r of results) console.log(`${r.skipped ? 'SKIP' : r.ok ? 'ok  ' : 'FAIL'} ${r.id}: ${r.detail}`)
   process.exit(results.every((r) => r.ok) ? 0 : 1)
