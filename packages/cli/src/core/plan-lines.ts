@@ -1,6 +1,5 @@
 /**
- * plan-lines.ts: the ONE renderer for everything that comes from the plan block (spec 05, 02 "Moments and
- * bounds"). Screen, `--json`, `upgrade`, `status` and the gate read the same block through these pure functions;
+ * plan-lines.ts: the ONE renderer for everything that comes from the plan block. Screen, `--json`, `upgrade`, `status` and the gate read the same block through these pure functions;
  * call sites (scan, gate, status, upgrade, login) only gather facts and print what comes back.
  *
  * What is authored here: the plain words around a server value and the facts the scan itself observed (what ran,

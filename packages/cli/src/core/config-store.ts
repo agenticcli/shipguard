@@ -44,7 +44,7 @@ export function readConfigText(file: string, maxBytes: number): ConfigRead {
 
 /** Atomic 0600 write into a 0700 directory. Returns false (and logs) when it could not write. */
 export function writeConfigText(dir: string, name: string, data: string): boolean {
-  // Safe mode (spec 06): nothing new is written under ~/.config. One guard here covers nag, hint, plan and offer cache.
+  // Safe mode: nothing new is written under ~/.config. One guard here covers nag, hint, plan and offer cache.
   if (isSafeMode()) {
     logger.debug(`config-store: safe mode, not writing ${join(dir, name)}`)
     return false

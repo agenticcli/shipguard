@@ -15,7 +15,7 @@ import { openUrl } from '../utils/open-url.js'
 import { logger } from '../utils/logger.js'
 
 /**
- * `shipguard upgrade` (spec 05): what a plan would add for THIS repo, as checks that did not run, then the steps to
+ * `shipguard upgrade`: what a plan would add for THIS repo, as checks that did not run, then the steps to
  * start it. Read-only except ~/.config/shipguard. It prints and exits 0: a missing or unverified plan block is not an
  * error. Every number, name and sentence about a plan comes from the verified server block; the CLI has none of its own.
  * `--dry-run` prints the request without sending it; `--mute` / `--unmute` silence or restore promotion on the scan screen.

@@ -133,7 +133,7 @@ function splitNul(out: Buffer): Buffer[] {
  * Callers MUST call isGitRepo(dir) first. Throws GitCommandError on a genuine git failure; an empty
  * result means git ran successfully and there are genuinely zero changed files.
  *
- * Exactness (plan A2, judge R3 MAJOR 4):
+ * Exactness:
  *  - Every command uses `-z`: names are NUL-separated, never quoted, and never trimmed, so a file
  *    called "secret.ts " cannot alias "secret.ts".
  *  - Names are parsed as BYTES and decoded strictly one by one; an invalid-UTF-8 name is reported in

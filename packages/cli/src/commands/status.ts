@@ -6,7 +6,7 @@ import { gateHealthLines, gateHealthWarnings, healthWarningLine } from '../core/
 import { logger } from '../utils/logger.js'
 
 /**
- * `shipguard status` (spec 05): sign-in, plan and usage exactly as the server reports them, from ONE fresh signed read
+ * `shipguard status`: sign-in, plan and usage exactly as the server reports them, from ONE fresh signed read
  * (never the cache first); a verified cached copy is shown only when the live read failed. It says nothing about which
  * rules the next scan will use: the server decides that during the scan. No plan fact lives here.
  */
@@ -48,7 +48,7 @@ export function statusCommand(): Command {
         ...(lastScan ? { scanCommand: lastScan.scanCommand } : {}),
       })
       for (const line of lines) console.log(line)
-      // Gate health (spec 07): what is installed here, when the gate last ran, how strong it is; the warnings go to stderr.
+      // Gate health: what is installed here, when the gate last ran, how strong it is; the warnings go to stderr.
       for (const line of gateHealthLines(process.cwd())) console.log(line)
       for (const w of gateHealthWarnings(process.cwd())) process.stderr.write(`${healthWarningLine(w)}\n`)
       if (fresh.retryAfterSeconds !== undefined && fresh.failure !== null) {

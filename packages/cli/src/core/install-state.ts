@@ -1,7 +1,7 @@
 /**
- * install-state.ts: `.shipguard/installed.json`, the record of what `shipguard setup` wrote (spec 07).
+ * install-state.ts: `.shipguard/installed.json`, the record of what `shipguard setup` wrote.
  *
- * Every managed write is recorded with a content hash, so `shipguard uninstall` (W4b) can tell content
+ * Every managed write is recorded with a content hash, so `shipguard uninstall`  can tell content
  * ShipGuard wrote (and nobody edited) from user edits, and `shipguard status` and the scan screen can say
  * what is really installed. The record lives in the project, never in ~/.config. Reads are strict: a
  * file of the wrong shape is "no record", never a half-trusted one.

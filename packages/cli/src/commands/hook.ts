@@ -5,7 +5,7 @@ import { logger } from '../utils/logger.js'
 
 /**
  * `shipguard hook --target X` (0.12 name, kept for scripts): it now hands over to `shipguard setup --agent X`
- * (spec 07), the one installer. The old per-target installers and the Node 20 CI workflow template are gone, so there
+ *, the one installer. The old per-target installers and the Node 20 CI workflow template are gone, so there
  * is exactly one writer of hook files and one install record (.shipguard/installed.json).
  * Targets map one to one: git, claude, ci.
  */

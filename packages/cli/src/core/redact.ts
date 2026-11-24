@@ -39,8 +39,8 @@ import type { Finding } from '@agenticcli/shared'
 import { compileDetectorRegex } from './re2-detector-engine.js'
 
 /**
- * Mask a secret value inside free text. No character of the value is kept (OUTPUT-SPEC 06
- * "Secret masking": not a prefix, not a suffix). Used where a value sits inside a longer line.
+ * Mask a secret value inside free text. No character of the value is kept
+ * (not a prefix, not a suffix). Used where a value sits inside a longer line.
  */
 export function redactSecretValue(_value: string): string {
   return '***'
@@ -69,7 +69,7 @@ export interface SecretEvidence {
   valueHidden: true
 }
 
-/** The JSON object form of the masked secret (OUTPUT-SPEC 06): same facts as `maskSecret`. */
+/** The JSON object form of the masked secret: same facts as `maskSecret`. */
 export function secretEvidenceObject(secretType: string, value: string): SecretEvidence {
   return { kind: 'secret', secretType: secretTypeName(secretType), length: [...value].length, valueHidden: true }
 }
