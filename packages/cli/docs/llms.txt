@@ -1,5 +1,5 @@
 # ShipGuard by AgenticCLI
-> The security scanner your coding agent runs before every commit. One command checks a project for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings. It runs on your machine and gives the same answer every time. Review code with a rulebook to build secure code. Rules come down; your code never goes up.
+> The security scanner your coding agent runs before every commit. One command checks a project for leaked secrets, unprotected routes, destructive database migrations, unverified payment webhooks and risky deploy settings. It runs on your machine and gives the same answer every time. Check code against a rulebook before you ship. Rules come down; your code never goes up.
 
 ShipGuard is not a code reviewer and not a full SAST tool. It uses plain pattern rules (no AI model). It informs: the verdict is in the JSON `recommendation` field (SAFE_TO_SHIP, REVIEW_BEFORE_SHIP, DO_NOT_SHIP). The exit code is 0 whenever the scan completes; add --strict to make it exit 1 on a blocking result.
 
