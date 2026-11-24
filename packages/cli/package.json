@@ -1,6 +1,6 @@
 {
   "name": "@agenticcli/shipguard",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Open source CLI that scans AI-written code for secrets, auth, webhook and deploy flaws. For Claude Code, Codex, Cursor.",
   "type": "module",
   "main": "./dist/cli.js",

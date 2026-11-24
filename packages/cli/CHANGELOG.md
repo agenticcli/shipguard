@@ -1,7 +1,8 @@
 # @agenticcli/shipguard
 
-## 0.13.0 - 2026-11-24
+## 0.13.1 - 2026-11-24
 
+- 0.13.0 was tagged but never published; 0.13.1 is the first published 0.13 release.
 - Clearer scans: the scan screen now opens with a verdict (safe to ship or not), then lists what to fix in plain words, shows what was not scanned, and ends with the one command to run next. Every finding says how to fix it, and secret values are hidden (only the length is shown).
 - Helpful next steps: new `shipguard status` (what is installed and when the gate last ran), `shipguard upgrade` (what Pro adds for the stacks you scan) and `shipguard login` (cancel with Ctrl-C exits 130). They suggest the command to re-run your last scan.
 - Agent contract: `--json` scan results are now schema 7. Every outcome and every error has a stable code, a plain message and a ready re-run command, so a coding agent can act without guessing. Running the same scan again on the same commit keeps the same scan id. Every 0.12 key keeps its name and type (`fix` and `evidence` stay text); the new object forms are the new keys `fixInfo` and `evidenceInfo`. The verdict follows the findings only: a blocking finding is DO NOT SHIP, any other finding is REVIEW BEFORE SHIP, and the risk score alone never decides it.
